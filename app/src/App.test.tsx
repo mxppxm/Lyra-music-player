@@ -1,20 +1,24 @@
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
 import App from "./App";
 
+vi.mock("./providers/boot", () => ({
+  bootProviders: vi.fn(() => Promise.resolve({ registered: [], skipped: [] })),
+}));
+
 describe("App", () => {
-  it("renders the Lyra title", () => {
+  it("renders the HomeView surface", () => {
     render(<App />);
-    expect(screen.getByRole("heading", { level: 1, name: /lyra/i })).toBeInTheDocument();
+    expect(screen.getByTestId("ambient-surface")).toBeInTheDocument();
   });
 
-  it("renders the English tagline", () => {
+  it("renders the SongInfo line from fake data", () => {
     render(<App />);
-    expect(screen.getByText(/between the things you say/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nuvole Bianche/)).toBeInTheDocument();
   });
 
-  it("renders the Chinese tagline", () => {
+  it("renders the input placeholder", () => {
     render(<App />);
-    expect(screen.getByText("未成曲调先有情。")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("和 Lyra 说点什么…")).toBeInTheDocument();
   });
 });
