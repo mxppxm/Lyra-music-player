@@ -1,0 +1,19 @@
+import { invoke } from "@tauri-apps/api/core";
+
+export const SECRET_KEYS = {
+  anthropicApiKey: "provider.anthropic.apiKey",
+  deepseekApiKey: "provider.deepseek.apiKey",
+} as const;
+
+export async function setSecret(key: string, value: string): Promise<void> {
+  await invoke("secret_set", { key, value });
+}
+
+export async function getSecret(key: string): Promise<string | null> {
+  const v = await invoke<string | null>("secret_get", { key });
+  return v ?? null;
+}
+
+export async function deleteSecret(key: string): Promise<void> {
+  await invoke("secret_delete", { key });
+}
