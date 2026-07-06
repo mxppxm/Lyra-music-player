@@ -2,16 +2,205 @@
 
 > **Between the things you say. 未成曲调先有情。**
 
-一个用歌和你说话、会记住你、会自己成长的音乐 agent。**不是又一个音乐播放器。**
+A music agent that sings to you, remembers you, and grows on its own. **Not yet another music player.**
 
-设计文档与决策见 `../docs/superpowers/specs/`。
+Design docs and decisions are in `../docs/superpowers/specs/`.
 
-## 技术栈
+## Overview
 
-- Tauri 2 + React 19 + TypeScript 5
-- Vite / Vitest / Testing Library
-- SQLite（`tauri-plugin-sql`）+ rodio 音频 + `keyring` 系统 keychain
+Lyra is a desktop music agent built with **Tauri 2** + **React 19** + **TypeScript 5**. It manages a personal music library, maintains emotional state, and uses LLM backends to recommend and generate song selections in real time—adapting to your mood and preferences as you interact with it.
+
+### Key Features
+
+- **Personal Music Library**: SQLite-backed local storage with metadata and listening history
+- **Emotional Agent State**: Tracks mood (PAD model), listening patterns, and aesthetic preferences
+- **Multi-LLM Support**: Pluggable model providers (Anthropic, DeepSeek, Zhipu, DouBao, OpenAI, local Ollama)
+- **Responsive UI**: React components with Vite hot-reload and Testing Library coverage
+- **System Integration**: Native keychain via `keyring` crate; file dialogs and URIs via Tauri plugins
+
+## Tech Stack
+
+### Frontend
+- **React 19** + **TypeScript 5** for UI
+- **Vite 7** for bundling and dev server
+- **Vitest 1.6** + **Testing Library** for unit/component tests
+- **@tauri-apps/api** for IPC to the backend
+
+### Backend (Rust)
+- **Tauri 2** desktop framework
+- **SQLite** via `tauri-plugin-sql` for persistent storage
+- **rodio** for audio playback (symphonia backend)
+- **keyring** for secure credential storage (Apple native)
+- **serde** + **serde_json** for serialization
+
+### Build & Development
+- **pnpm 10.27** package manager
+- **@tauri-apps/cli** for building and packaging
+- **tsconfig.json** with strict type checking enabled
+
+## Getting Started
+
+### Prerequisites
+
+- **Node.js** 18+ (we use pnpm 10.27)
+- **Rust 1.70+** (for Tauri backend compilation)
+- **Xcode Command Line Tools** (macOS) or equivalent build tools
+
+### Installation
+
+1. Clone and navigate to the app directory:
+   ```bash
+   cd /Users/daoyu/Documents/my-github/idea/音乐播放器/app
+   ```
+
+2. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+
+3. Verify TypeScript and build setup:
+   ```bash
+   pnpm typecheck
+   ```
+
+### Development
+
+#### Running in Dev Mode
+```bash
+pnpm tauri dev
+```
+This starts both the Vite dev server (hot reload) and the Tauri backend.
+
+#### TypeScript Checking
+```bash
+pnpm typecheck
+```
+
+#### Testing
+```bash
+pnpm test              # Run all tests once
+pnpm test:watch       # Watch mode
+pnpm test:ui          # Vitest UI dashboard
+```
+
+#### Building for Distribution
+```bash
+pnpm build            # TypeScript + Vite build
+pnpm tauri build      # Package as macOS .app (or platform-specific binary)
+```
+
+## Project Structure
+
+```
+app/
+├── src/                         # TypeScript/React frontend
+│   ├── components/              # React components
+│   ├── hooks/                   # Custom React hooks
+│   ├── types/                   # Shared TypeScript interfaces
+│   │   ├── dialogue.ts          # DialogueTurn, PAD, CurrentEmotion, ProactiveKind
+│   │   ├── soul.ts              # SoulState, MusicalTasteBase, DynamicMood
+│   │   ├── song.ts              # LibraryTrack, TrackFeatures
+│   │   ├── provider.ts          # ModelProvider interface, ChatMessage, ChatResponse
+│   │   └── index.ts             # Barrel export
+│   ├── services/                # API clients, LLM providers
+│   ├── App.tsx                  # Main React app
+│   └── main.tsx                 # React entry point
+├── src-tauri/                   # Rust backend
+│   ├── src/
+│   │   ├── main.rs              # Tauri entry point
+│   │   ├── commands/            # Tauri commands (IPC handlers)
+│   │   ├── db.rs                # SQLite abstractions
+│   │   ├── models.rs            # Rust domain types
+│   │   └── ...
+│   ├── Cargo.toml               # Rust dependencies
+│   └── tauri.conf.json          # Tauri app config
+├── public/                      # Static assets
+├── index.html                   # HTML entry point
+├── vite.config.ts               # Vite bundler config
+├── vitest.config.ts             # Vitest test runner config
+├── tsconfig.json                # TypeScript compiler options
+├── package.json                 # Node dependencies & scripts
+└── README.md                    # This file
+```
+
+## Persistence & Configuration
+
+### SQLite Database
+- **Path**: `~/Library/Application Support/com.daoyu.lyra/lyra.db`
+- **Schema**: Defined in migration scripts within Rust backend
+- **Tables**: Likely includes `songs`, `dialogue_turns`, `soul_state`, listening history, etc.
+
+### Keychain Integration
+- Credentials and API keys are stored securely in the system keychain (macOS native)
+- Accessed via the `keyring` Rust crate
+
+## Commit Conventions
+
+All commits follow conventional commits with the `lyra` scope:
+
+```
+docs(lyra): update README for developer setup
+feat(lyra): add new LLM provider adapter
+fix(lyra): resolve song selection race condition
+refactor(lyra): simplify dialogue turn handling
+test(lyra): add unit tests for soul state evolution
+```
+
+### Commit Prefix Reference
+- `feat(lyra):` — New feature
+- `fix(lyra):` — Bug fix
+- `docs(lyra):` — Documentation
+- `refactor(lyra):` — Code refactoring (no behavior change)
+- `test(lyra):` — Tests
+- `chore(lyra):` — Build, dependencies, tooling
 
 ## Recommended IDE Setup
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- **[VS Code](https://code.visualstudio.com/)**
+  - [Tauri Extension](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode)
+  - [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+  - [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
+
+## Contributing
+
+1. Create a feature branch off `main`:
+   ```bash
+   git checkout -b feat/lyra-my-feature
+   ```
+
+2. Make changes, commit with proper scope:
+   ```bash
+   git add .
+   git commit -m "feat(lyra): describe your change"
+   ```
+
+3. Run tests and typecheck before pushing:
+   ```bash
+   pnpm typecheck && pnpm test
+   ```
+
+4. Open a pull request with a clear description.
+
+## Troubleshooting
+
+### "Failed to resolve plugin"
+- Run `pnpm install` to ensure all Tauri plugins are installed
+- Check that `@tauri-apps/cli` matches your Tauri 2.x version
+
+### Type errors in IDE
+- Run `pnpm typecheck` to see all errors
+- Ensure `node_modules/.bin/tsc` is up to date
+
+### Vite dev server not hot-reloading
+- Check that `vite.config.ts` has the correct port and host
+- Restart the dev server with `pnpm tauri dev`
+
+## License
+
+Proprietary — see parent project LICENSE if applicable.
+
+## Notes for Maintainers
+
+- **Rust crate names**: The Cargo.toml still uses `name = "app"` and `lib.name = "lyra_lib"` for now (pending a future rename sweep to fully align with the Lyra branding). The README uses "Lyra" consistently for the product/project name.
+- **Bundle ID**: `com.daoyu.lyra` (see `src-tauri/tauri.conf.json`)
+- **Agent personality**: Lyra is a music agent—not a player, not a recommender tool, but a conversational entity that learns and grows through dialogue. Design decisions reflect this agency model.
