@@ -94,26 +94,53 @@ pnpm tauri build      # Package as macOS .app (or platform-specific binary)
 ```
 app/
 ├── src/                         # TypeScript/React frontend
-│   ├── components/              # React components
-│   ├── hooks/                   # Custom React hooks
+│   ├── audio/                   # Tauri IPC → rodio audio playback
+│   │   ├── player.ts            # playFile / stopPlayback / isPlaying wrappers
+│   │   └── player.test.ts
+│   ├── db/                      # SQLite client + codec + repository
+│   │   ├── client.ts            # Database.load() + getDb() memoization + invalidateDb()
+│   │   ├── codec/               # Domain type ↔ SQL row translation
+│   │   │   ├── dialogueTurn.ts
+│   │   │   ├── soulState.ts
+│   │   │   ├── emotionSnapshot.ts
+│   │   │   └── libraryTrack.ts
+│   │   └── repo/                # CRUD helpers on top of the codec
+│   │       ├── turnRepo.ts
+│   │       ├── soulRepo.ts
+│   │       ├── emotionRepo.ts
+│   │       └── libraryRepo.ts
+│   ├── providers/               # Model provider abstraction + adapters
+│   │   ├── registry.ts          # ProviderRegistry singleton
+│   │   ├── anthropic.ts         # AnthropicProvider adapter
+│   │   ├── deepseek.ts          # DeepSeekProvider adapter
+│   │   └── boot.ts              # bootProviders() reads keychain, registers
+│   ├── settings/                # API key modal + secret storage wrapper
+│   │   ├── secrets.ts           # SECRET_KEYS + setSecret / getSecret / deleteSecret
+│   │   └── Settings.tsx         # Modal for entering keys
 │   ├── types/                   # Shared TypeScript interfaces
 │   │   ├── dialogue.ts          # DialogueTurn, PAD, CurrentEmotion, ProactiveKind
 │   │   ├── soul.ts              # SoulState, MusicalTasteBase, DynamicMood
 │   │   ├── song.ts              # LibraryTrack, TrackFeatures
 │   │   ├── provider.ts          # ModelProvider interface, ChatMessage, ChatResponse
 │   │   └── index.ts             # Barrel export
-│   ├── services/                # API clients, LLM providers
-│   ├── App.tsx                  # Main React app
+│   ├── App.tsx                  # Full-screen hero (Lyra + slogans + Settings)
+│   ├── App.test.tsx
 │   └── main.tsx                 # React entry point
 ├── src-tauri/                   # Rust backend
 │   ├── src/
 │   │   ├── main.rs              # Tauri entry point
-│   │   ├── commands/            # Tauri commands (IPC handlers)
-│   │   ├── db.rs                # SQLite abstractions
-│   │   ├── models.rs            # Rust domain types
-│   │   └── ...
-│   ├── Cargo.toml               # Rust dependencies
-│   └── tauri.conf.json          # Tauri app config
+│   │   ├── lib.rs               # Plugin registration + Tauri command handlers
+│   │   ├── audio.rs             # rodio-based playback (Arc<AudioPlayer>)
+│   │   └── secrets.rs           # keyring-backed secret CRUD
+│   ├── migrations/
+│   │   └── 001_initial.sql      # 10-table schema
+│   ├── tests/
+│   │   ├── audio_test.rs
+│   │   ├── secrets_test.rs
+│   │   └── fixtures/silence_1s.wav
+│   ├── capabilities/default.json
+│   ├── Cargo.toml
+│   └── tauri.conf.json
 ├── public/                      # Static assets
 ├── index.html                   # HTML entry point
 ├── vite.config.ts               # Vite bundler config
