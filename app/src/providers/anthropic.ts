@@ -7,17 +7,18 @@ import type {
 
 const DEFAULT_MODEL = "claude-opus-4-7";
 const DEFAULT_MAX_TOKENS = 1024;
+// Hard-coded to match the CSP connect-src allowlist in tauri.conf.json.
+// If this ever changes, update the CSP simultaneously.
+const ENDPOINT = "https://api.anthropic.com/v1/messages";
 
 export class AnthropicProvider implements ModelProvider {
   readonly id = "anthropic" as const;
   private apiKey: string;
-  private baseUrl: string;
   private defaultModel: string;
 
-  constructor(opts: { apiKey: string; model?: string; baseUrl?: string }) {
+  constructor(opts: { apiKey: string; model?: string }) {
     if (!opts.apiKey) throw new Error("AnthropicProvider requires apiKey");
     this.apiKey = opts.apiKey;
-    this.baseUrl = opts.baseUrl ?? "https://api.anthropic.com";
     this.defaultModel = opts.model ?? DEFAULT_MODEL;
   }
 
@@ -35,7 +36,7 @@ export class AnthropicProvider implements ModelProvider {
     if (systemParts.length > 0) body.system = systemParts.join("\n\n");
     if (opts?.temperature != null) body.temperature = opts.temperature;
 
-    const res = await fetch(`${this.baseUrl}/v1/messages`, {
+    const res = await fetch(ENDPOINT, {
       method: "POST",
       headers: {
         "x-api-key": this.apiKey,
