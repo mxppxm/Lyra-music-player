@@ -116,3 +116,78 @@ describe("Orchestrator.onUserInput error paths", () => {
     expect(last.kind).toBe("error");
   });
 });
+
+describe("Orchestrator T7: reaction capture", () => {
+  it("onSkip folds skip event into current turn", async () => {
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来一首歌");
+    // Verify we're in playing state with a currentTurn
+    expect(orc.getState().kind).toBe("playing");
+
+    await orc.onSkip();
+
+    // On next input, finalise previous turn — updateTurn should be called
+    await orc.onUserInput("再来一首");
+    expect(updateTurn).toHaveBeenCalled();
+    const updatedTurn = (updateTurn.mock.calls[0] as unknown as [DialogueTurn])[0];
+    expect(updatedTurn.user_reaction.behavioral.skipped).toBe(true);
+  });
+
+  it("verbal from next input is attributed to previous turn", async () => {
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来一首歌");
+    // No skip or complete — just provide verbal via next input
+    await orc.onUserInput("这首歌真好听");
+
+    expect(updateTurn).toHaveBeenCalled();
+    const updatedTurn = (updateTurn.mock.calls[0] as unknown as [DialogueTurn])[0];
+    expect(updatedTurn.user_reaction.verbal).toBeDefined();
+    expect(updatedTurn.user_reaction.verbal?.content).toBe("这首歌真好听");
+  });
+
+  it("soul dynamic_mood updates after next turn (soulStore.apply called)", async () => {
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来一首歌");
+    await orc.onSongComplete();
+
+    // Second input triggers soul.apply with delta
+    await orc.onUserInput("好的，再来一首");
+
+    expect(deps.soulStore.apply).toHaveBeenCalled();
+    const delta = (deps.soulStore.apply as any).mock.calls[0][0];
+    // delta should be a PAD object
+    expect(typeof delta.p).toBe("number");
+    expect(typeof delta.a).toBe("number");
+    expect(typeof delta.d).toBe("number");
+  });
+
+  it("onListenProgress accumulates max ms on current turn", async () => {
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来一首歌");
+    orc.onListenProgress(5000);
+    orc.onListenProgress(12000);
+    orc.onListenProgress(8000);
+
+    await orc.onUserInput("继续");
+
+    expect(updateTurn).toHaveBeenCalled();
+    const updatedTurn = (updateTurn.mock.calls[0] as unknown as [DialogueTurn])[0];
+    expect(updatedTurn.user_reaction.behavioral.listen_duration_ms).toBe(12000);
+  });
+});

@@ -3,14 +3,14 @@ import type { EmotionAgent } from "../agents/EmotionAgent";
 import type { CompanionAgent } from "../agents/CompanionAgent";
 import type { LibraryAgent } from "../agents/LibraryAgent";
 import type { SoulState } from "../types";
+import { foldReactionEvents, computeEmotionDelta } from "./reactionCapture";
+import type { ReactionEvent } from "./reactionCapture";
 
-// T7 will build soulStore.ts; T6 takes it as a dep but only calls .load()
 export type SoulStoreLike = {
   load(): Promise<SoulState>;
-  apply?: (delta: PAD) => Promise<SoulState>; // reserved for T7
+  apply?: (delta: PAD) => Promise<SoulState>;
 };
 
-// Use SoulStore as an alias to keep imports forwards-compatible
 type SoulStore = SoulStoreLike;
 
 export type OrchestratorState =
@@ -24,10 +24,13 @@ export type OrchestratorDeps = {
   companion: CompanionAgent;
   library: LibraryAgent;
   soulStore: SoulStore;
-  turnRepo: { insertTurn(t: DialogueTurn): Promise<void> };
+  turnRepo: {
+    insertTurn(t: DialogueTurn): Promise<void>;
+    updateTurn?(t: DialogueTurn): Promise<void>;
+  };
   audio: { playFile(path: string): Promise<void>; stop(): Promise<void> };
-  clock?: () => number;   // for tests; defaults to Date.now
-  idGen?: () => string;   // for tests; defaults to crypto.randomUUID
+  clock?: () => number;
+  idGen?: () => string;
 };
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
@@ -37,6 +40,11 @@ export class Orchestrator {
   private subs = new Set<(s: OrchestratorState) => void>();
   private deps: OrchestratorDeps;
 
+  /** The turn that is currently playing, accumulating reaction events. */
+  private currentTurn: DialogueTurn | null = null;
+  /** Pending reaction events for the current turn. */
+  private pendingEvents: ReactionEvent[] = [];
+
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
   }
@@ -45,7 +53,6 @@ export class Orchestrator {
     return this.state;
   }
 
-  /** Subscribe to state changes. Returns an unsubscribe function. */
   subscribe(cb: (s: OrchestratorState) => void): () => void {
     this.subs.add(cb);
     return () => this.subs.delete(cb);
@@ -56,6 +63,52 @@ export class Orchestrator {
     for (const cb of this.subs) cb(s);
   }
 
+  /** Finalise the previous turn: fold events, optionally apply verbal, update soul, persist. */
+  private async finalisePreviousTurn(verbalText?: string, postPad?: PAD): Promise<void> {
+    if (!this.currentTurn) return;
+
+    const { soulStore, turnRepo } = this.deps;
+    let events = [...this.pendingEvents];
+
+    // If there's a verbal follow-up from the next utterance and the turn has no verbal yet
+    const hasVerbal = this.currentTurn.user_reaction.verbal !== undefined
+      || events.some((e) => e.kind === "verbal_next");
+
+    if (verbalText !== undefined && !hasVerbal) {
+      events.push({
+        kind: "verbal_next",
+        content: verbalText,
+        parsed_valence: "neutral",
+      });
+    }
+
+    // Fold all events into the turn
+    const folded = foldReactionEvents(this.currentTurn, events);
+
+    // Compute emotion delta and update soul
+    if (postPad !== undefined && soulStore.apply) {
+      const prePad = folded.current_emotion.pad;
+      const delta = computeEmotionDelta(prePad, postPad);
+      await soulStore.apply(delta);
+    }
+
+    // Update the turn's emotion_delta if we have postPad
+    const finalTurn: DialogueTurn = postPad !== undefined
+      ? {
+          ...folded,
+          emotion_delta: computeEmotionDelta(folded.current_emotion.pad, postPad),
+        }
+      : folded;
+
+    // Persist the updated turn
+    if (turnRepo.updateTurn) {
+      await turnRepo.updateTurn(finalTurn);
+    }
+
+    this.currentTurn = null;
+    this.pendingEvents = [];
+  }
+
   async onUserInput(text: string): Promise<void> {
     const { emotion: emotionAgent, companion, library, soulStore, turnRepo, audio } = this.deps;
     const clock = this.deps.clock ?? Date.now;
@@ -64,13 +117,16 @@ export class Orchestrator {
     this.emit({ kind: "thinking", user_utterance: text });
 
     try {
-      // Step 2: analyse emotion
+      // Step 2: analyse emotion for new turn
       const emotion = await emotionAgent.analyze({ userUtterance: text });
 
-      // Step 3: load soul
+      // Step 1b: finalise previous turn (verbal attribution + soul update)
+      await this.finalisePreviousTurn(text, emotion.pad);
+
+      // Step 3: load soul (may reflect updated dynamic_mood from finalisePreviousTurn)
       const soul = await soulStore.load();
 
-      // Step 4: prefilter candidates — chicken-and-egg resolved with text + labels pseudo-target
+      // Step 4: prefilter candidates
       const pseudoTarget = `${text} ${emotion.labels.join(" ")}`;
       const candidates = await library.prefilter(pseudoTarget, emotion.pad, 30);
 
@@ -117,7 +173,9 @@ export class Orchestrator {
       // Step 10: play
       await audio.playFile(song.path);
 
-      // Step 11: emit playing
+      // Step 11: emit playing; store as currentTurn for reaction capture
+      this.currentTurn = turn;
+      this.pendingEvents = [];
       this.emit({ kind: "playing", turn, song });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -126,13 +184,28 @@ export class Orchestrator {
     }
   }
 
-  /** T6 stub: stop audio. Full reaction wiring comes in T7. */
-  async onSkip(): Promise<void> {
-    await this.deps.audio.stop();
+  /** Record listen progress — keeps running maximum of ms listened. */
+  onListenProgress(ms: number): void {
+    this.pendingEvents.push({ kind: "listen_progress", ms });
   }
 
-  /** T6 stub: no-op. Full reaction wiring comes in T7. */
+  /** User skipped the song. Fold skip event into current turn. */
+  async onSkip(): Promise<void> {
+    this.pendingEvents.push({ kind: "skip" });
+    await this.deps.audio.stop();
+    // Fold immediately so currentTurn reflects skip
+    if (this.currentTurn) {
+      this.currentTurn = foldReactionEvents(this.currentTurn, this.pendingEvents);
+      this.pendingEvents = [];
+    }
+  }
+
+  /** Song played to completion. Fold complete event into current turn. */
   async onSongComplete(): Promise<void> {
-    // T7 wires the reaction; stay in playing state for now
+    this.pendingEvents.push({ kind: "complete" });
+    if (this.currentTurn) {
+      this.currentTurn = foldReactionEvents(this.currentTurn, this.pendingEvents);
+      this.pendingEvents = [];
+    }
   }
 }

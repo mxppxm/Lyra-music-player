@@ -8,7 +8,7 @@ vi.mock("../client", () => ({
   getDb: () => getDbMock(),
 }));
 
-import { insertTurn, getTurn, listRecentTurns, countTurns } from "./turnRepo";
+import { insertTurn, getTurn, listRecentTurns, countTurns, updateTurn } from "./turnRepo";
 import type { DialogueTurn } from "../../types";
 
 const sample: DialogueTurn = {
@@ -89,5 +89,27 @@ describe("turnRepo", () => {
     expect(n).toBe(42);
     const [sql] = selectMock.mock.calls[0];
     expect(sql).toMatch(/SELECT COUNT\(\*\)/i);
+  });
+
+  it("updateTurn executes UPDATE by id with updated reaction and delta", async () => {
+    executeMock.mockResolvedValueOnce({ rowsAffected: 1 });
+    const updated: DialogueTurn = {
+      ...sample,
+      user_reaction: {
+        behavioral: { listen_duration_ms: 30000, completed: true, skipped: false, repeated: 0, volume_delta: 0 },
+        silence_positive: true,
+      },
+      emotion_delta: { p: 0.2, a: 0.1, d: -0.1 },
+    };
+    await updateTurn(updated);
+    expect(executeMock).toHaveBeenCalledOnce();
+    const [sql, args] = executeMock.mock.calls[0];
+    expect(sql).toMatch(/UPDATE dialogue_turns/i);
+    expect(sql).toMatch(/WHERE id/i);
+    // id must be the last argument (WHERE clause)
+    expect(args?.[args.length - 1]).toBe("turn-01");
+    // user_reaction_json should reflect updated data
+    const reactionJson = args?.find((a: unknown) => typeof a === "string" && a.includes("30000"));
+    expect(reactionJson).toBeDefined();
   });
 });

@@ -44,6 +44,28 @@ export async function listRecentTurns(limit: number): Promise<DialogueTurn[]> {
   return rows.map(fromRow);
 }
 
+export async function updateTurn(t: DialogueTurn): Promise<void> {
+  const row = toRow(t);
+  const db = await getDb();
+  await db.execute(
+    `UPDATE dialogue_turns SET
+       user_utterance_json = ?,
+       agent_response_json = ?,
+       user_reaction_json = ?,
+       current_emotion_json = ?,
+       emotion_delta_json = ?
+     WHERE id = ?`,
+    [
+      row.user_utterance_json,
+      row.agent_response_json,
+      row.user_reaction_json,
+      row.current_emotion_json,
+      row.emotion_delta_json,
+      row.id,
+    ],
+  );
+}
+
 export async function countTurns(): Promise<number> {
   const db = await getDb();
   const rows = await db.select<{ n: number }[]>(
