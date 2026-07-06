@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod library_scan;
 pub mod secrets;
 
 use std::sync::Arc;
@@ -43,6 +44,11 @@ async fn secret_delete(key: String) -> Result<(), String> {
     secrets::delete_secret(&key).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn library_scan(path: String) -> Result<Vec<library_scan::ScannedTrack>, String> {
+    library_scan::scan_directory(std::path::Path::new(&path)).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -73,7 +79,8 @@ pub fn run() {
             audio_is_playing,
             secret_set,
             secret_get,
-            secret_delete
+            secret_delete,
+            library_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

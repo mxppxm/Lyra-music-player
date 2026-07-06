@@ -7,17 +7,25 @@ vi.mock("./secrets", () => ({
     anthropicApiKey: "provider.anthropic.apiKey",
     deepseekApiKey: "provider.deepseek.apiKey",
     zhipuApiKey: "provider.zhipu.apiKey",
+    libraryRootPath: "library.rootPath",
   },
   setSecret: vi.fn(),
   getSecret: vi.fn(),
   deleteSecret: vi.fn(),
 }));
 
+vi.mock("../library/libraryScan", () => ({
+  importLibrary: vi.fn(() => Promise.resolve(0)),
+}));
+
 import { setSecret, getSecret } from "./secrets";
+import { importLibrary } from "../library/libraryScan";
 
 beforeEach(() => {
   (setSecret as any).mockReset();
   (getSecret as any).mockReset();
+  (importLibrary as any).mockReset();
+  (importLibrary as any).mockResolvedValue(0);
 });
 
 describe("Settings", () => {
@@ -33,6 +41,18 @@ describe("Settings", () => {
     render(<Settings open={true} onClose={() => {}} />);
     await waitFor(() =>
       expect((screen.getByLabelText(/anthropic/i) as HTMLInputElement).value).toBe("sk-a")
+    );
+  });
+
+  it("loads stored library path on open", async () => {
+    (getSecret as any).mockImplementation((k: string) =>
+      k === "library.rootPath" ? Promise.resolve("/Users/x/Music") : Promise.resolve(null)
+    );
+    render(<Settings open={true} onClose={() => {}} />);
+    await waitFor(() =>
+      expect((screen.getByLabelText(/music library folder/i) as HTMLInputElement).value).toBe(
+        "/Users/x/Music"
+      )
     );
   });
 
@@ -55,6 +75,24 @@ describe("Settings", () => {
       expect(setSecret).toHaveBeenCalledWith("provider.anthropic.apiKey", "sk-new-a");
       expect(setSecret).toHaveBeenCalledWith("provider.deepseek.apiKey", "sk-new-d");
       expect(setSecret).toHaveBeenCalledWith("provider.zhipu.apiKey", "sk-new-z");
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
+
+  it("saves library path and calls importLibrary on Save when path is set", async () => {
+    (getSecret as any).mockResolvedValue(null);
+    (setSecret as any).mockResolvedValue(undefined);
+    (importLibrary as any).mockResolvedValue(3);
+    const onClose = vi.fn();
+    render(<Settings open={true} onClose={onClose} />);
+
+    const libInput = await screen.findByLabelText(/music library folder/i);
+    fireEvent.change(libInput, { target: { value: "/Users/x/Music" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(setSecret).toHaveBeenCalledWith("library.rootPath", "/Users/x/Music");
+      expect(importLibrary).toHaveBeenCalledWith("/Users/x/Music");
       expect(onClose).toHaveBeenCalled();
     });
   });
