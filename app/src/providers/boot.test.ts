@@ -24,28 +24,32 @@ beforeEach(() => {
 });
 
 describe("bootProviders", () => {
-  it("registers anthropic when key is present", async () => {
+  it("registers anthropic when only its key is present; skips deepseek as no-key", async () => {
     getSecretMock.mockImplementation((key: string) =>
-      key === "provider.anthropic.apiKey" ? Promise.resolve("sk-ant-123") : Promise.resolve(null)
+      key === "provider.anthropic.apiKey"
+        ? Promise.resolve("sk-ant-123")
+        : Promise.resolve(null),
     );
 
     const report = await bootProviders();
 
-    expect(report.anthropic).toBe(true);
-    expect(report.deepseek).toBe(false);
+    expect(report.registered).toEqual(["anthropic"]);
+    expect(report.skipped).toEqual([{ id: "deepseek", reason: "no-key" }]);
     expect(registerMock).toHaveBeenCalledOnce();
     expect(registerMock.mock.calls[0][0].id).toBe("anthropic");
   });
 
-  it("registers deepseek when key is present", async () => {
+  it("registers deepseek when only its key is present; skips anthropic as no-key", async () => {
     getSecretMock.mockImplementation((key: string) =>
-      key === "provider.deepseek.apiKey" ? Promise.resolve("ds-key-456") : Promise.resolve(null)
+      key === "provider.deepseek.apiKey"
+        ? Promise.resolve("ds-key-456")
+        : Promise.resolve(null),
     );
 
     const report = await bootProviders();
 
-    expect(report.anthropic).toBe(false);
-    expect(report.deepseek).toBe(true);
+    expect(report.registered).toEqual(["deepseek"]);
+    expect(report.skipped).toEqual([{ id: "anthropic", reason: "no-key" }]);
     expect(registerMock).toHaveBeenCalledOnce();
     expect(registerMock.mock.calls[0][0].id).toBe("deepseek");
   });
@@ -59,18 +63,37 @@ describe("bootProviders", () => {
 
     const report = await bootProviders();
 
-    expect(report.anthropic).toBe(true);
-    expect(report.deepseek).toBe(true);
+    expect(report.registered).toEqual(["anthropic", "deepseek"]);
+    expect(report.skipped).toEqual([]);
     expect(registerMock).toHaveBeenCalledTimes(2);
   });
 
-  it("registers no providers and returns false/false when both keys are absent", async () => {
+  it("returns empty registered + both skipped as no-key when neither key exists", async () => {
     getSecretMock.mockResolvedValue(null);
 
     const report = await bootProviders();
 
-    expect(report.anthropic).toBe(false);
-    expect(report.deepseek).toBe(false);
+    expect(report.registered).toEqual([]);
+    expect(report.skipped).toEqual([
+      { id: "anthropic", reason: "no-key" },
+      { id: "deepseek", reason: "no-key" },
+    ]);
     expect(registerMock).not.toHaveBeenCalled();
+  });
+
+  it("reports keychain-error when getSecret rejects (distinguishable from no-key)", async () => {
+    getSecretMock.mockImplementation((key: string) => {
+      if (key === "provider.anthropic.apiKey") {
+        return Promise.reject(new Error("keychain locked"));
+      }
+      return Promise.resolve("ds-xyz");
+    });
+
+    const report = await bootProviders();
+
+    expect(report.registered).toEqual(["deepseek"]);
+    expect(report.skipped).toEqual([
+      { id: "anthropic", reason: "keychain-error" },
+    ]);
   });
 });

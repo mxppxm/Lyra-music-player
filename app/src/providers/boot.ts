@@ -1,37 +1,67 @@
+import type { ProviderId } from "../types";
 import { getSecret, SECRET_KEYS } from "../settings/secrets";
 import { AnthropicProvider } from "./anthropic";
 import { DeepSeekProvider } from "./deepseek";
 import { registry } from "./registry";
 
+export type SkipReason = "no-key" | "keychain-error";
+
 export interface BootReport {
-  anthropic: boolean;
-  deepseek: boolean;
+  registered: ProviderId[];
+  skipped: { id: ProviderId; reason: SkipReason }[];
 }
+
+type ProviderSpec = {
+  id: ProviderId;
+  keyName: string;
+  build: (apiKey: string) => void;
+};
+
+const SPECS: ProviderSpec[] = [
+  {
+    id: "anthropic",
+    keyName: SECRET_KEYS.anthropicApiKey,
+    build: (apiKey) => registry.register(new AnthropicProvider({ apiKey })),
+  },
+  {
+    id: "deepseek",
+    keyName: SECRET_KEYS.deepseekApiKey,
+    build: (apiKey) => registry.register(new DeepSeekProvider({ apiKey })),
+  },
+];
 
 /**
  * bootProviders — reads API keys from keychain and registers available
  * providers into the global registry. Called once at app startup.
  *
- * Returns a report indicating which providers were successfully registered.
- * Providers whose keys are absent or empty are silently skipped.
+ * Returns { registered, skipped } — skipped carries a reason so the UI
+ * can distinguish "no key configured" from "keychain locked / IPC failure".
+ * Open list of providers: adding a new one only requires appending to SPECS.
  */
 export async function bootProviders(): Promise<BootReport> {
-  const report: BootReport = { anthropic: false, deepseek: false };
+  const registered: ProviderId[] = [];
+  const skipped: { id: ProviderId; reason: SkipReason }[] = [];
 
-  const [anthropicKey, deepseekKey] = await Promise.all([
-    getSecret(SECRET_KEYS.anthropicApiKey).catch(() => null),
-    getSecret(SECRET_KEYS.deepseekApiKey).catch(() => null),
-  ]);
+  await Promise.all(
+    SPECS.map(async (spec) => {
+      let key: string | null;
+      try {
+        key = await getSecret(spec.keyName);
+      } catch {
+        skipped.push({ id: spec.id, reason: "keychain-error" });
+        return;
+      }
+      if (!key) {
+        skipped.push({ id: spec.id, reason: "no-key" });
+        return;
+      }
+      spec.build(key);
+      registered.push(spec.id);
+    }),
+  );
 
-  if (anthropicKey) {
-    registry.register(new AnthropicProvider({ apiKey: anthropicKey }));
-    report.anthropic = true;
-  }
-
-  if (deepseekKey) {
-    registry.register(new DeepSeekProvider({ apiKey: deepseekKey }));
-    report.deepseek = true;
-  }
-
-  return report;
+  // Sort for stable output regardless of Promise resolution order.
+  registered.sort();
+  skipped.sort((a, b) => a.id.localeCompare(b.id));
+  return { registered, skipped };
 }
