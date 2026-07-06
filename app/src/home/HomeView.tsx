@@ -1,39 +1,90 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AmbientBackground } from "./AmbientBackground";
 import { AlbumCover } from "./AlbumCover";
 import { EmotionLightBand } from "./EmotionLightBand";
 import { SongInfo } from "./SongInfo";
 import { SmallNote } from "./SmallNote";
 import { TraceStrip } from "./TraceStrip";
+import type { TraceStripItem } from "./TraceStrip";
 import { InputBox } from "./InputBox";
 import { bindGlobalKeys } from "./keyboard";
-import {
-  FAKE_PAD,
-  FAKE_SAMPLES,
-  FAKE_TITLE,
-  FAKE_ARTIST,
-  FAKE_COVER_URL,
-  FAKE_RATIONALE,
-  FAKE_TRACE,
-} from "./fakeData";
+import { useTurn } from "../turn/useTurn";
+import type { Orchestrator } from "../turn/Orchestrator";
+import * as turnRepo from "../db/repo/turnRepo";
+import type { PAD } from "../types";
 
-export type HomeViewProps = {
+const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
+
+type HomeViewProps = {
   onOpenSettings: () => void;
+  orchestrator: Orchestrator | null;
 };
 
-export function HomeView({ onOpenSettings }: HomeViewProps) {
+export type { HomeViewProps };
+
+// ── Inner component wired to a live orchestrator ─────────────────────────────
+
+function LiveHomeView({
+  onOpenSettings,
+  orchestrator,
+}: {
+  onOpenSettings: () => void;
+  orchestrator: Orchestrator;
+}) {
+  const { state, submit } = useTurn(orchestrator);
+  const [traceItems, setTraceItems] = useState<TraceStripItem[]>([]);
+
+  // Refresh trace strip whenever state transitions to playing
+  useEffect(() => {
+    if (state.kind === "playing") {
+      turnRepo.listRecentTurns(5).then((turns) => {
+        setTraceItems(turns.map((t) => ({ id: t.id, coverUrl: null })));
+      }).catch(() => {});
+    }
+  }, [state.kind]);
+
   useEffect(() => {
     return bindGlobalKeys({
       onOpenSettings,
       onTogglePlayback: () => {
-        // Sprint 1b-α: no real audio wiring yet. Log for smoke.
-        console.log("[lyra] toggle playback (α stub)");
+        console.log("[lyra] toggle playback");
       },
     });
   }, [onOpenSettings]);
 
+  // Derive display values from state
+  const pad: PAD =
+    state.kind === "playing"
+      ? state.turn.current_emotion.pad
+      : ZERO_PAD;
+
+  const padSamples: PAD[] = [pad];
+
+  const coverUrl: string | null =
+    state.kind === "playing" ? null : null; // coverUrl reserved for Sprint 2
+
+  const title: string =
+    state.kind === "playing" ? (state.song.title ?? "") : "";
+
+  const artist: string =
+    state.kind === "playing" ? (state.song.artist ?? "") : "";
+
+  const noteText: string =
+    state.kind === "idle"
+      ? "Lyra 在等你说一句话"
+      : state.kind === "thinking"
+        ? "…"
+        : state.kind === "playing"
+          ? state.turn.agent_response.rationale
+          : state.kind === "error"
+            ? state.message
+            : "";
+
+  const noteColor: string | undefined =
+    state.kind === "error" ? "rgba(200,80,80,0.75)" : undefined;
+
   return (
-    <AmbientBackground pad={FAKE_PAD}>
+    <AmbientBackground pad={pad}>
       <div
         style={{
           flex: 1,
@@ -45,18 +96,108 @@ export function HomeView({ onOpenSettings }: HomeViewProps) {
         }}
       >
         <div style={{ flex: 1 }} />
-        <AlbumCover coverUrl={FAKE_COVER_URL} alt={`${FAKE_TITLE} cover`} />
+        <AlbumCover
+          coverUrl={coverUrl}
+          alt={title ? `${title} cover` : "album cover"}
+        />
         <div style={{ height: "var(--lyra-space-cover-to-band)" }} />
-        <EmotionLightBand samples={FAKE_SAMPLES} />
+        <EmotionLightBand samples={padSamples} />
         <div style={{ height: "var(--lyra-space-band-to-song)" }} />
-        <SongInfo title={FAKE_TITLE} artist={FAKE_ARTIST} />
+        {state.kind === "playing" ? (
+          <SongInfo title={title} artist={artist} />
+        ) : (
+          <SongInfo title="" artist="" />
+        )}
         <div style={{ height: "var(--lyra-space-song-to-note)" }} />
-        <SmallNote text={FAKE_RATIONALE} />
+        <SmallNote text={noteText} color={noteColor} />
         <div style={{ flex: 1 }} />
-        <TraceStrip items={FAKE_TRACE} />
+        <TraceStrip items={traceItems} />
         <div style={{ height: "var(--lyra-space-trace-to-input)" }} />
-        <InputBox onSubmit={(t) => console.log("[lyra] user said:", t)} />
+        <InputBox onSubmit={submit} />
       </div>
     </AmbientBackground>
   );
+}
+
+// ── Cold-boot placeholder (no providers configured) ───────────────────────────
+
+function ColdBootView({ onOpenSettings }: { onOpenSettings: () => void }) {
+  useEffect(() => {
+    return bindGlobalKeys({
+      onOpenSettings,
+      onTogglePlayback: () => {},
+    });
+  }, [onOpenSettings]);
+
+  return (
+    <AmbientBackground pad={ZERO_PAD}>
+      <div
+        className="lyra-hero"
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "var(--lyra-viewport-padding)",
+          gap: 0,
+          textAlign: "center",
+        }}
+      >
+        <h1
+          style={{
+            fontSize: "2.5rem",
+            fontWeight: 700,
+            letterSpacing: "0.05em",
+            margin: 0,
+          }}
+        >
+          Lyra
+        </h1>
+        <p
+          style={{
+            marginTop: "0.5rem",
+            opacity: 0.6,
+            fontSize: "0.95rem",
+          }}
+        >
+          Your emotional music companion
+        </p>
+        <p
+          style={{
+            marginTop: "0.25rem",
+            opacity: 0.45,
+            fontSize: "0.85rem",
+          }}
+        >
+          陪你说话，替你选一首歌
+        </p>
+        <p
+          data-testid="cold-boot-hint"
+          style={{
+            marginTop: "2rem",
+            opacity: 0.5,
+            fontSize: "0.85rem",
+          }}
+        >
+          Lyra needs an API key to talk.{" "}
+          <span
+            style={{ textDecoration: "underline", cursor: "pointer" }}
+            onClick={onOpenSettings}
+          >
+            Cmd+, to open Settings.
+          </span>
+        </p>
+      </div>
+    </AmbientBackground>
+  );
+}
+
+// ── Public export ─────────────────────────────────────────────────────────────
+
+export function HomeView({ onOpenSettings, orchestrator }: HomeViewProps) {
+  if (orchestrator === null) {
+    return <ColdBootView onOpenSettings={onOpenSettings} />;
+  }
+  return <LiveHomeView onOpenSettings={onOpenSettings} orchestrator={orchestrator} />;
 }

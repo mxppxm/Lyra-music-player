@@ -1,21 +1,144 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { HomeView } from "./HomeView";
+import type { Orchestrator, OrchestratorState } from "../turn/Orchestrator";
 
-describe("HomeView", () => {
-  it("renders the ambient surface, cover, band, song info, note, and input", () => {
-    render(<HomeView onOpenSettings={() => {}} />);
+// ── Stub orchestrator factory ─────────────────────────────────────────────────
+
+function makeStubOrchestrator(initialState: OrchestratorState): Orchestrator {
+  let _state = initialState;
+  const subs = new Set<(s: OrchestratorState) => void>();
+  return {
+    getState: () => _state,
+    subscribe: (cb: (s: OrchestratorState) => void) => {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    },
+    onUserInput: vi.fn(async () => {}),
+    onListenProgress: vi.fn(),
+    onSkip: vi.fn(async () => {}),
+    onSongComplete: vi.fn(async () => {}),
+  } as unknown as Orchestrator;
+}
+
+// ── Mock turnRepo so listRecentTurns doesn't hit real DB ──────────────────────
+
+vi.mock("../db/repo/turnRepo", () => ({
+  listRecentTurns: vi.fn(() => Promise.resolve([])),
+  insertTurn: vi.fn(() => Promise.resolve()),
+  updateTurn: vi.fn(() => Promise.resolve()),
+}));
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+describe("HomeView — cold boot (no orchestrator)", () => {
+  it("renders Lyra hero identity and cold-boot hint", () => {
+    render(<HomeView onOpenSettings={() => {}} orchestrator={null} />);
+    expect(screen.getByText("Lyra")).toBeInTheDocument();
+    expect(screen.getByText(/Your emotional music companion/)).toBeInTheDocument();
+    expect(screen.getByText(/陪你说话，替你选一首歌/)).toBeInTheDocument();
+    expect(screen.getByTestId("cold-boot-hint")).toBeInTheDocument();
+    expect(screen.getByText(/Lyra needs an API key to talk/)).toBeInTheDocument();
+  });
+
+  it("still renders the ambient surface in cold-boot state", () => {
+    render(<HomeView onOpenSettings={() => {}} orchestrator={null} />);
+    expect(screen.getByTestId("ambient-surface")).toBeInTheDocument();
+  });
+});
+
+describe("HomeView — idle state", () => {
+  it("renders structure and idle placeholder note", () => {
+    const orc = makeStubOrchestrator({ kind: "idle" });
+    render(<HomeView onOpenSettings={() => {}} orchestrator={orc} />);
     expect(screen.getByTestId("ambient-surface")).toBeInTheDocument();
     expect(screen.getByTestId("album-cover-frame")).toBeInTheDocument();
     expect(screen.getByTestId("emotion-light-band")).toBeInTheDocument();
     expect(screen.getByTestId("song-info")).toBeInTheDocument();
     expect(screen.getByTestId("small-note")).toBeInTheDocument();
     expect(screen.getByTestId("lyra-input")).toBeInTheDocument();
+    expect(screen.getByText("Lyra 在等你说一句话")).toBeInTheDocument();
   });
+});
 
-  it("displays fake song info from fakeData", () => {
-    render(<HomeView onOpenSettings={() => {}} />);
+describe("HomeView — thinking state", () => {
+  it("shows ellipsis note while thinking", () => {
+    const orc = makeStubOrchestrator({ kind: "thinking", user_utterance: "最近有点累" });
+    render(<HomeView onOpenSettings={() => {}} orchestrator={orc} />);
+    expect(screen.getByTestId("small-note")).toHaveTextContent("…");
+  });
+});
+
+describe("HomeView — playing state", () => {
+  const playingState: OrchestratorState = {
+    kind: "playing",
+    turn: {
+      id: "turn-1",
+      timestamp: Date.now(),
+      current_emotion: {
+        pad: { p: 0.3, a: 0.1, d: 0.2 },
+        labels: ["calm"],
+        confidence: 0.8,
+        source: "emotion-agent-inferred",
+      },
+      user_utterance: { modality: "text", content: "最近有点累" },
+      agent_response: {
+        song_id: "track-1",
+        rationale: "舒缓的旋律，陪你慢下来",
+      },
+      user_reaction: {
+        behavioral: {
+          listen_duration_ms: 0,
+          completed: false,
+          skipped: false,
+          repeated: 0,
+          volume_delta: 0,
+        },
+        silence_positive: false,
+      },
+      emotion_delta: { p: 0, a: 0, d: 0 },
+    },
+    song: {
+      id: "track-1",
+      path: "/music/test.flac",
+      title: "Nuvole Bianche",
+      artist: "Ludovico Einaudi",
+      album: undefined,
+      duration_ms: undefined,
+      added_at: Date.now(),
+      origin: "local",
+    },
+  };
+
+  it("shows real title and artist from song", () => {
+    const orc = makeStubOrchestrator(playingState);
+    render(<HomeView onOpenSettings={() => {}} orchestrator={orc} />);
     expect(screen.getByText(/Nuvole Bianche/)).toBeInTheDocument();
     expect(screen.getByText(/Ludovico Einaudi/)).toBeInTheDocument();
+  });
+
+  it("shows real rationale in small note", () => {
+    const orc = makeStubOrchestrator(playingState);
+    render(<HomeView onOpenSettings={() => {}} orchestrator={orc} />);
+    expect(screen.getByTestId("small-note")).toHaveTextContent("舒缓的旋律，陪你慢下来");
+  });
+
+  it("renders emotion light band with PAD samples", () => {
+    const orc = makeStubOrchestrator(playingState);
+    render(<HomeView onOpenSettings={() => {}} orchestrator={orc} />);
+    expect(screen.getByTestId("emotion-light-band")).toBeInTheDocument();
+  });
+});
+
+describe("HomeView — error state", () => {
+  it("shows error message in small note", () => {
+    const orc = makeStubOrchestrator({
+      kind: "error",
+      message: "library is empty; add music in Settings",
+    });
+    render(<HomeView onOpenSettings={() => {}} orchestrator={orc} />);
+    expect(screen.getByTestId("small-note")).toHaveTextContent(
+      "library is empty; add music in Settings",
+    );
   });
 });
