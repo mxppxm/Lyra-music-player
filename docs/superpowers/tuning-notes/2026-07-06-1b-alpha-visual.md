@@ -29,26 +29,15 @@ pnpm tauri dev
 
 ## Observed deltas (fill during smoke)
 
-For each mismatch, write ONE sentence: what you saw vs what the spec said.
-
-1.
-2.
-3.
-4.
-5.
-6.
+_(User elected to proceed without filing deltas — Sprint 1b-β planning begins on the α head. Any visual issues discovered during β can be logged here retroactively.)_
 
 ## Screenshot
 
-(paste path or attach after `Cmd+Shift+4` capture)
-
-`docs/superpowers/tuning-notes/2026-07-06-1b-alpha-visual.png`
+_(deferred)_
 
 ## Recommendation
 
-- If < 3 deltas → proceed to Sprint 1b-β planning
-- If 3-6 deltas → one "α polish" mini-sprint before β
-- If > 6 deltas → revisit `docs/superpowers/specs/2026-07-06-v0.1-home-ui-design.md`
+**Proceed to Sprint 1b-β** — user green-light after α gate.
 
 ## Notes
 
