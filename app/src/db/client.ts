@@ -9,3 +9,7 @@ export async function getDb(): Promise<Database> {
   _db = await Database.load(DB_URL);
   return _db;
 }
+
+export function invalidateDb(): void {
+  _db = null;
+}
