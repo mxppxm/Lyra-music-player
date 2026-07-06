@@ -1,0 +1,73 @@
+/* home.css — design tokens per docs/superpowers/specs/2026-07-06-v0.1-home-ui-design.md */
+
+@import "@fontsource/lora/400-italic.css";
+
+:root {
+  /* Sizes */
+  --lyra-cover-size: 400px;
+  --lyra-cover-radius: 12px;
+  --lyra-cover-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --lyra-band-width: 400px;
+  --lyra-band-height: 32px;
+
+  /* Typography */
+  --lyra-song-font-size: 16px;
+  --lyra-note-font-size: 15px;
+  --lyra-song-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --lyra-note-family: "Lora", Georgia, "Times New Roman", serif;
+
+  /* Input */
+  --lyra-input-height: 44px;
+  --lyra-input-radius: 22px;
+  --lyra-input-max-width: calc(100vw - 80px);
+
+  /* Colors (light-mode; dark deep-night overrides added in a future ticket) */
+  --lyra-color-song-info: rgba(0, 0, 0, 0.65);
+  --lyra-color-small-note: rgba(0, 0, 0, 0.55);
+  --lyra-color-placeholder: rgba(0, 0, 0, 0.35);
+  --lyra-color-input-bg: rgba(255, 255, 255, 0.6);
+  --lyra-color-input-focus-underline: rgba(0, 0, 0, 0.15);
+
+  /* Rhythm */
+  --lyra-viewport-padding: 40px;
+  --lyra-space-cover-to-band: 24px;
+  --lyra-space-band-to-song: 20px;
+  --lyra-space-song-to-note: 12px;
+  --lyra-space-trace-to-input: 32px;
+  --lyra-trace-item-size: 12px;
+  --lyra-trace-item-gap: 10px;
+  --lyra-trace-count: 5;
+  --lyra-trace-distance-from-input: 16px;
+
+  /* Motion */
+  --lyra-transition-ambient:
+    background-color 4s cubic-bezier(0.4, 0, 0.2, 1);
+  --lyra-transition-fade:
+    opacity 600ms cubic-bezier(0.4, 0, 0.2, 1);
+  --lyra-transition-note-height:
+    max-height 300ms ease-out;
+}
+
+/* Global reset for the home surface */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  overflow: hidden;
+  font-family: var(--lyra-song-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button {
+  font: inherit;
+}
