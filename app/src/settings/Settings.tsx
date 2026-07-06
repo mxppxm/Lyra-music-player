@@ -9,6 +9,7 @@ export type SettingsProps = {
 export function Settings({ open, onClose }: SettingsProps) {
   const [anthropic, setAnthropic] = useState("");
   const [deepseek, setDeepseek] = useState("");
+  const [zhipu, setZhipu] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -16,13 +17,15 @@ export function Settings({ open, onClose }: SettingsProps) {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d] = await Promise.all([
+      const [a, d, z] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
+        getSecret(SECRET_KEYS.zhipuApiKey),
       ]);
       if (cancelled) return;
       setAnthropic(a ?? "");
       setDeepseek(d ?? "");
+      setZhipu(z ?? "");
       setLoaded(true);
     })();
     return () => {
@@ -37,6 +40,7 @@ export function Settings({ open, onClose }: SettingsProps) {
     try {
       await setSecret(SECRET_KEYS.anthropicApiKey, anthropic);
       await setSecret(SECRET_KEYS.deepseekApiKey, deepseek);
+      await setSecret(SECRET_KEYS.zhipuApiKey, zhipu);
       onClose();
     } finally {
       setSaving(false);
@@ -61,6 +65,15 @@ export function Settings({ open, onClose }: SettingsProps) {
           type="password"
           value={deepseek}
           onChange={(e) => setDeepseek(e.target.value)}
+          disabled={!loaded}
+        />
+      </label>
+      <label>
+        Zhipu API Key
+        <input
+          type="password"
+          value={zhipu}
+          onChange={(e) => setZhipu(e.target.value)}
           disabled={!loaded}
         />
       </label>

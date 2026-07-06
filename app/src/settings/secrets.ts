@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export const SECRET_KEYS = {
   anthropicApiKey: "provider.anthropic.apiKey",
   deepseekApiKey: "provider.deepseek.apiKey",
+  zhipuApiKey: "provider.zhipu.apiKey",
 } as const;
 
 export async function setSecret(key: string, value: string): Promise<void> {

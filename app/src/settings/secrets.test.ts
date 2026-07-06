@@ -32,8 +32,9 @@ describe("settings/secrets", () => {
     expect(invokeMock).toHaveBeenCalledWith("secret_delete", { key: "k" });
   });
 
-  it("exports SECRET_KEYS with anthropic/deepseek entries", () => {
+  it("exports SECRET_KEYS with anthropic/deepseek/zhipu entries", () => {
     expect(SECRET_KEYS.anthropicApiKey).toBe("provider.anthropic.apiKey");
     expect(SECRET_KEYS.deepseekApiKey).toBe("provider.deepseek.apiKey");
+    expect(SECRET_KEYS.zhipuApiKey).toBe("provider.zhipu.apiKey");
   });
 });

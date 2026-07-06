@@ -2,6 +2,7 @@ import type { ProviderId } from "../types";
 import { getSecret, SECRET_KEYS } from "../settings/secrets";
 import { AnthropicProvider } from "./anthropic";
 import { DeepSeekProvider } from "./deepseek";
+import { ZhipuProvider } from "./zhipu";
 import { registry } from "./registry";
 
 export type SkipReason = "no-key" | "keychain-error";
@@ -27,6 +28,11 @@ const SPECS: ProviderSpec[] = [
     id: "deepseek",
     keyName: SECRET_KEYS.deepseekApiKey,
     build: (apiKey) => registry.register(new DeepSeekProvider({ apiKey })),
+  },
+  {
+    id: "zhipu",
+    keyName: SECRET_KEYS.zhipuApiKey,
+    build: (apiKey) => registry.register(new ZhipuProvider({ apiKey })),
   },
 ];
 

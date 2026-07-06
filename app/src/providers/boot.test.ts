@@ -6,6 +6,7 @@ vi.mock("../settings/secrets", () => ({
   SECRET_KEYS: {
     anthropicApiKey: "provider.anthropic.apiKey",
     deepseekApiKey: "provider.deepseek.apiKey",
+    zhipuApiKey: "provider.zhipu.apiKey",
   },
   getSecret: (...args: unknown[]) => getSecretMock(...args),
 }));
@@ -24,7 +25,7 @@ beforeEach(() => {
 });
 
 describe("bootProviders", () => {
-  it("registers anthropic when only its key is present; skips deepseek as no-key", async () => {
+  it("registers only anthropic when only its key is present", async () => {
     getSecretMock.mockImplementation((key: string) =>
       key === "provider.anthropic.apiKey"
         ? Promise.resolve("sk-ant-123")
@@ -34,12 +35,15 @@ describe("bootProviders", () => {
     const report = await bootProviders();
 
     expect(report.registered).toEqual(["anthropic"]);
-    expect(report.skipped).toEqual([{ id: "deepseek", reason: "no-key" }]);
+    expect(report.skipped).toEqual([
+      { id: "deepseek", reason: "no-key" },
+      { id: "zhipu", reason: "no-key" },
+    ]);
     expect(registerMock).toHaveBeenCalledOnce();
     expect(registerMock.mock.calls[0][0].id).toBe("anthropic");
   });
 
-  it("registers deepseek when only its key is present; skips anthropic as no-key", async () => {
+  it("registers only deepseek when only its key is present", async () => {
     getSecretMock.mockImplementation((key: string) =>
       key === "provider.deepseek.apiKey"
         ? Promise.resolve("ds-key-456")
@@ -49,26 +53,48 @@ describe("bootProviders", () => {
     const report = await bootProviders();
 
     expect(report.registered).toEqual(["deepseek"]);
-    expect(report.skipped).toEqual([{ id: "anthropic", reason: "no-key" }]);
+    expect(report.skipped).toEqual([
+      { id: "anthropic", reason: "no-key" },
+      { id: "zhipu", reason: "no-key" },
+    ]);
     expect(registerMock).toHaveBeenCalledOnce();
     expect(registerMock.mock.calls[0][0].id).toBe("deepseek");
   });
 
-  it("registers both providers when both keys are present", async () => {
+  it("registers only zhipu when only its key is present", async () => {
+    getSecretMock.mockImplementation((key: string) =>
+      key === "provider.zhipu.apiKey"
+        ? Promise.resolve("zp-key-789")
+        : Promise.resolve(null),
+    );
+
+    const report = await bootProviders();
+
+    expect(report.registered).toEqual(["zhipu"]);
+    expect(report.skipped).toEqual([
+      { id: "anthropic", reason: "no-key" },
+      { id: "deepseek", reason: "no-key" },
+    ]);
+    expect(registerMock).toHaveBeenCalledOnce();
+    expect(registerMock.mock.calls[0][0].id).toBe("zhipu");
+  });
+
+  it("registers all three providers when all keys are present", async () => {
     getSecretMock.mockImplementation((key: string) => {
       if (key === "provider.anthropic.apiKey") return Promise.resolve("sk-ant-abc");
       if (key === "provider.deepseek.apiKey") return Promise.resolve("ds-xyz");
+      if (key === "provider.zhipu.apiKey") return Promise.resolve("zp-abc");
       return Promise.resolve(null);
     });
 
     const report = await bootProviders();
 
-    expect(report.registered).toEqual(["anthropic", "deepseek"]);
+    expect(report.registered).toEqual(["anthropic", "deepseek", "zhipu"]);
     expect(report.skipped).toEqual([]);
-    expect(registerMock).toHaveBeenCalledTimes(2);
+    expect(registerMock).toHaveBeenCalledTimes(3);
   });
 
-  it("returns empty registered + both skipped as no-key when neither key exists", async () => {
+  it("returns empty registered + all skipped as no-key when no keys exist", async () => {
     getSecretMock.mockResolvedValue(null);
 
     const report = await bootProviders();
@@ -77,23 +103,26 @@ describe("bootProviders", () => {
     expect(report.skipped).toEqual([
       { id: "anthropic", reason: "no-key" },
       { id: "deepseek", reason: "no-key" },
+      { id: "zhipu", reason: "no-key" },
     ]);
     expect(registerMock).not.toHaveBeenCalled();
   });
 
-  it("reports keychain-error when getSecret rejects (distinguishable from no-key)", async () => {
+  it("reports keychain-error distinctly from no-key when getSecret rejects", async () => {
     getSecretMock.mockImplementation((key: string) => {
       if (key === "provider.anthropic.apiKey") {
         return Promise.reject(new Error("keychain locked"));
       }
-      return Promise.resolve("ds-xyz");
+      if (key === "provider.zhipu.apiKey") return Promise.resolve("zp");
+      return Promise.resolve(null);
     });
 
     const report = await bootProviders();
 
-    expect(report.registered).toEqual(["deepseek"]);
+    expect(report.registered).toEqual(["zhipu"]);
     expect(report.skipped).toEqual([
       { id: "anthropic", reason: "keychain-error" },
+      { id: "deepseek", reason: "no-key" },
     ]);
   });
 });

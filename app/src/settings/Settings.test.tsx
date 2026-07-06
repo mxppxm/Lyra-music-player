@@ -6,6 +6,7 @@ vi.mock("./secrets", () => ({
   SECRET_KEYS: {
     anthropicApiKey: "provider.anthropic.apiKey",
     deepseekApiKey: "provider.deepseek.apiKey",
+    zhipuApiKey: "provider.zhipu.apiKey",
   },
   setSecret: vi.fn(),
   getSecret: vi.fn(),
@@ -35,7 +36,7 @@ describe("Settings", () => {
     );
   });
 
-  it("saves both secrets on Save click and calls onClose", async () => {
+  it("saves all three secrets on Save click and calls onClose", async () => {
     (getSecret as any).mockResolvedValue(null);
     (setSecret as any).mockResolvedValue(undefined);
     const onClose = vi.fn();
@@ -43,14 +44,17 @@ describe("Settings", () => {
 
     const aInput = await screen.findByLabelText(/anthropic/i);
     const dInput = screen.getByLabelText(/deepseek/i);
+    const zInput = screen.getByLabelText(/zhipu/i);
     fireEvent.change(aInput, { target: { value: "sk-new-a" } });
     fireEvent.change(dInput, { target: { value: "sk-new-d" } });
+    fireEvent.change(zInput, { target: { value: "sk-new-z" } });
 
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
 
     await waitFor(() => {
       expect(setSecret).toHaveBeenCalledWith("provider.anthropic.apiKey", "sk-new-a");
       expect(setSecret).toHaveBeenCalledWith("provider.deepseek.apiKey", "sk-new-d");
+      expect(setSecret).toHaveBeenCalledWith("provider.zhipu.apiKey", "sk-new-z");
       expect(onClose).toHaveBeenCalled();
     });
   });
