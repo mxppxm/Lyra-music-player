@@ -89,6 +89,16 @@ async fn memory_file_write(app: tauri::AppHandle, content: String) -> Result<(),
     tokio::fs::write(&path, content).await.map_err(|e| e.to_string())
 }
 
+/// Returns true if `<app_data_dir>/PANIC` exists.
+/// When present, EngineerAgent.runDailyLoop() short-circuits immediately —
+/// no LLM call, no roadmap insertions.
+#[tauri::command]
+async fn check_panic_file(app: tauri::AppHandle) -> Result<bool, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let panic_path = dir.join("PANIC");
+    Ok(panic_path.exists())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -127,6 +137,7 @@ pub fn run() {
             app_data_dir,
             memory_file_read,
             memory_file_write,
+            check_panic_file,
             tray::tray_set_breathing,
         ])
         .run(tauri::generate_context!())
