@@ -149,78 +149,88 @@ export class Orchestrator {
     this.pendingEvents = [];
   }
 
-  async onUserInput(text: string): Promise<void> {
-    const { emotion: emotionAgent, companion, library, soulStore, turnRepo, audio } = this.deps;
+  /**
+   * Run a full turn given an already-analysed emotion + a user utterance +
+   * a modality. Shared between `onUserInput` (modality "text", with a fresh
+   * EmotionAgent analysis) and `autoAdvance` (modality "proactive-open",
+   * carrying the ended turn's emotion forward).
+   *
+   * Assumes `finalisePreviousTurn` has already been called by the caller.
+   * Does NOT emit `thinking` — the caller emits it (to preserve the correct
+   * `user_utterance` in the state).
+   */
+  private async runTurnWithEmotion(
+    emotion: import("../types").CurrentEmotion,
+    userUtterance: string,
+    modality: "text" | "voice" | "proactive-open",
+    pseudoTargetOverride?: string,
+  ): Promise<void> {
+    const { companion, library, soulStore, turnRepo, audio } = this.deps;
     const clock = this.deps.clock ?? Date.now;
     const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
+
+    const soul = await soulStore.load();
+
+    const pseudoTarget =
+      pseudoTargetOverride ??
+      `${userUtterance} ${emotion.labels.join(" ")}`.trim();
+    const candidates = await library.prefilter(pseudoTarget, emotion.pad, 30);
+    if (candidates.length === 0) {
+      this.emit({
+        kind: "error",
+        message: "library is empty; add music in Settings",
+      });
+      return;
+    }
+
+    const { livingPortrait, topFacts } = getMemoryContext();
+    const chosen = await companion.choose({
+      userUtterance,
+      currentEmotion: emotion,
+      soul,
+      candidates,
+      livingPortrait,
+      topFacts,
+    });
+    const song = candidates.find((c) => c.id === chosen.song_id)!;
+
+    const turn: DialogueTurn = {
+      id: idGen(),
+      timestamp: clock(),
+      current_emotion: emotion,
+      user_utterance: { modality, content: userUtterance },
+      agent_response: { song_id: chosen.song_id, rationale: chosen.rationale },
+      user_reaction: {
+        behavioral: {
+          listen_duration_ms: 0,
+          completed: false,
+          skipped: false,
+          repeated: 0,
+          volume_delta: 0,
+        },
+        silence_positive: false,
+      },
+      emotion_delta: ZERO_PAD,
+    };
+
+    await turnRepo.insertTurn(turn);
+    await audio.playFile(song.path);
+
+    this.currentTurn = turn;
+    this.currentSong = song;
+    this.pendingEvents = [];
+    this.emit({ kind: "playing", turn, song });
+  }
+
+  async onUserInput(text: string): Promise<void> {
+    const emotionAgent = this.deps.emotion;
 
     this.emit({ kind: "thinking", user_utterance: text });
 
     try {
-      // Step 2: analyse emotion for new turn
       const emotion = await emotionAgent.analyze({ userUtterance: text });
-
-      // Step 1b: finalise previous turn (verbal attribution + soul update)
       await this.finalisePreviousTurn(text, emotion.pad);
-
-      // Step 3: load soul (may reflect updated dynamic_mood from finalisePreviousTurn)
-      const soul = await soulStore.load();
-
-      // Step 4: prefilter candidates
-      const pseudoTarget = `${text} ${emotion.labels.join(" ")}`;
-      const candidates = await library.prefilter(pseudoTarget, emotion.pad, 30);
-
-      // Step 5: guard empty library
-      if (candidates.length === 0) {
-        this.emit({ kind: "error", message: "library is empty; add music in Settings" });
-        return;
-      }
-
-      // Step 6: companion chooses song (with boot-time memory context)
-      const { livingPortrait, topFacts } = getMemoryContext();
-      const chosen = await companion.choose({
-        userUtterance: text,
-        currentEmotion: emotion,
-        soul,
-        candidates,
-        livingPortrait,
-        topFacts,
-      });
-
-      // Step 7: resolve song from candidates
-      const song = candidates.find((c) => c.id === chosen.song_id)!;
-
-      // Step 8: build DialogueTurn
-      const turn: DialogueTurn = {
-        id: idGen(),
-        timestamp: clock(),
-        current_emotion: emotion,
-        user_utterance: { modality: "text", content: text },
-        agent_response: { song_id: chosen.song_id, rationale: chosen.rationale },
-        user_reaction: {
-          behavioral: {
-            listen_duration_ms: 0,
-            completed: false,
-            skipped: false,
-            repeated: 0,
-            volume_delta: 0,
-          },
-          silence_positive: false,
-        },
-        emotion_delta: ZERO_PAD,
-      };
-
-      // Step 9: persist
-      await turnRepo.insertTurn(turn);
-
-      // Step 10: play
-      await audio.playFile(song.path);
-
-      // Step 11: emit playing; store as currentTurn for reaction capture
-      this.currentTurn = turn;
-      this.currentSong = song;
-      this.pendingEvents = [];
-      this.emit({ kind: "playing", turn, song });
+      await this.runTurnWithEmotion(emotion, text, "text");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[lyra] orchestrator error:", err);
@@ -244,12 +254,47 @@ export class Orchestrator {
     }
   }
 
-  /** Song played to completion. Fold complete event into current turn. */
+  /**
+   * Song played to completion. Fold the `complete` event into the current
+   * turn, finalise it (soul mood update, Salient Moment detection), then
+   * auto-advance to the next song using the ended turn's emotion as the
+   * baseline. "Prediction" in v0.1 is honestly "carry the previous emotion
+   * forward" — soul.dynamic_mood has already been shifted by the delta.
+   *
+   * The user experience is: song ends → tiny "…" thinking state → new
+   * song plays. Nothing auto-advances if there's no `currentTurn` (i.e.,
+   * we're in idle/error state and the event arrived stale).
+   */
   async onSongComplete(): Promise<void> {
+    if (!this.currentTurn) return;
+
+    // Fold complete event into current turn's reaction
     this.pendingEvents.push({ kind: "complete" });
-    if (this.currentTurn) {
-      this.currentTurn = foldReactionEvents(this.currentTurn, this.pendingEvents);
-      this.pendingEvents = [];
+    this.currentTurn = foldReactionEvents(this.currentTurn, this.pendingEvents);
+    this.pendingEvents = [];
+
+    // Remember what emotion we were on so the next turn can continue from it
+    const endedEmotion = this.currentTurn.current_emotion;
+
+    // Emit thinking so UI shows "…" while we pick the next song
+    this.emit({ kind: "thinking", user_utterance: "" });
+
+    try {
+      // Finalise: no verbal (user is silent), no emotion shift (no new signal)
+      await this.finalisePreviousTurn(undefined, endedEmotion.pad);
+
+      // Continue the flow: use the ended emotion, empty utterance, proactive-open modality
+      await this.runTurnWithEmotion(
+        endedEmotion,
+        "",
+        "proactive-open",
+        // For pseudo-target we lean on the ended emotion's labels + a hint
+        `${endedEmotion.labels.join(" ")} 延续`.trim(),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[lyra] auto-advance error:", err);
+      this.emit({ kind: "error", message: msg });
     }
   }
 }

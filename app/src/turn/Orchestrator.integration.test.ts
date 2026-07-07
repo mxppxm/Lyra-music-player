@@ -342,6 +342,7 @@ describe("Orchestrator integration smoke — 10 turns + reflectNow", () => {
       turnCounter.n = i;
       await orc.onUserInput(`turn ${i + 1}: 来一首歌`);
       // Simulate song completion on even turns to trigger silent-full-listen rule
+      // AND (post-audio-complete-event feature) auto-advance to a new turn.
       if (i % 2 === 0) {
         // Set listen progress to full duration so the rule fires
         const trackDuration = TRACKS[i % TRACKS.length].duration_ms ?? 240_000;
@@ -350,13 +351,26 @@ describe("Orchestrator integration smoke — 10 turns + reflectNow", () => {
       }
     }
 
+    // 10 user-initiated turns + 5 auto-advance turns (one per onSongComplete
+    // call at i=0,2,4,6,8) = 15 total.
     const turns = fakeDb.getRows("dialogue_turns");
-    expect(turns).toHaveLength(10);
+    expect(turns).toHaveLength(15);
     // Each row should have a non-null id
     for (const row of turns) {
       expect(typeof row.id).toBe("string");
       expect((row.id as string).startsWith("turn-")).toBe(true);
     }
+
+    // 10 turns should have modality "text" (user-initiated),
+    // 5 should have modality "proactive-open" (auto-advance).
+    const modalities = turns.map((r) => {
+      const uu = JSON.parse(r.user_utterance_json as string);
+      return uu.modality;
+    });
+    const textCount = modalities.filter((m) => m === "text").length;
+    const proactiveCount = modalities.filter((m) => m === "proactive-open").length;
+    expect(textCount).toBe(10);
+    expect(proactiveCount).toBe(5);
   });
 
   it("inserts at least 1 SalientMoment into shared_memory when detectSalientMoment fires", async () => {
