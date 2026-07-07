@@ -1,0 +1,120 @@
+import { describe, it, expect } from "vitest";
+import { PerceptionAgent } from "./PerceptionAgent";
+import type { BehavioralFeatures } from "./aggregator";
+
+const WIN = 5 * 60 * 1000;
+
+function base(): BehavioralFeatures {
+  return {
+    windowMs: WIN,
+    activeMs: WIN * 0.3,
+    submits: 1,
+    avgSubmitGapMs: NaN,
+    totalChars: 20,
+    skips: 0,
+    completions: 0,
+    skipRatio: 0,
+    proactiveDismisses: 0,
+    isBlurred: false,
+  };
+}
+
+describe("PerceptionAgent.infer", () => {
+  const agent = new PerceptionAgent();
+
+  it("returns no-signal bias when no rule fires", () => {
+    const bias = agent.infer(base());
+    expect(bias.confidence).toBe(0);
+    expect(bias.reason).toBe("no signal");
+    expect(bias.pad_bias).toEqual({ p: 0, a: 0, d: 0 });
+  });
+
+  it("Rule 1: high skip ratio fires when skipRatio >= 0.6 and N >= 3", () => {
+    const f: BehavioralFeatures = {
+      ...base(),
+      skips: 3,
+      completions: 1,
+      skipRatio: 3 / 4,
+    };
+    const bias = agent.infer(f);
+    expect(bias.reason).toContain("high skip ratio");
+    expect(bias.pad_bias.p).toBeCloseTo(-0.2, 5);
+    expect(bias.pad_bias.a).toBeCloseTo(0.1, 5);
+    expect(bias.confidence).toBe(0.5);
+  });
+
+  it("Rule 2: long idle fires when isBlurred and activeMs/windowMs < 0.05", () => {
+    const f: BehavioralFeatures = {
+      ...base(),
+      isBlurred: true,
+      activeMs: WIN * 0.02,
+    };
+    const bias = agent.infer(f);
+    expect(bias.reason).toContain("extended blur/idle");
+    expect(bias.pad_bias.a).toBeCloseTo(-0.3, 5);
+    expect(bias.confidence).toBe(0.4);
+  });
+
+  it("Rule 3: rapid submits fires when avgSubmitGapMs < 15000 and submits >= 3", () => {
+    const f: BehavioralFeatures = {
+      ...base(),
+      submits: 4,
+      avgSubmitGapMs: 8_000,
+    };
+    const bias = agent.infer(f);
+    expect(bias.reason).toContain("rapid succession");
+    expect(bias.pad_bias.a).toBeCloseTo(0.2, 5);
+    expect(bias.pad_bias.d).toBeCloseTo(0.1, 5);
+    expect(bias.confidence).toBe(0.5);
+  });
+
+  it("Rule 4: proactive dismisses fires when proactiveDismisses >= 2", () => {
+    const f: BehavioralFeatures = {
+      ...base(),
+      proactiveDismisses: 2,
+    };
+    const bias = agent.infer(f);
+    expect(bias.reason).toContain("user dismissing");
+    expect(bias.pad_bias.p).toBeCloseTo(-0.15, 5);
+    expect(bias.confidence).toBe(0.6);
+  });
+
+  it("Rule 5: high completion fires when completions >= 3 and skips = 0", () => {
+    const f: BehavioralFeatures = {
+      ...base(),
+      completions: 3,
+      skips: 0,
+      skipRatio: 0,
+    };
+    const bias = agent.infer(f);
+    expect(bias.reason).toContain("sustained listens");
+    expect(bias.pad_bias.p).toBeCloseTo(0.15, 5);
+    expect(bias.confidence).toBe(0.5);
+  });
+
+  it("multiple rules combine via confidence-weighted average; confidence capped at 1", () => {
+    // Fire Rule 3 (rapid submits, conf=0.5) + Rule 4 (proactive dismisses, conf=0.6)
+    const f: BehavioralFeatures = {
+      ...base(),
+      submits: 4,
+      avgSubmitGapMs: 5_000,
+      proactiveDismisses: 3,
+    };
+    const bias = agent.infer(f);
+
+    // confidence = min(0.5 + 0.6, 1.0) = 1.0
+    expect(bias.confidence).toBe(1.0);
+
+    // reason concatenates both
+    expect(bias.reason).toContain("rapid succession");
+    expect(bias.reason).toContain("user dismissing");
+
+    // weighted-avg pad_bias:
+    // p: (0*0.5 + -0.15*0.6) / 1.1 = -0.09/1.1
+    // a: (0.2*0.5 + 0*0.6) / 1.1 = 0.1/1.1
+    // d: (0.1*0.5 + 0*0.6) / 1.1 = 0.05/1.1
+    expect(bias.pad_bias.p).toBeCloseTo(-0.09 / 1.1, 5);
+    expect(bias.pad_bias.a).toBeCloseTo(0.1 / 1.1, 5);
+    expect(bias.pad_bias.d).toBeCloseTo(0.05 / 1.1, 5);
+  });
+});
