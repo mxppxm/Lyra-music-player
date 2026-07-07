@@ -102,6 +102,7 @@ export class EmotionAgent {
     const res = await this.provider.chat(messages, {
       max_tokens: 400,
       temperature: 0.3,
+      agent: "emotion",
     });
     const obj = extractJson(res.content);
     return validateEmotion(obj);

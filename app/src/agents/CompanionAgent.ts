@@ -127,7 +127,7 @@ export class CompanionAgent {
       { role: "user", content: buildBrief(input) },
     ];
 
-    const res = await this.provider.chat(messages, { max_tokens: 1024, temperature: 0.7 });
+    const res = await this.provider.chat(messages, { max_tokens: 1024, temperature: 0.7, agent: "companion" });
     let picked = parsePartial(extractJson(res.content));
 
     // Retry once if the LLM picked a song_id outside the candidate set.
@@ -143,6 +143,7 @@ export class CompanionAgent {
       const retryRes = await this.provider.chat(retryMessages, {
         max_tokens: 512,
         temperature: 0.3,
+        agent: "companion",
       });
       picked = parsePartial(extractJson(retryRes.content));
     }

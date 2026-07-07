@@ -135,6 +135,12 @@ pub fn run() {
                             sql: include_str!("../migrations/004_lyrics_embeddings.sql"),
                             kind: MigrationKind::Up,
                         },
+                        Migration {
+                            version: 5,
+                            description: "llm usage log",
+                            sql: include_str!("../migrations/005_llm_usage.sql"),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

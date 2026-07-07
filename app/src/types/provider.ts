@@ -10,10 +10,17 @@ export type ChatOptions = {
   model?: string;
   max_tokens?: number;
   temperature?: number;
+  // Attribution for the LLM-usage log. Providers ignore this; the usage-logging
+  // decorator reads it to tag which agent originated the call.
+  agent?: string;
 };
 
 export type ChatResponse = {
   content: string;
+  // Model actually used for the call (provider-side default or opts.model).
+  // Populated by providers so the usage log records the exact model without
+  // having to guess from opts.
+  model?: string;
   usage?: {
     input_tokens: number;
     output_tokens: number;

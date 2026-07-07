@@ -52,6 +52,6 @@ export class DeepSeekProvider implements ModelProvider {
         }
       : undefined;
 
-    return { content, usage, raw: data };
+    return { content, model: opts?.model ?? this.defaultModel, usage, raw: data };
   }
 }

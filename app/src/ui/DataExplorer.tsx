@@ -18,6 +18,11 @@ import * as roadmapRepo from "../db/repo/roadmapRepo";
 import type { RoadmapItem } from "../engineer/types";
 import * as featureRequestRepo from "../db/repo/featureRequestRepo";
 import type { FeatureRequest } from "../engineer/types";
+import * as llmUsageRepo from "../db/repo/llmUsageRepo";
+import type {
+  LlmUsageEntry,
+  UsageAggregate,
+} from "../db/repo/llmUsageRepo";
 import { readMemoryFile } from "../memory/fileIO";
 
 type TabId =
@@ -29,6 +34,7 @@ type TabId =
   | "roadmap"
   | "features_req"
   | "engineer"
+  | "llm_usage"
   | "memory_md";
 
 const TABS: { id: TabId; label: string }[] = [
@@ -40,6 +46,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "roadmap", label: "Roadmap" },
   { id: "features_req", label: "功能请求" },
   { id: "engineer", label: "工程师审计" },
+  { id: "llm_usage", label: "LLM 用量" },
   { id: "memory_md", label: "memory.md" },
 ];
 
@@ -184,6 +191,9 @@ export function DataExplorer({ open, onClose }: DataExplorerProps) {
         )}
         {tab === "engineer" && (
           <EngineerAuditPanel expandedId={expandedRowId} onToggle={toggleRow} />
+        )}
+        {tab === "llm_usage" && (
+          <LlmUsagePanel expandedId={expandedRowId} onToggle={toggleRow} />
         )}
         {tab === "memory_md" && <MemoryMdPanel />}
       </div>
@@ -549,6 +559,133 @@ function EngineerAuditPanel({ expandedId, onToggle }: PanelProps) {
           }}
         />
       ))}
+    </>
+  );
+}
+
+function LlmUsagePanel({ expandedId, onToggle }: PanelProps) {
+  const [rows, setRows] = useState<LlmUsageEntry[] | null>(null);
+  const [agg, setAgg] = useState<UsageAggregate[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const [recent, aggregate] = await Promise.all([
+          llmUsageRepo.listRecent(200),
+          llmUsageRepo.aggregateByModel(),
+        ]);
+        setRows(recent);
+        setAgg(aggregate);
+      } catch {
+        setRows([]);
+        setAgg([]);
+      }
+    })();
+  }, []);
+  if (rows === null) return <Empty label="加载中…" />;
+
+  const totalIn = agg.reduce((s, a) => s + (a.input_tokens ?? 0), 0);
+  const totalOut = agg.reduce((s, a) => s + (a.output_tokens ?? 0), 0);
+  const totalCalls = agg.reduce((s, a) => s + (a.calls ?? 0), 0);
+
+  return (
+    <>
+      {agg.length === 0 ? (
+        <Empty label="还没有 LLM 调用记录 — 触发一次对话或 Reflect 后再来看" />
+      ) : (
+        <div style={{ marginBottom: "1.25rem" }}>
+          <p style={{ opacity: 0.6, marginBottom: "0.5rem" }}>
+            总计：{totalCalls} 次调用 · 输入 {totalIn.toLocaleString()} tokens · 输出{" "}
+            {totalOut.toLocaleString()} tokens
+          </p>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              fontSize: "0.8rem",
+            }}
+          >
+            <thead>
+              <tr style={{ opacity: 0.6, textAlign: "left" }}>
+                <th style={{ padding: "0.4rem 0.5rem" }}>Provider</th>
+                <th style={{ padding: "0.4rem 0.5rem" }}>Model</th>
+                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
+                  Calls
+                </th>
+                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
+                  Input
+                </th>
+                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
+                  Output
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {agg.map((a) => (
+                <tr
+                  key={`${a.provider}::${a.model}`}
+                  style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+                >
+                  <td style={{ padding: "0.4rem 0.5rem" }}>{a.provider}</td>
+                  <td style={{ padding: "0.4rem 0.5rem" }}>{a.model}</td>
+                  <td
+                    style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}
+                  >
+                    {a.calls}
+                  </td>
+                  <td
+                    style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}
+                  >
+                    {(a.input_tokens ?? 0).toLocaleString()}
+                  </td>
+                  <td
+                    style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}
+                  >
+                    {(a.output_tokens ?? 0).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <>
+          <p style={{ opacity: 0.6, marginBottom: "0.5rem" }}>
+            最近 {rows.length} 次调用
+          </p>
+          {rows.map((r) => {
+            const rowId = `llm-${r.id}`;
+            return (
+              <RowShell
+                key={rowId}
+                id={rowId}
+                expanded={expandedId === rowId}
+                onToggle={onToggle}
+                summary={
+                  <div style={{ display: "flex", gap: "0.75rem" }}>
+                    <span style={{ opacity: 0.5, minWidth: 160 }}>
+                      {formatTs(r.ts)}
+                    </span>
+                    <span style={{ opacity: 0.7, minWidth: 90 }}>
+                      {r.provider}
+                    </span>
+                    <span style={{ opacity: 0.7, minWidth: 80 }}>
+                      {r.agent ?? "—"}
+                    </span>
+                    <span style={{ flex: 1 }}>{r.model}</span>
+                    <span style={{ opacity: 0.6 }}>
+                      in {r.input_tokens.toLocaleString()} · out{" "}
+                      {r.output_tokens.toLocaleString()}
+                    </span>
+                  </div>
+                }
+                detail={r}
+              />
+            );
+          })}
+        </>
+      )}
     </>
   );
 }

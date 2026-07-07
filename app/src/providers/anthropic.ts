@@ -59,6 +59,7 @@ export class AnthropicProvider implements ModelProvider {
 
     return {
       content,
+      model: opts?.model ?? this.defaultModel,
       usage: data.usage,
       raw: data,
     };

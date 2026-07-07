@@ -198,6 +198,7 @@ export class ReflectAgent {
     const res = await this.provider.chat(messages, {
       max_tokens: 4096,
       temperature: 0.5,
+      agent: "reflect",
     });
     const obj = extractJson(res.content);
     return validateResult(obj);

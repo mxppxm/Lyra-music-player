@@ -4,6 +4,7 @@ import { AnthropicProvider } from "./anthropic";
 import { DeepSeekProvider } from "./deepseek";
 import { ZhipuProvider } from "./zhipu";
 import { registry } from "./registry";
+import { withUsageLogging } from "./usageLogging";
 
 export type SkipReason = "no-key" | "keychain-error";
 
@@ -22,17 +23,20 @@ const SPECS: ProviderSpec[] = [
   {
     id: "anthropic",
     keyName: SECRET_KEYS.anthropicApiKey,
-    build: (apiKey) => registry.register(new AnthropicProvider({ apiKey })),
+    build: (apiKey) =>
+      registry.register(withUsageLogging(new AnthropicProvider({ apiKey }))),
   },
   {
     id: "deepseek",
     keyName: SECRET_KEYS.deepseekApiKey,
-    build: (apiKey) => registry.register(new DeepSeekProvider({ apiKey })),
+    build: (apiKey) =>
+      registry.register(withUsageLogging(new DeepSeekProvider({ apiKey }))),
   },
   {
     id: "zhipu",
     keyName: SECRET_KEYS.zhipuApiKey,
-    build: (apiKey) => registry.register(new ZhipuProvider({ apiKey })),
+    build: (apiKey) =>
+      registry.register(withUsageLogging(new ZhipuProvider({ apiKey }))),
   },
 ];
 
