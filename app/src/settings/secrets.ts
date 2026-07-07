@@ -5,6 +5,8 @@ export const SECRET_KEYS = {
   deepseekApiKey: "provider.deepseek.apiKey",
   zhipuApiKey: "provider.zhipu.apiKey",
   libraryRootPath: "library.rootPath",
+  dreamDailyTime: "dream.dailyTime",
+  dreamIdleMinutes: "dream.idleMinutes",
 } as const;
 
 export async function setSecret(key: string, value: string): Promise<void> {

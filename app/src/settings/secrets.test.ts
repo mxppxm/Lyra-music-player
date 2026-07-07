@@ -38,4 +38,9 @@ describe("settings/secrets", () => {
     expect(SECRET_KEYS.zhipuApiKey).toBe("provider.zhipu.apiKey");
     expect(SECRET_KEYS.libraryRootPath).toBe("library.rootPath");
   });
+
+  it("exports dreamDailyTime and dreamIdleMinutes keys", () => {
+    expect(SECRET_KEYS.dreamDailyTime).toBe("dream.dailyTime");
+    expect(SECRET_KEYS.dreamIdleMinutes).toBe("dream.idleMinutes");
+  });
 });

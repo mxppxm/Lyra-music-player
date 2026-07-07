@@ -8,6 +8,8 @@ vi.mock("./secrets", () => ({
     deepseekApiKey: "provider.deepseek.apiKey",
     zhipuApiKey: "provider.zhipu.apiKey",
     libraryRootPath: "library.rootPath",
+    dreamDailyTime: "dream.dailyTime",
+    dreamIdleMinutes: "dream.idleMinutes",
   },
   setSecret: vi.fn(),
   getSecret: vi.fn(),
@@ -140,6 +142,47 @@ describe("Settings", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/reflect failed: network error/i)).toBeInTheDocument();
+    });
+  });
+
+  it("loads stored dream daily time and idle threshold on open", async () => {
+    (getSecret as any).mockImplementation((k: string) => {
+      if (k === "dream.dailyTime") return Promise.resolve("04:00");
+      if (k === "dream.idleMinutes") return Promise.resolve("45");
+      return Promise.resolve(null);
+    });
+    render(<Settings open={true} onClose={() => {}} />);
+    await waitFor(() => {
+      expect(
+        (screen.getByLabelText(/daily dream time/i) as HTMLInputElement).value
+      ).toBe("04:00");
+      expect(
+        (screen.getByLabelText(/idle threshold/i) as HTMLInputElement).value
+      ).toBe("45");
+    });
+  });
+
+  it("saves dream settings on Save and calls onSchedulerUpdate", async () => {
+    (getSecret as any).mockResolvedValue(null);
+    (setSecret as any).mockResolvedValue(undefined);
+    const onSchedulerUpdate = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <Settings open={true} onClose={onClose} onSchedulerUpdate={onSchedulerUpdate} />
+    );
+
+    const dtInput = await screen.findByLabelText(/daily dream time/i);
+    const idleInput = screen.getByLabelText(/idle threshold/i);
+    fireEvent.change(dtInput, { target: { value: "02:30" } });
+    fireEvent.change(idleInput, { target: { value: "60" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(setSecret).toHaveBeenCalledWith("dream.dailyTime", "02:30");
+      expect(setSecret).toHaveBeenCalledWith("dream.idleMinutes", "60");
+      expect(onSchedulerUpdate).toHaveBeenCalledWith("02:30", 60);
+      expect(onClose).toHaveBeenCalled();
     });
   });
 });

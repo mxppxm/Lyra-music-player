@@ -6,13 +6,16 @@ import { reflectNow } from "../reflect/trigger";
 export type SettingsProps = {
   open: boolean;
   onClose: () => void;
+  onSchedulerUpdate?: (dailyTime: string, idleMinutes: number) => void;
 };
 
-export function Settings({ open, onClose }: SettingsProps) {
+export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [libraryPath, setLibraryPath] = useState("");
   const [anthropic, setAnthropic] = useState("");
   const [deepseek, setDeepseek] = useState("");
   const [zhipu, setZhipu] = useState("");
+  const [dreamDailyTime, setDreamDailyTime] = useState("03:14");
+  const [dreamIdleMinutes, setDreamIdleMinutes] = useState("30");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scanStatus, setScanStatus] = useState<string>("");
@@ -21,17 +24,21 @@ export function Settings({ open, onClose }: SettingsProps) {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d, z, lib] = await Promise.all([
+      const [a, d, z, lib, dt, dim] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
         getSecret(SECRET_KEYS.zhipuApiKey),
         getSecret(SECRET_KEYS.libraryRootPath),
+        getSecret(SECRET_KEYS.dreamDailyTime),
+        getSecret(SECRET_KEYS.dreamIdleMinutes),
       ]);
       if (cancelled) return;
       setAnthropic(a ?? "");
       setDeepseek(d ?? "");
       setZhipu(z ?? "");
       setLibraryPath(lib ?? "");
+      setDreamDailyTime(dt ?? "03:14");
+      setDreamIdleMinutes(dim ?? "30");
       setLoaded(true);
     })();
     return () => {
@@ -48,6 +55,8 @@ export function Settings({ open, onClose }: SettingsProps) {
       await setSecret(SECRET_KEYS.deepseekApiKey, deepseek);
       await setSecret(SECRET_KEYS.zhipuApiKey, zhipu);
       await setSecret(SECRET_KEYS.libraryRootPath, libraryPath);
+      await setSecret(SECRET_KEYS.dreamDailyTime, dreamDailyTime);
+      await setSecret(SECRET_KEYS.dreamIdleMinutes, dreamIdleMinutes);
       if (libraryPath) {
         setScanStatus("Scanning…");
         try {
@@ -57,6 +66,7 @@ export function Settings({ open, onClose }: SettingsProps) {
           setScanStatus(`Scan failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      onSchedulerUpdate?.(dreamDailyTime, Number(dreamIdleMinutes) || 0);
       onClose();
     } finally {
       setSaving(false);
@@ -117,6 +127,26 @@ export function Settings({ open, onClose }: SettingsProps) {
           type="password"
           value={zhipu}
           onChange={(e) => setZhipu(e.target.value)}
+          disabled={!loaded}
+        />
+      </label>
+      <label>
+        Daily dream time (HH:MM)
+        <input
+          type="text"
+          placeholder="03:14"
+          value={dreamDailyTime}
+          onChange={(e) => setDreamDailyTime(e.target.value)}
+          disabled={!loaded}
+        />
+      </label>
+      <label>
+        Idle threshold (minutes, 0 = off)
+        <input
+          type="number"
+          min="0"
+          value={dreamIdleMinutes}
+          onChange={(e) => setDreamIdleMinutes(e.target.value)}
           disabled={!loaded}
         />
       </label>

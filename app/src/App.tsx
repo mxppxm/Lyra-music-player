@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import "./App.css";
 import { Settings } from "./settings/Settings";
 import { HomeView } from "./home/HomeView";
@@ -11,6 +11,8 @@ import { readMemoryFile } from "./memory/fileIO";
 import { parseMemoryMd, EMPTY_MEMORY } from "./memory/parser";
 import { setMemoryContext } from "./memory/context";
 import { onSongComplete } from "./audio/player";
+import { DreamScheduler } from "./schedule/dreamScheduler";
+import { SECRET_KEYS, getSecret } from "./settings/secrets";
 
 async function bootMemory(): Promise<void> {
   try {
@@ -26,13 +28,47 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bootDone, setBootDone] = useState(false);
   const [reflecting, setReflecting] = useState(false);
+  const schedulerRef = useRef<DreamScheduler | null>(null);
 
   useEffect(() => {
     bootProviders()
       .catch(() => {})
       .then(() => bootMemory())
       .catch(() => {})
+      .then(async () => {
+        // Load scheduler config from keychain, fall back to defaults
+        const [dt, dim] = await Promise.all([
+          getSecret(SECRET_KEYS.dreamDailyTime).catch(() => null),
+          getSecret(SECRET_KEYS.dreamIdleMinutes).catch(() => null),
+        ]);
+        const dailyTimeHHMM = dt ?? "03:14";
+        const idleMinutes = dim !== null ? (Number(dim) || 0) : 30;
+        const sched = new DreamScheduler({
+          dailyTimeHHMM,
+          idleMinutes,
+          runReflect: () => reflectNow().then(() => undefined),
+        });
+        schedulerRef.current = sched;
+        sched.start();
+      })
+      .catch(() => {})
       .finally(() => setBootDone(true));
+
+    return () => {
+      schedulerRef.current?.stop();
+      schedulerRef.current = null;
+    };
+  }, []);
+
+  const handleSchedulerUpdate = useCallback((dailyTime: string, idleMinutes: number) => {
+    schedulerRef.current?.stop();
+    const sched = new DreamScheduler({
+      dailyTimeHHMM: dailyTime,
+      idleMinutes,
+      runReflect: () => reflectNow().then(() => undefined),
+    });
+    schedulerRef.current = sched;
+    sched.start();
   }, []);
 
   // Re-evaluate after bootProviders completes so the orchestrator sees registered providers
@@ -103,7 +139,7 @@ function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         orchestrator={orchestrator}
       />
-      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} onSchedulerUpdate={handleSchedulerUpdate} />
     </>
   );
 }
