@@ -24,6 +24,18 @@ export function EmotionLightBand({ samples }: EmotionLightBandProps) {
       }}
       xmlns="http://www.w3.org/2000/svg"
     >
+      {/* Subtle band-area backdrop so the element reads as "a place" even
+          when data is thin. Absent when empty samples fall back to hairline. */}
+      {drawn.length > 0 && (
+        <rect
+          x={0}
+          y={0}
+          width={WIDTH}
+          height={HEIGHT}
+          fill="rgba(0,0,0,0.04)"
+          rx={4}
+        />
+      )}
       {drawn.length === 0 ? (
         <line
           data-testid="emotion-band-hairline"
@@ -31,27 +43,33 @@ export function EmotionLightBand({ samples }: EmotionLightBandProps) {
           y1={MID}
           x2={WIDTH}
           y2={MID}
-          stroke="rgba(0,0,0,0.15)"
-          strokeWidth={1}
+          stroke="rgba(0,0,0,0.2)"
+          strokeWidth={1.5}
         />
       ) : (
         drawn.map((s, i) => {
           const { h, s: sat, l } = padHSL(s);
-          const color = `hsl(${h}, ${Math.max(0, Math.min(100, sat + 10))}%, ${l}%)`;
-          const halfBar = Math.max(2, Math.abs(s.p) * (HEIGHT / 2));
+          // Lower lightness so the color is legible on the light ambient bg,
+          // boost saturation for punch. Retain 40-72% lightness range.
+          const displayL = Math.max(40, Math.min(72, l * 0.72));
+          const displaySat = Math.max(30, Math.min(100, sat + 30));
+          const color = `hsl(${h}, ${displaySat}%, ${displayL}%)`;
+          const halfBar = Math.max(6, Math.abs(s.p) * (HEIGHT / 2 - 2));
           const y = s.p >= 0 ? MID - halfBar : MID;
           const barH = halfBar;
-          const stroke = 1 + Math.abs(s.a) * 2;
+          // Wider bars for readability — fill ~70% of the column, then modulate
+          // by arousal.
+          const barW = Math.max(4, columnW * 0.7 + Math.abs(s.a) * 2);
           return (
             <rect
               data-testid={`emotion-band-sample-${i}`}
               key={i}
-              x={i * columnW + columnW / 2 - stroke / 2}
+              x={i * columnW + columnW / 2 - barW / 2}
               y={y}
-              width={stroke}
+              width={barW}
               height={barH}
               fill={color}
-              rx={1}
+              rx={1.5}
             />
           );
         })
