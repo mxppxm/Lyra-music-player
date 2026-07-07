@@ -174,18 +174,17 @@ function ColdBootView({ onOpenSettings }: { onOpenSettings: () => void }) {
         </p>
         <p
           data-testid="cold-boot-hint"
+          onClick={onOpenSettings}
           style={{
             marginTop: "2rem",
             opacity: 0.5,
             fontSize: "0.85rem",
+            cursor: "pointer",
           }}
         >
           Lyra needs an API key to talk.{" "}
-          <span
-            style={{ textDecoration: "underline", cursor: "pointer" }}
-            onClick={onOpenSettings}
-          >
-            Cmd+, to open Settings.
+          <span style={{ textDecoration: "underline" }}>
+            Cmd+= to open Settings.
           </span>
         </p>
       </div>

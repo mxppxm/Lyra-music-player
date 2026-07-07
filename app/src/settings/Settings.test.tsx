@@ -18,14 +18,20 @@ vi.mock("../library/libraryScan", () => ({
   importLibrary: vi.fn(() => Promise.resolve(0)),
 }));
 
+vi.mock("../reflect/trigger", () => ({
+  reflectNow: vi.fn(),
+}));
+
 import { setSecret, getSecret } from "./secrets";
 import { importLibrary } from "../library/libraryScan";
+import { reflectNow } from "../reflect/trigger";
 
 beforeEach(() => {
   (setSecret as any).mockReset();
   (getSecret as any).mockReset();
   (importLibrary as any).mockReset();
   (importLibrary as any).mockResolvedValue(0);
+  (reflectNow as any).mockReset();
 });
 
 describe("Settings", () => {
@@ -105,5 +111,35 @@ describe("Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(onClose).toHaveBeenCalled();
     expect(setSecret).not.toHaveBeenCalled();
+  });
+
+  it("Reflect now button calls reflectNow and shows status message", async () => {
+    (getSecret as any).mockResolvedValue(null);
+    (reflectNow as any).mockResolvedValue({ appliedFacts: 3, dreamAdded: true });
+    render(<Settings open={true} onClose={() => {}} />);
+
+    // Wait for the component to load
+    await screen.findByLabelText(/anthropic/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /reflect now/i }));
+
+    await waitFor(() => {
+      expect(reflectNow).toHaveBeenCalledOnce();
+      expect(screen.getByText(/reflected — 3 fact updates \+ one dream/i)).toBeInTheDocument();
+    });
+  });
+
+  it("Reflect now button shows error message when reflectNow throws", async () => {
+    (getSecret as any).mockResolvedValue(null);
+    (reflectNow as any).mockRejectedValue(new Error("network error"));
+    render(<Settings open={true} onClose={() => {}} />);
+
+    await screen.findByLabelText(/anthropic/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /reflect now/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/reflect failed: network error/i)).toBeInTheDocument();
+    });
   });
 });

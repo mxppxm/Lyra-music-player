@@ -58,6 +58,25 @@ async fn app_data_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn memory_file_read(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let path = dir.join("memory.md");
+    match tokio::fs::read_to_string(&path).await {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn memory_file_write(app: tauri::AppHandle, content: String) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
+    let path = dir.join("memory.md");
+    tokio::fs::write(&path, content).await.map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -91,6 +110,8 @@ pub fn run() {
             secret_delete,
             library_scan,
             app_data_dir,
+            memory_file_read,
+            memory_file_write,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

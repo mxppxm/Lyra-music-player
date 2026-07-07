@@ -1,14 +1,19 @@
 export type KeyboardHandlers = {
   onTogglePlayback: () => void;
   onOpenSettings: () => void;
+  onReflectNow?: () => void;
 };
 
 export function isPlainSpace(e: KeyboardEvent): boolean {
   return e.key === " " && !e.metaKey && !e.ctrlKey && !e.altKey;
 }
 
-export function isMetaComma(e: KeyboardEvent): boolean {
-  return e.key === "," && (e.metaKey || e.ctrlKey);
+export function isMetaEqual(e: KeyboardEvent): boolean {
+  return e.key === "=" && (e.metaKey || e.ctrlKey);
+}
+
+export function isMetaShiftR(e: KeyboardEvent): boolean {
+  return (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "r" || e.key === "R");
 }
 
 function isEditingTarget(target: EventTarget | null): boolean {
@@ -23,9 +28,14 @@ function isEditingTarget(target: EventTarget | null): boolean {
 
 export function bindGlobalKeys(h: KeyboardHandlers): () => void {
   const handler = (e: KeyboardEvent) => {
-    if (isMetaComma(e)) {
+    if (isMetaEqual(e)) {
       e.preventDefault();
       h.onOpenSettings();
+      return;
+    }
+    if (isMetaShiftR(e)) {
+      e.preventDefault();
+      h.onReflectNow?.();
       return;
     }
     if (isPlainSpace(e)) {

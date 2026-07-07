@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SECRET_KEYS, setSecret, getSecret } from "./secrets";
 import { importLibrary } from "../library/libraryScan";
+import { reflectNow } from "../reflect/trigger";
 
 export type SettingsProps = {
   open: boolean;
@@ -62,6 +63,20 @@ export function Settings({ open, onClose }: SettingsProps) {
     }
   };
 
+  const onReflect = async () => {
+    setSaving(true);
+    try {
+      const { appliedFacts, dreamAdded } = await reflectNow();
+      setScanStatus(
+        `Reflected — ${appliedFacts} fact update${appliedFacts === 1 ? "" : "s"}${dreamAdded ? " + one dream" : ""}.`
+      );
+    } catch (err) {
+      setScanStatus(`Reflect failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div role="dialog" aria-label="Settings" className="settings-modal">
       <h2>Settings</h2>
@@ -105,6 +120,11 @@ export function Settings({ open, onClose }: SettingsProps) {
           disabled={!loaded}
         />
       </label>
+      <div className="settings-actions">
+        <button onClick={onReflect} disabled={saving || !loaded}>
+          Reflect now
+        </button>
+      </div>
       <div className="settings-actions">
         <button onClick={onClose} disabled={saving}>
           Cancel
