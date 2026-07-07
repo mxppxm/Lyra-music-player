@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -17,50 +17,63 @@ pub enum AudioError {
     Stream(String),
 }
 
+/// Owns the audio pipeline. `OutputStream` (the `!Send` cpal handle) lives
+/// forever on a dedicated audio thread; only the `Send + Sync`
+/// `OutputStreamHandle` crosses thread boundaries. This keeps the struct
+/// `Send + Sync` without any `unsafe`, and guarantees `OutputStream` drops on
+/// its own thread — safe on macOS, Windows (WASAPI), and Linux (ALSA/PipeWire)
+/// alike.
 pub struct AudioPlayer {
-    _stream: OutputStream,
     handle: OutputStreamHandle,
     sink: Arc<Mutex<Option<Sink>>>,
     // Incremented on every `play_file` and every `stop`. Watcher threads
     // read this to decide whether their "song finished" observation is
     // still relevant (i.e., the playback wasn't superseded by a new one).
     current_id: Arc<AtomicU64>,
+    // Signal the audio thread to drop the OutputStream and exit.
+    shutdown: Option<mpsc::Sender<()>>,
+    // Kept so Drop can join the worker before the AudioPlayer disappears.
+    worker: Option<thread::JoinHandle<()>>,
 }
-
-// SAFETY: Two paths must be justified independently.
-//
-// ACCESS PATH: All mutable state (`sink`) is protected by `Arc<Mutex<Option<Sink>>>`.
-// `_stream` and `handle` are written only in `new()` and never mutated again;
-// `handle` is `Clone`-shareable per the rodio API contract. No field is accessed
-// without going through the Mutex or an immutable borrow, so shared references
-// from multiple threads are sound.
-//
-// DROP PATH: `OutputStream` wraps a `cpal::Stream` whose `Drop` impl (on macOS)
-// calls CoreAudio's `AudioOutputUnitStop` + `AudioUnitUninitialize`.  Apple's
-// CoreAudio documentation states that both functions are safe to call from any
-// thread on macOS 10.14+, so dropping `AudioPlayer` from a non-audio thread is
-// correct on our target platform.  cpal's `!Send` marker is a conservative
-// cross-platform default, not a correctness requirement on macOS.
-//
-// PORTABILITY: On Windows (WASAPI) and Linux (ALSA/PipeWire) the drop-from-
-// non-audio-thread guarantee does not hold universally.  If this crate is ever
-// ported to those platforms, replace this pattern with a dedicated audio thread
-// that owns `OutputStream` for its entire lifetime and communicates via channels.
-//
-// TODO(v0.2): Migrate to a dedicated audio thread that holds `OutputStream`
-// forever (send commands via `mpsc`) to make the Send bound platform-agnostic.
-unsafe impl Send for AudioPlayer {}
-unsafe impl Sync for AudioPlayer {}
 
 impl AudioPlayer {
     pub fn new() -> Result<Self, AudioError> {
-        let (stream, handle) = OutputStream::try_default()
-            .map_err(|e| AudioError::Stream(e.to_string()))?;
+        let (init_tx, init_rx) =
+            mpsc::channel::<Result<OutputStreamHandle, String>>();
+        let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
+
+        let worker = thread::spawn(move || {
+            // Create the OutputStream on this thread. It never leaves.
+            let (stream, handle) = match OutputStream::try_default() {
+                Ok(pair) => pair,
+                Err(e) => {
+                    let _ = init_tx.send(Err(e.to_string()));
+                    return;
+                }
+            };
+            // Hand back the clone-able handle so the outer struct can build sinks.
+            if init_tx.send(Ok(handle)).is_err() {
+                // Receiver dropped — nothing more to do.
+                return;
+            }
+            drop(init_tx);
+            // Park until shutdown. OutputStream stays alive here, and
+            // its Drop runs on this thread when the block ends.
+            let _ = shutdown_rx.recv();
+            drop(stream);
+        });
+
+        let handle = init_rx
+            .recv()
+            .map_err(|e| AudioError::Stream(format!("audio worker init: {}", e)))?
+            .map_err(AudioError::Stream)?;
+
         Ok(Self {
-            _stream: stream,
             handle,
             sink: Arc::new(Mutex::new(None)),
             current_id: Arc::new(AtomicU64::new(0)),
+            shutdown: Some(shutdown_tx),
+            worker: Some(worker),
         })
     }
 
@@ -137,5 +150,26 @@ impl AudioPlayer {
     pub fn is_playing(&self) -> bool {
         let guard = self.sink.lock().unwrap();
         guard.as_ref().map_or(false, |s| !s.empty() && !s.is_paused())
+    }
+}
+
+impl Drop for AudioPlayer {
+    fn drop(&mut self) {
+        // Kill any live sink first so its Drop doesn't race with the audio
+        // thread's OutputStream teardown.
+        if let Ok(mut guard) = self.sink.lock() {
+            if let Some(sink) = guard.take() {
+                sink.stop();
+            }
+        }
+        // Signal the audio thread to exit, then wait for it. The shutdown
+        // channel dropping is also a valid signal in case send() fails.
+        if let Some(tx) = self.shutdown.take() {
+            let _ = tx.send(());
+            drop(tx);
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
