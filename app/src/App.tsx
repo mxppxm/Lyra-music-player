@@ -15,6 +15,7 @@ import { DreamScheduler } from "./schedule/dreamScheduler";
 import { SECRET_KEYS, getSecret } from "./settings/secrets";
 import { ProactiveEngine } from "./proactive/engine";
 import { createSulkStore } from "./proactive/sulkStore";
+import { readPersistedSulkUntil, persistSulkSnapshot } from "./proactive/sulkPersistence";
 import { morningRule, careRule, anniversaryRule, shareRule, rhythmRule } from "./proactive/rules";
 import type { PolitenessState } from "./proactive/types";
 import { bus as perceptionBus } from "./perception/events";
@@ -39,7 +40,13 @@ function App() {
   const [bootDone, setBootDone] = useState(false);
   const [reflecting, setReflecting] = useState(false);
   const schedulerRef = useRef<DreamScheduler | null>(null);
-  const sulkStoreRef = useRef(createSulkStore());
+  const sulkStoreRef = useRef(
+    createSulkStore({
+      onChange: (snap) => {
+        void persistSulkSnapshot(snap);
+      },
+    }),
+  );
   const politenessStateRef = useRef<PolitenessState>({
     todayProactiveCount: 0,
     todayKindCount: {},
@@ -55,6 +62,13 @@ function App() {
     bootProviders()
       .catch(() => {})
       .then(() => bootMemory())
+      .catch(() => {})
+      .then(async () => {
+        // Rehydrate sulk state from persisted SoulState so a 3-day sulk
+        // survives an app restart. Expired sulks are dropped by hydrate().
+        const persistedSulkMs = await readPersistedSulkUntil();
+        sulkStoreRef.current.hydrate({ sulkUntil: persistedSulkMs });
+      })
       .catch(() => {})
       .then(async () => {
         // Load scheduler config from keychain, fall back to defaults

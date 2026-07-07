@@ -144,4 +144,78 @@ describe("SulkStore", () => {
       expect(store.getConsecutiveDismisses()).toBe(0);
     });
   });
+
+  describe("persistence: snapshot / hydrate / onChange", () => {
+    it("snapshot returns the current sulkUntil", () => {
+      expect(store.snapshot().sulkUntil).toBeNull();
+      store.recordProactiveOutcome("morning", "dismissed");
+      store.recordProactiveOutcome("morning", "dismissed");
+      store.recordProactiveOutcome("morning", "dismissed");
+      expect(store.snapshot().sulkUntil).toBe(store.getSulkUntil());
+    });
+
+    it("hydrate restores a future sulkUntil", () => {
+      const future = Date.now() + 24 * 3600_000;
+      store.hydrate({ sulkUntil: future });
+      expect(store.getSulkUntil()).toBe(future);
+    });
+
+    it("hydrate ignores expired sulkUntil (defensive: never punish forever)", () => {
+      const past = Date.now() - 24 * 3600_000;
+      store.hydrate({ sulkUntil: past });
+      expect(store.getSulkUntil()).toBeNull();
+    });
+
+    it("hydrate with null clears sulkUntil", () => {
+      store.recordProactiveOutcome("morning", "dismissed");
+      store.recordProactiveOutcome("morning", "dismissed");
+      store.recordProactiveOutcome("morning", "dismissed");
+      store.hydrate({ sulkUntil: null });
+      expect(store.getSulkUntil()).toBeNull();
+    });
+
+    it("hydrate does NOT fire onChange (boot rehydration is invisible)", () => {
+      const changes: Array<number | null> = [];
+      const s = createSulkStore({
+        onChange: (snap) => changes.push(snap.sulkUntil),
+      });
+      s.hydrate({ sulkUntil: Date.now() + 24 * 3600_000 });
+      expect(changes).toEqual([]);
+    });
+
+    it("onChange fires when sulk is entered", () => {
+      const changes: Array<number | null> = [];
+      const s = createSulkStore({
+        onChange: (snap) => changes.push(snap.sulkUntil),
+      });
+      s.recordProactiveOutcome("morning", "dismissed");
+      s.recordProactiveOutcome("morning", "dismissed");
+      s.recordProactiveOutcome("morning", "dismissed");
+      expect(changes.length).toBe(1);
+      expect(changes[0]).not.toBeNull();
+    });
+
+    it("onChange fires when sulk is cleared", () => {
+      const changes: Array<number | null> = [];
+      const s = createSulkStore({
+        onChange: (snap) => changes.push(snap.sulkUntil),
+      });
+      s.recordProactiveOutcome("morning", "dismissed");
+      s.recordProactiveOutcome("morning", "dismissed");
+      s.recordProactiveOutcome("morning", "dismissed");
+      s.clearSulk();
+      expect(changes.length).toBe(2);
+      expect(changes[1]).toBeNull();
+    });
+
+    it("onChange does NOT fire when clearSulk is called on already-clear state", () => {
+      const changes: Array<number | null> = [];
+      const s = createSulkStore({
+        onChange: (snap) => changes.push(snap.sulkUntil),
+      });
+      s.clearSulk();
+      s.clearSulk();
+      expect(changes).toEqual([]);
+    });
+  });
 });
