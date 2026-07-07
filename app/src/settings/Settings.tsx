@@ -16,6 +16,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [zhipu, setZhipu] = useState("");
   const [dreamDailyTime, setDreamDailyTime] = useState("03:14");
   const [dreamIdleMinutes, setDreamIdleMinutes] = useState("30");
+  const [perceptionEnabled, setPerceptionEnabled] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scanStatus, setScanStatus] = useState<string>("");
@@ -24,13 +25,14 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d, z, lib, dt, dim] = await Promise.all([
+      const [a, d, z, lib, dt, dim, pe] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
         getSecret(SECRET_KEYS.zhipuApiKey),
         getSecret(SECRET_KEYS.libraryRootPath),
         getSecret(SECRET_KEYS.dreamDailyTime),
         getSecret(SECRET_KEYS.dreamIdleMinutes),
+        getSecret(SECRET_KEYS.perceptionEnabled),
       ]);
       if (cancelled) return;
       setAnthropic(a ?? "");
@@ -39,6 +41,8 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       setLibraryPath(lib ?? "");
       setDreamDailyTime(dt ?? "03:14");
       setDreamIdleMinutes(dim ?? "30");
+      // Default to enabled; only disable when explicitly stored as "false"
+      setPerceptionEnabled(pe !== "false");
       setLoaded(true);
     })();
     return () => {
@@ -57,6 +61,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.libraryRootPath, libraryPath);
       await setSecret(SECRET_KEYS.dreamDailyTime, dreamDailyTime);
       await setSecret(SECRET_KEYS.dreamIdleMinutes, dreamIdleMinutes);
+      await setSecret(SECRET_KEYS.perceptionEnabled, perceptionEnabled ? "true" : "false");
       if (libraryPath) {
         setScanStatus("Scanning…");
         try {
@@ -149,6 +154,15 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           onChange={(e) => setDreamIdleMinutes(e.target.value)}
           disabled={!loaded}
         />
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={perceptionEnabled}
+          onChange={(e) => setPerceptionEnabled(e.target.checked)}
+          disabled={!loaded}
+        />
+        Perception (privacy) — local behavioral signals bias next song
       </label>
       <div className="settings-actions">
         <button onClick={onReflect} disabled={saving || !loaded}>

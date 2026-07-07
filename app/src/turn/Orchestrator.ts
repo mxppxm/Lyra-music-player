@@ -1,4 +1,4 @@
-import type { DialogueTurn, LibraryTrack, PAD } from "../types";
+import type { DialogueTurn, LibraryTrack, PAD, CurrentEmotion } from "../types";
 import type { EmotionAgent } from "../agents/EmotionAgent";
 import type { CompanionAgent } from "../agents/CompanionAgent";
 import type { LibraryAgent } from "../agents/LibraryAgent";
@@ -12,6 +12,8 @@ import { insertSharedMemory } from "../db/repo/sharedMemoryRepo";
 import { appendSalientMomentToMemoryMd } from "../memory/appendSalient";
 import type { ProactiveIntent } from "../proactive/types";
 import { setBreathing } from "../tray/trayBridge";
+import type { PerceptionBias } from "../perception/PerceptionAgent";
+import type { EventBus } from "../perception/events";
 
 export type SoulStoreLike = {
   load(): Promise<SoulState>;
@@ -43,6 +45,9 @@ export type OrchestratorDeps = {
     playFile(path: string): Promise<number | void>;
     stop(): Promise<void>;
   };
+  /** Optional perception event bus — if provided, Orchestrator emits
+   * input_submit / skip / complete events for the aggregator. */
+  eventBus?: EventBus;
   clock?: () => number;
   idGen?: () => string;
 };
@@ -60,9 +65,20 @@ export class Orchestrator {
   private currentSong: LibraryTrack | null = null;
   /** Pending reaction events for the current turn. */
   private pendingEvents: ReactionEvent[] = [];
+  /** Latest perception bias — blended into onUserInput emotion when set. */
+  private perceptionBias: PerceptionBias | null = null;
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
+  }
+
+  /**
+   * Store the latest PerceptionBias derived by the App-level PerceptionAgent.
+   * Pass `null` to clear. onUserInput consumes this to blend PAD before
+   * running companion song selection.
+   */
+  setPerceptionBias(bias: PerceptionBias | null): void {
+    this.perceptionBias = bias;
   }
 
   getState(): OrchestratorState {
@@ -295,10 +311,23 @@ export class Orchestrator {
 
     this.emit({ kind: "thinking", user_utterance: text });
 
+    // Emit input_submit event for perception aggregator (best-effort, optional).
+    try {
+      const clock = this.deps.clock ?? Date.now;
+      this.deps.eventBus?.emit({
+        kind: "input_submit",
+        at: clock(),
+        charCount: text.length,
+      });
+    } catch {
+      /* bus errors are non-fatal */
+    }
+
     try {
       const emotion = await emotionAgent.analyze({ userUtterance: text });
-      await this.finalisePreviousTurn(text, emotion.pad);
-      await this.runTurnWithEmotion(emotion, text, "text");
+      const blended = blendEmotionWithBias(emotion, this.perceptionBias);
+      await this.finalisePreviousTurn(text, blended.pad);
+      await this.runTurnWithEmotion(blended, text, "text");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[lyra] orchestrator error:", err);
@@ -313,6 +342,18 @@ export class Orchestrator {
 
   /** User skipped the song. Fold skip event into current turn. */
   async onSkip(): Promise<void> {
+    // Emit perception skip event (best-effort, optional bus).
+    try {
+      const clock = this.deps.clock ?? Date.now;
+      this.deps.eventBus?.emit({
+        kind: "skip",
+        at: clock(),
+        turnId: this.currentTurn?.id ?? "",
+      });
+    } catch {
+      /* bus errors are non-fatal */
+    }
+
     this.pendingEvents.push({ kind: "skip" });
     await this.deps.audio.stop();
     // Fold immediately so currentTurn reflects skip
@@ -335,6 +376,18 @@ export class Orchestrator {
    */
   async onSongComplete(): Promise<void> {
     if (!this.currentTurn) return;
+
+    // Emit perception complete event (best-effort, optional bus).
+    try {
+      const clockFn = this.deps.clock ?? Date.now;
+      this.deps.eventBus?.emit({
+        kind: "complete",
+        at: clockFn(),
+        turnId: this.currentTurn.id,
+      });
+    } catch {
+      /* bus errors are non-fatal */
+    }
 
     // Fold complete event into current turn's reaction
     this.pendingEvents.push({ kind: "complete" });
@@ -385,4 +438,28 @@ export class Orchestrator {
       this.emit({ kind: "error", message: msg });
     }
   }
+}
+
+/**
+ * Blend the user-utterance-derived emotion with a PerceptionBias.
+ * The bias's pad values are scaled by its confidence before being added,
+ * then clamped to [-1, 1]. When no bias is present, returns emotion as-is.
+ */
+export function blendEmotionWithBias(
+  emotion: CurrentEmotion,
+  bias: PerceptionBias | null,
+): CurrentEmotion {
+  if (!bias) return emotion;
+  return {
+    ...emotion,
+    pad: {
+      p: clampPad(emotion.pad.p + bias.pad_bias.p * bias.confidence),
+      a: clampPad(emotion.pad.a + bias.pad_bias.a * bias.confidence),
+      d: clampPad(emotion.pad.d + bias.pad_bias.d * bias.confidence),
+    },
+  };
+}
+
+function clampPad(v: number): number {
+  return Math.max(-1, Math.min(1, v));
 }

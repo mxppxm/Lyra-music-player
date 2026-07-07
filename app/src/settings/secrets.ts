@@ -7,6 +7,7 @@ export const SECRET_KEYS = {
   libraryRootPath: "library.rootPath",
   dreamDailyTime: "dream.dailyTime",
   dreamIdleMinutes: "dream.idleMinutes",
+  perceptionEnabled: "perception.enabled",
 } as const;
 
 export async function setSecret(key: string, value: string): Promise<void> {

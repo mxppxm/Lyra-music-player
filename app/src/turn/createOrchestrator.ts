@@ -6,6 +6,7 @@ import { createSoulStore } from "./soulStore";
 import * as turnRepo from "../db/repo/turnRepo";
 import { playFile, stopPlayback } from "../audio/player";
 import { registry } from "../providers/registry";
+import { bus as perceptionBus } from "../perception/events";
 
 /**
  * createDefaultOrchestrator — factory that wires all Sprint 1b-β agents.
@@ -47,5 +48,6 @@ export function createDefaultOrchestrator(): Orchestrator | null {
       updateTurn: turnRepo.updateTurn,
     },
     audio,
+    eventBus: perceptionBus,
   });
 }

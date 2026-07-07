@@ -43,4 +43,8 @@ describe("settings/secrets", () => {
     expect(SECRET_KEYS.dreamDailyTime).toBe("dream.dailyTime");
     expect(SECRET_KEYS.dreamIdleMinutes).toBe("dream.idleMinutes");
   });
+
+  it("exports perceptionEnabled key", () => {
+    expect(SECRET_KEYS.perceptionEnabled).toBe("perception.enabled");
+  });
 });

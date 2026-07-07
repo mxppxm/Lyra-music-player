@@ -510,3 +510,88 @@ describe("Orchestrator T6: salient moment wiring", () => {
     detectSpy.mockRestore();
   });
 });
+
+describe("Orchestrator Sprint 4: perception bias blending", () => {
+  it("without setPerceptionBias, companion.choose receives emotion.pad verbatim", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("hi");
+    const chooseArg = (deps.companion.choose as any).mock.calls[0][0];
+    expect(chooseArg.currentEmotion.pad).toEqual({ p: -0.3, a: -0.2, d: 0 });
+  });
+
+  it("setPerceptionBias(bias) blends pad_bias * confidence into next onUserInput", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    orc.setPerceptionBias({
+      pad_bias: { p: 0.4, a: -0.2, d: 0.1 },
+      confidence: 0.5,
+      reason: "test",
+    });
+    await orc.onUserInput("hi");
+    const chooseArg = (deps.companion.choose as any).mock.calls[0][0];
+    // Base pad = -0.3, -0.2, 0; bias scaled = 0.2, -0.1, 0.05
+    expect(chooseArg.currentEmotion.pad.p).toBeCloseTo(-0.1, 5);
+    expect(chooseArg.currentEmotion.pad.a).toBeCloseTo(-0.3, 5);
+    expect(chooseArg.currentEmotion.pad.d).toBeCloseTo(0.05, 5);
+  });
+
+  it("blended pad is clamped to [-1, 1]", async () => {
+    const deps = makeDeps({
+      emotion: {
+        analyze: vi.fn(async () => ({
+          pad: { p: 0.9, a: 0.9, d: -0.9 },
+          labels: [],
+          confidence: 0.5,
+          source: "emotion-agent-inferred",
+        }) as CurrentEmotion),
+      },
+    });
+    const orc = new Orchestrator(deps as any);
+    orc.setPerceptionBias({
+      pad_bias: { p: 1, a: 1, d: -1 },
+      confidence: 1,
+      reason: "extreme",
+    });
+    await orc.onUserInput("hi");
+    const chooseArg = (deps.companion.choose as any).mock.calls[0][0];
+    expect(chooseArg.currentEmotion.pad.p).toBe(1);
+    expect(chooseArg.currentEmotion.pad.a).toBe(1);
+    expect(chooseArg.currentEmotion.pad.d).toBe(-1);
+  });
+
+  it("setPerceptionBias(null) clears an earlier bias", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    orc.setPerceptionBias({
+      pad_bias: { p: 0.4, a: 0, d: 0 },
+      confidence: 0.5,
+      reason: "x",
+    });
+    orc.setPerceptionBias(null);
+    await orc.onUserInput("hi");
+    const chooseArg = (deps.companion.choose as any).mock.calls[0][0];
+    expect(chooseArg.currentEmotion.pad).toEqual({ p: -0.3, a: -0.2, d: 0 });
+  });
+
+  it("emits input_submit / skip / complete on optional eventBus", async () => {
+    const emitted: any[] = [];
+    const eventBus = { emit: (e: any) => emitted.push(e) };
+    const deps = makeDeps({ eventBus });
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("hello world");
+    await orc.onSkip();
+    // Reset state for a fresh song we can complete
+    await orc.onUserInput("more");
+    await orc.onSongComplete();
+
+    const kinds = emitted.map((e) => e.kind);
+    expect(kinds).toContain("input_submit");
+    expect(kinds).toContain("skip");
+    expect(kinds).toContain("complete");
+
+    const inputEv = emitted.find((e) => e.kind === "input_submit");
+    expect(inputEv.charCount).toBe("hello world".length);
+  });
+});

@@ -17,6 +17,10 @@ import { ProactiveEngine } from "./proactive/engine";
 import { createSulkStore } from "./proactive/sulkStore";
 import { morningRule, careRule, anniversaryRule, shareRule, rhythmRule } from "./proactive/rules";
 import type { PolitenessState } from "./proactive/types";
+import { bus as perceptionBus } from "./perception/events";
+import { installPerceptionListeners } from "./perception/install";
+import { aggregate as aggregatePerception } from "./perception/aggregator";
+import { PerceptionAgent } from "./perception/PerceptionAgent";
 
 async function bootMemory(): Promise<void> {
   try {
@@ -178,6 +182,48 @@ function App() {
     return () => {
       cancelled = true;
       unlisten?.();
+    };
+  }, [orchestrator]);
+
+  // Perception loop: install window listeners, tick every 60s to infer a
+  // PerceptionBias from the rolling event window, and push the latest bias
+  // to the Orchestrator. Respects SECRET_KEYS.perceptionEnabled (default ON).
+  useEffect(() => {
+    if (!orchestrator) return;
+    let cancelled = false;
+    let uninstallListeners: (() => void) | null = null;
+    let tickTimer: ReturnType<typeof setInterval> | null = null;
+
+    (async () => {
+      const stored = await getSecret(SECRET_KEYS.perceptionEnabled).catch(() => null);
+      const enabled = stored !== "false";
+      if (!enabled || cancelled) return;
+
+      uninstallListeners = installPerceptionListeners(perceptionBus);
+      const agent = new PerceptionAgent();
+
+      const tick = () => {
+        try {
+          const features = aggregatePerception(perceptionBus);
+          const bias = agent.infer(features);
+          orchestrator.setPerceptionBias(bias.confidence > 0 ? bias : null);
+          if (bias.confidence > 0) {
+            console.debug("[lyra] perception bias:", bias);
+          }
+        } catch (err) {
+          console.warn("[lyra] perception tick failed:", err);
+        }
+      };
+      // Prime once and then tick every 60s.
+      tick();
+      tickTimer = setInterval(tick, 60_000);
+    })().catch(() => {});
+
+    return () => {
+      cancelled = true;
+      uninstallListeners?.();
+      if (tickTimer) clearInterval(tickTimer);
+      orchestrator.setPerceptionBias(null);
     };
   }, [orchestrator]);
 
