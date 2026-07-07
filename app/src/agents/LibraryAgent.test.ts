@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { LibraryAgent } from "./LibraryAgent";
 import type { LibraryTrack, PAD } from "../types";
+import type { LyricsEmbedding } from "../db/repo/lyricsEmbeddingsRepo";
 
 function track(id: string, title: string, artist: string): LibraryTrack {
   return { id, path: `/${id}.mp3`, origin: "local", added_at: 0, title, artist };
@@ -99,6 +100,166 @@ describe("LibraryAgent.prefilter", () => {
       // at rank 1 for this specific query. Just check nothing crashes and
       // all tracks are present.
       expect(new Set(out.map((t) => t.id)).size).toBe(out.length);
+    });
+  });
+
+  describe("Sprint 10: three-signal scoring (kw / pad / sem)", () => {
+    function makeTrack(id: string, title: string): LibraryTrack {
+      return { id, path: `/${id}.mp3`, origin: "local", added_at: 0, title };
+    }
+
+    const emptyFeatures = { getBatch: async () => new Map() };
+    const emptyLyrics = { getBatch: async () => new Map() };
+    const nullProvider = async () => null;
+
+    it("degrades to kw-only when no features and no lyrics", async () => {
+      const tracks = [makeTrack("a", "piano nights"), makeTrack("b", "loud drums")];
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: emptyFeatures,
+        lyrics: emptyLyrics,
+        makeProvider: nullProvider,
+      });
+      const out = await agent.prefilter("piano", neutralPAD, 10);
+      expect(out[0].id).toBe("a");
+    });
+
+    it("matches Sprint 9 formula when only kw+pad available", async () => {
+      // Target PAD = (-1,-1) maps to (0,0) in feature space, so:
+      //   a: energy=1, valence=1 → distance 1 → padScore 0
+      //   b: energy=0, valence=0 → distance 0 → padScore 1
+      // With kw=1 (a) vs kw=0 (b) and 0.4/0.6 weights:
+      //   a: 1*0.4 + 0*0.6 = 0.4  b: 0*0.4 + 1*0.6 = 0.6 → b wins.
+      const tracks = [makeTrack("a", "piano"), makeTrack("b", "silence")];
+      const featuresMap = new Map([
+        ["a", { track_id: "a", bpm: null, energy: 1, valence: 1 }],
+        ["b", { track_id: "b", bpm: null, energy: 0, valence: 0 }],
+      ]);
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: { getBatch: async () => featuresMap },
+        lyrics: emptyLyrics,
+        makeProvider: nullProvider,
+      });
+      const out = await agent.prefilter("piano", { p: -1, a: -1, d: 0 }, 10);
+      expect(out[0].id).toBe("b");
+    });
+
+    it("sem alone can drive ordering when kw is tied", async () => {
+      const tracks = [makeTrack("a", "x"), makeTrack("b", "x")];
+      const target = Float32Array.from([1, 0]);
+      const provider = {
+        modelId: "test",
+        dim: 2,
+        embed: async () => target,
+      };
+      const lyricsMap = new Map<string, LyricsEmbedding>([
+        [
+          "a",
+          {
+            trackId: "a",
+            lyricsHash: "",
+            modelId: "test",
+            dim: 2,
+            embedding: Float32Array.from([0.1, 0.99]),
+            updatedAt: 0,
+          },
+        ],
+        [
+          "b",
+          {
+            trackId: "b",
+            lyricsHash: "",
+            modelId: "test",
+            dim: 2,
+            embedding: Float32Array.from([0.99, 0.1]),
+            updatedAt: 0,
+          },
+        ],
+      ]);
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: emptyFeatures,
+        lyrics: { getBatch: async () => lyricsMap },
+        makeProvider: async () => provider,
+      });
+      const out = await agent.prefilter("anything", neutralPAD, 10);
+      expect(out[0].id).toBe("b");
+    });
+
+    it("sem missing on a track falls back to kw for that track", async () => {
+      const tracks = [makeTrack("a", "piano"), makeTrack("b", "drums")];
+      const target = Float32Array.from([1, 0]);
+      const provider = { modelId: "test", dim: 2, embed: async () => target };
+      const lyricsMap = new Map<string, LyricsEmbedding>([
+        [
+          "b",
+          {
+            trackId: "b",
+            lyricsHash: "",
+            modelId: "test",
+            dim: 2,
+            embedding: Float32Array.from([0.99, 0.1]),
+            updatedAt: 0,
+          },
+        ],
+      ]);
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: emptyFeatures,
+        lyrics: { getBatch: async () => lyricsMap },
+        makeProvider: async () => provider,
+      });
+      // "a" scores kw=1 (renormalized total 1); "b" scores sem≈0.99. → a wins.
+      const out = await agent.prefilter("piano", neutralPAD, 10);
+      expect(out[0].id).toBe("a");
+    });
+
+    it("cosine dim mismatch treats sem as unavailable", async () => {
+      const tracks = [makeTrack("a", "piano")];
+      const target = Float32Array.from([1, 0]);
+      const provider = { modelId: "test", dim: 2, embed: async () => target };
+      const lyricsMap = new Map<string, LyricsEmbedding>([
+        [
+          "a",
+          {
+            trackId: "a",
+            lyricsHash: "",
+            modelId: "test",
+            dim: 3,
+            embedding: Float32Array.from([0.5, 0.5, 0.5]),
+            updatedAt: 0,
+          },
+        ],
+      ]);
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: emptyFeatures,
+        lyrics: { getBatch: async () => lyricsMap },
+        makeProvider: async () => provider,
+      });
+      const out = await agent.prefilter("piano", neutralPAD, 10);
+      expect(out).toHaveLength(1);
+      expect(out[0].id).toBe("a");
+    });
+
+    it("provider throws → falls back to kw+pad", async () => {
+      const tracks = [makeTrack("a", "piano")];
+      const provider = {
+        modelId: "test",
+        dim: 2,
+        embed: async () => {
+          throw new Error("net");
+        },
+      };
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: emptyFeatures,
+        lyrics: emptyLyrics,
+        makeProvider: async () => provider,
+      });
+      const out = await agent.prefilter("piano", neutralPAD, 10);
+      expect(out[0].id).toBe("a");
     });
   });
 });
