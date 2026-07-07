@@ -10,6 +10,8 @@ vi.mock("./secrets", () => ({
     libraryRootPath: "library.rootPath",
     dreamDailyTime: "dream.dailyTime",
     dreamIdleMinutes: "dream.idleMinutes",
+    perceptionEnabled: "perception.enabled",
+    perceptionMode: "perception.mode",
   },
   setSecret: vi.fn(),
   getSecret: vi.fn(),

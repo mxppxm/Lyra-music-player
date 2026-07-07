@@ -17,6 +17,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [dreamDailyTime, setDreamDailyTime] = useState("03:14");
   const [dreamIdleMinutes, setDreamIdleMinutes] = useState("30");
   const [perceptionEnabled, setPerceptionEnabled] = useState(true);
+  const [perceptionMode, setPerceptionMode] = useState<"rule" | "llm">("rule");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scanStatus, setScanStatus] = useState<string>("");
@@ -25,7 +26,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d, z, lib, dt, dim, pe] = await Promise.all([
+      const [a, d, z, lib, dt, dim, pe, pm] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
         getSecret(SECRET_KEYS.zhipuApiKey),
@@ -33,6 +34,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         getSecret(SECRET_KEYS.dreamDailyTime),
         getSecret(SECRET_KEYS.dreamIdleMinutes),
         getSecret(SECRET_KEYS.perceptionEnabled),
+        getSecret(SECRET_KEYS.perceptionMode),
       ]);
       if (cancelled) return;
       setAnthropic(a ?? "");
@@ -43,6 +45,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       setDreamIdleMinutes(dim ?? "30");
       // Default to enabled; only disable when explicitly stored as "false"
       setPerceptionEnabled(pe !== "false");
+      setPerceptionMode(pm === "llm" ? "llm" : "rule");
       setLoaded(true);
     })();
     return () => {
@@ -62,6 +65,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.dreamDailyTime, dreamDailyTime);
       await setSecret(SECRET_KEYS.dreamIdleMinutes, dreamIdleMinutes);
       await setSecret(SECRET_KEYS.perceptionEnabled, perceptionEnabled ? "true" : "false");
+      await setSecret(SECRET_KEYS.perceptionMode, perceptionMode);
       if (libraryPath) {
         setScanStatus("Scanning…");
         try {
@@ -163,6 +167,19 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           disabled={!loaded}
         />
         Perception (privacy) — local behavioral signals bias next song
+      </label>
+      <label>
+        Perception mode
+        <select
+          value={perceptionMode}
+          onChange={(e) =>
+            setPerceptionMode(e.target.value === "llm" ? "llm" : "rule")
+          }
+          disabled={!loaded || !perceptionEnabled}
+        >
+          <option value="rule">规则式（离线，免费）</option>
+          <option value="llm">LLM 式（Zhipu/DeepSeek，每 60 秒一次调用）</option>
+        </select>
       </label>
       <div className="settings-actions">
         <button onClick={onReflect} disabled={saving || !loaded}>
