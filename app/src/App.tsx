@@ -24,6 +24,7 @@ import { aggregate as aggregatePerception } from "./perception/aggregator";
 import { createPerceptionAgent, type PerceptionMode } from "./perception/PerceptionAgent";
 import { routeProvider } from "./agents/route";
 import { insert as insertPerceptionAudit } from "./db/repo/perceptionAuditRepo";
+import { loadSoulState } from "./db/repo/soulRepo";
 import { RoadmapBoard } from "./ui/RoadmapBoard";
 
 async function bootMemory(): Promise<void> {
@@ -230,8 +231,12 @@ function App() {
               }
             })()
           : undefined;
-      const agent = createPerceptionAgent({ mode, provider });
-      console.debug("[lyra] perception agent mode:", mode);
+      // Pull persisted PerceptionTuning so ReflectAgent's earlier suggestions
+      // take effect for this session's rule agent (Sprint 8 T5).
+      const soul = await loadSoulState("lyra_001").catch(() => null);
+      const tuning = soul?.perception_tuning;
+      const agent = createPerceptionAgent({ mode, provider, tuning });
+      console.debug("[lyra] perception agent mode:", mode, "tuning:", tuning ?? "(defaults)");
 
       const tick = async () => {
         try {

@@ -7,6 +7,7 @@ export type SoulStateRow = {
   dynamic_mood_json: string;
   proactive_budget_json: string;
   updated_at: number;
+  perception_tuning_json: string | null;
 };
 
 export function toRow(s: SoulState): SoulStateRow {
@@ -17,11 +18,13 @@ export function toRow(s: SoulState): SoulStateRow {
     dynamic_mood_json: JSON.stringify(s.dynamic_mood),
     proactive_budget_json: JSON.stringify(s.proactive_budget),
     updated_at: Date.now(),
+    perception_tuning_json:
+      s.perception_tuning !== undefined ? JSON.stringify(s.perception_tuning) : null,
   };
 }
 
 export function fromRow(r: SoulStateRow): SoulState {
-  return {
+  const base: SoulState = {
     agent_id: r.agent_id,
     created_at: r.created_at,
     musical_taste_base: JSON.parse(r.taste_base_json),
@@ -30,4 +33,12 @@ export function fromRow(r: SoulStateRow): SoulState {
     shared_memory: [],  // stored in separate table; Sprint 1b will join
     evolution_log: [],  // stored in separate table; Sprint 1b will join
   };
+  if (r.perception_tuning_json) {
+    try {
+      base.perception_tuning = JSON.parse(r.perception_tuning_json);
+    } catch {
+      // ignore malformed persisted tuning; defaults take over
+    }
+  }
+  return base;
 }

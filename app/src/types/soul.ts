@@ -1,5 +1,6 @@
 // types/soul.ts — SoulState（spec §2.2）
 import type { PAD, ProactiveKind } from "./dialogue";
+import type { PerceptionTuning } from "../perception/tuning";
 
 export type AestheticAxes = {
   restraint_vs_expression: number;
@@ -49,4 +50,7 @@ export type SoulState = {
   shared_memory: SharedMemoryEntry[];
   evolution_log: EvolutionLogEntry[];
   proactive_budget: ProactiveBudget;
+  /** Sprint 8: ReflectAgent-proposed rule threshold overrides. Undefined =
+   *  compiled-in defaults. */
+  perception_tuning?: PerceptionTuning;
 };

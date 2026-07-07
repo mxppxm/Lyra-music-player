@@ -121,6 +121,12 @@ pub fn run() {
                             sql: include_str!("../migrations/002_perception_audit.sql"),
                             kind: MigrationKind::Up,
                         },
+                        Migration {
+                            version: 3,
+                            description: "soul perception_tuning column",
+                            sql: include_str!("../migrations/003_soul_perception_tuning.sql"),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

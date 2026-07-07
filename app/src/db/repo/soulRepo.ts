@@ -7,21 +7,30 @@ export async function upsertSoulState(s: SoulState): Promise<void> {
   const db = await getDb();
   await db.execute(
     `INSERT INTO soul_state
-       (agent_id, created_at, taste_base_json, dynamic_mood_json, proactive_budget_json, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
+       (agent_id, created_at, taste_base_json, dynamic_mood_json, proactive_budget_json, updated_at, perception_tuning_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(agent_id) DO UPDATE SET
        taste_base_json = excluded.taste_base_json,
        dynamic_mood_json = excluded.dynamic_mood_json,
        proactive_budget_json = excluded.proactive_budget_json,
-       updated_at = excluded.updated_at`,
-    [row.agent_id, row.created_at, row.taste_base_json, row.dynamic_mood_json, row.proactive_budget_json, row.updated_at],
+       updated_at = excluded.updated_at,
+       perception_tuning_json = excluded.perception_tuning_json`,
+    [
+      row.agent_id,
+      row.created_at,
+      row.taste_base_json,
+      row.dynamic_mood_json,
+      row.proactive_budget_json,
+      row.updated_at,
+      row.perception_tuning_json,
+    ],
   );
 }
 
 export async function loadSoulState(agentId: string): Promise<SoulState | null> {
   const db = await getDb();
   const rows = await db.select<SoulStateRow[]>(
-    `SELECT agent_id, created_at, taste_base_json, dynamic_mood_json, proactive_budget_json, updated_at
+    `SELECT agent_id, created_at, taste_base_json, dynamic_mood_json, proactive_budget_json, updated_at, perception_tuning_json
      FROM soul_state WHERE agent_id = ?`,
     [agentId],
   );
