@@ -84,19 +84,33 @@ function buildBrief(i: CompanionInput): string {
   return parts.join("\n");
 }
 
-function validate(obj: unknown, candidateIds: Set<string>): ChosenSong {
+type PartialChosen = {
+  song_id: string;
+  target_profile: string;
+  rationale: string;
+  needed_shift: Shift;
+};
+
+function parsePartial(obj: unknown): PartialChosen {
   if (typeof obj !== "object" || obj === null) throw new CompanionAgentError("expected object");
   const o = obj as Record<string, unknown>;
   const song_id = typeof o.song_id === "string" ? o.song_id : "";
-  if (!candidateIds.has(song_id)) {
-    throw new CompanionAgentError(`song_id ${JSON.stringify(song_id)} not in candidates`);
-  }
   const target_profile = typeof o.target_profile === "string" ? o.target_profile.trim() : "";
   const rationale = typeof o.rationale === "string" ? o.rationale.trim() : "";
   const needed_shift: Shift = (SHIFTS as readonly string[]).includes(o.needed_shift as string)
     ? (o.needed_shift as Shift)
     : "接住";
   return { song_id, target_profile, rationale, needed_shift };
+}
+
+function buildCorrectionBrief(bad: PartialChosen, candidateIds: string[]): string {
+  return [
+    `你上次返回的 song_id 是 ${JSON.stringify(bad.song_id)}，但它不在候选列表里。`,
+    `候选列表里只有这些 id (从上一条 user message 里挑一个):`,
+    candidateIds.map((id) => `- ${id}`).join("\n"),
+    ``,
+    `请重新返回 JSON，target_profile / rationale / needed_shift 可以保留你原本的判断，只要把 song_id 换成上面列表里真实存在的那个（选一个和你的 target_profile 最贴的）。同样只返回 JSON，不要 markdown。`,
+  ].join("\n");
 }
 
 export class CompanionAgent {
@@ -106,13 +120,43 @@ export class CompanionAgent {
   }
 
   async choose(input: CompanionInput): Promise<ChosenSong> {
+    const candidateIds = input.candidates.map((c) => c.id);
+    const idSet = new Set(candidateIds);
     const messages: ChatMessage[] = [
       { role: "system", content: COMPANION_SYSTEM_PROMPT },
       { role: "user", content: buildBrief(input) },
     ];
+
     const res = await this.provider.chat(messages, { max_tokens: 1024, temperature: 0.7 });
-    const obj = extractJson(res.content);
-    const ids = new Set(input.candidates.map((c) => c.id));
-    return validate(obj, ids);
+    let picked = parsePartial(extractJson(res.content));
+
+    // Retry once if the LLM picked a song_id outside the candidate set.
+    if (!idSet.has(picked.song_id)) {
+      console.warn(
+        `[lyra] CompanionAgent: bad song_id ${JSON.stringify(picked.song_id)}, retrying with correction`,
+      );
+      const retryMessages: ChatMessage[] = [
+        ...messages,
+        { role: "assistant", content: res.content },
+        { role: "user", content: buildCorrectionBrief(picked, candidateIds) },
+      ];
+      const retryRes = await this.provider.chat(retryMessages, {
+        max_tokens: 512,
+        temperature: 0.3,
+      });
+      picked = parsePartial(extractJson(retryRes.content));
+    }
+
+    // Fallback: if even the retry missed, use the first candidate rather than
+    // failing the turn. Preserve the LLM's rationale/target_profile since those
+    // are still useful.
+    if (!idSet.has(picked.song_id)) {
+      console.warn(
+        `[lyra] CompanionAgent: retry still bad (${JSON.stringify(picked.song_id)}); falling back to candidates[0]`,
+      );
+      picked = { ...picked, song_id: candidateIds[0] };
+    }
+
+    return picked;
   }
 }

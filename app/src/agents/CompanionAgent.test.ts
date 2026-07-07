@@ -47,6 +47,18 @@ function stub(response: string): ModelProvider {
   };
 }
 
+function stubSequential(...responses: string[]): ModelProvider {
+  let call = 0;
+  return {
+    id: "anthropic",
+    chat: vi.fn(async (_: ChatMessage[]) => {
+      const r = responses[Math.min(call, responses.length - 1)];
+      call++;
+      return { content: r } as ChatResponse;
+    }),
+  };
+}
+
 const input: CompanionInput = {
   userUtterance: "最近有点累",
   currentEmotion: emotion,
@@ -82,13 +94,49 @@ describe("CompanionAgent.choose", () => {
     expect(msgs[1].content).toContain("Ludovico Einaudi");
   });
 
-  it("throws when song_id is not in the candidate list", async () => {
+  it("retries once when song_id is not in candidates and succeeds on retry", async () => {
     const bad = JSON.stringify({
       song_id: "made-up-id",
       target_profile: "x", rationale: "y", needed_shift: "接住",
     });
-    const a = new CompanionAgent({ provider: stub(bad) });
-    await expect(a.choose(input)).rejects.toThrow(/song_id/i);
+    const goodRetry = JSON.stringify({
+      song_id: "t2",
+      target_profile: "x2", rationale: "y2", needed_shift: "点燃",
+    });
+    const p = stubSequential(bad, goodRetry);
+    const a = new CompanionAgent({ provider: p });
+    const out = await a.choose(input);
+    expect(out.song_id).toBe("t2");
+    expect(out.rationale).toBe("y2");
+    // Two calls: initial + one retry with correction
+    expect((p.chat as any).mock.calls.length).toBe(2);
+    // Retry messages include the assistant's bad response + a correction user message
+    const retryMsgs: ChatMessage[] = (p.chat as any).mock.calls[1][0];
+    expect(retryMsgs[retryMsgs.length - 2].role).toBe("assistant");
+    expect(retryMsgs[retryMsgs.length - 1].role).toBe("user");
+    expect(retryMsgs[retryMsgs.length - 1].content).toContain("made-up-id");
+    expect(retryMsgs[retryMsgs.length - 1].content).toContain("t1");
+    expect(retryMsgs[retryMsgs.length - 1].content).toContain("t2");
+  });
+
+  it("falls back to candidates[0] when even retry misses (preserves LLM rationale)", async () => {
+    const bad1 = JSON.stringify({
+      song_id: "made-up-1",
+      target_profile: "tp1", rationale: "r1", needed_shift: "陪着",
+    });
+    const bad2 = JSON.stringify({
+      song_id: "made-up-2",
+      target_profile: "tp2", rationale: "r2", needed_shift: "打断",
+    });
+    const p = stubSequential(bad1, bad2);
+    const a = new CompanionAgent({ provider: p });
+    const out = await a.choose(input);
+    expect(out.song_id).toBe("t1"); // candidates[0]
+    // Rationale/target_profile from the retry (the last LLM output) preserved
+    expect(out.rationale).toBe("r2");
+    expect(out.target_profile).toBe("tp2");
+    expect(out.needed_shift).toBe("打断");
+    expect((p.chat as any).mock.calls.length).toBe(2);
   });
 
   it("coerces unknown needed_shift to '接住'", async () => {
