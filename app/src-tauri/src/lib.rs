@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod audio_features;
 pub mod library_scan;
+pub mod lyrics;
 pub mod secrets;
 pub mod tray;
 
@@ -155,6 +156,7 @@ pub fn run() {
             check_panic_file,
             tray::tray_set_breathing,
             audio_features::audio_extract_features,
+            lyrics::lyrics_extract,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
