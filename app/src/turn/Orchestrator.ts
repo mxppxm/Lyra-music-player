@@ -5,6 +5,7 @@ import type { LibraryAgent } from "../agents/LibraryAgent";
 import type { SoulState } from "../types";
 import { foldReactionEvents, computeEmotionDelta } from "./reactionCapture";
 import type { ReactionEvent } from "./reactionCapture";
+import { getMemoryContext } from "../memory/context";
 
 export type SoulStoreLike = {
   load(): Promise<SoulState>;
@@ -136,12 +137,15 @@ export class Orchestrator {
         return;
       }
 
-      // Step 6: companion chooses song
+      // Step 6: companion chooses song (with boot-time memory context)
+      const { livingPortrait, topFacts } = getMemoryContext();
       const chosen = await companion.choose({
         userUtterance: text,
         currentEmotion: emotion,
         soul,
         candidates,
+        livingPortrait,
+        topFacts,
       });
 
       // Step 7: resolve song from candidates

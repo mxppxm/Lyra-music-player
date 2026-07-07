@@ -105,4 +105,42 @@ describe("CompanionAgent.choose", () => {
     const a = new CompanionAgent({ provider: stub("not json") });
     await expect(a.choose(input)).rejects.toThrow(/bad JSON/);
   });
+
+  it("user message includes living portrait and top facts when provided", async () => {
+    const p = stub(validResponse);
+    const a = new CompanionAgent({ provider: p });
+    const inputWithMemory = {
+      ...input,
+      livingPortrait: "她偏爱深夜的宁静，古典钢琴是她的庇护所。",
+      topFacts: [
+        {
+          tags: ["#时段:深夜"],
+          conclusion: "慢速古典钢琴",
+          confidence: 0.87,
+          n: 9,
+          lastVerifiedISO: "2026-07-07",
+        },
+        {
+          tags: ["#情绪:疲惫"],
+          conclusion: "无人声纯器乐",
+          confidence: 0.75,
+          n: 5,
+          lastVerifiedISO: "2026-07-07",
+        },
+      ],
+    };
+    await a.choose(inputWithMemory);
+    const msgs: ChatMessage[] = (p.chat as any).mock.calls[0][0];
+    const userMsg = msgs[1].content;
+    // Portrait block should appear
+    expect(userMsg).toContain("你对她的记忆:");
+    expect(userMsg).toContain("她偏爱深夜的宁静，古典钢琴是她的庇护所。");
+    // Facts block should appear
+    expect(userMsg).toContain("你观察到的偏好:");
+    expect(userMsg).toContain("#时段:深夜");
+    expect(userMsg).toContain("慢速古典钢琴");
+    expect(userMsg).toContain("conf: 0.87");
+    // Memory block appears BEFORE candidate block
+    expect(userMsg.indexOf("你对她的记忆:")).toBeLessThan(userMsg.indexOf("候选歌单("));
+  });
 });

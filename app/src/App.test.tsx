@@ -15,6 +15,10 @@ vi.mock("./reflect/trigger", () => ({
   reflectNow: vi.fn(),
 }));
 
+vi.mock("./memory/fileIO", () => ({
+  readMemoryFile: vi.fn(() => Promise.resolve("")),
+}));
+
 import { reflectNow } from "./reflect/trigger";
 
 beforeEach(() => {

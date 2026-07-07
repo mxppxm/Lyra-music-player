@@ -25,6 +25,25 @@ function extractJson(raw: string): unknown {
   }
 }
 
+function buildMemoryBlock(i: CompanionInput): string {
+  const portrait = i.livingPortrait ?? "";
+  const facts = i.topFacts ?? [];
+  if (!portrait && facts.length === 0) return "";
+
+  const lines: string[] = ["你对她的记忆:"];
+  if (portrait) {
+    lines.push(portrait);
+  }
+  if (facts.length > 0) {
+    if (portrait) lines.push("");
+    lines.push("你观察到的偏好:");
+    for (const f of facts) {
+      lines.push(`- ${f.tags.join(" ")} → ${f.conclusion} (conf: ${f.confidence.toFixed(2)})`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function buildBrief(i: CompanionInput): string {
   const { pad, labels, confidence } = i.currentEmotion;
   const soul = i.soul;
@@ -41,7 +60,9 @@ function buildBrief(i: CompanionInput): string {
     )
     .join("\n");
 
-  return [
+  const memoryBlock = buildMemoryBlock(i);
+
+  const parts = [
     `用户的话: ${i.userUtterance || "(她/他刚打开 app,还没说话)"}`,
     `此刻情绪: PAD=(p=${pad.p.toFixed(2)}, a=${pad.a.toFixed(2)}, d=${pad.d.toFixed(2)}), labels=[${labels.join(",")}], confidence=${confidence.toFixed(2)}`,
     `你的灵魂状态:`,
@@ -49,10 +70,18 @@ function buildBrief(i: CompanionInput): string {
     `- affinity_genres: ${soul.musical_taste_base.affinity_genres.join(", ")}`,
     `- 当下 recent_bias: ${soul.dynamic_mood.recent_bias || "(无)"}`,
     memoryLine,
-    ``,
-    `候选歌单(${i.candidates.length} 首):`,
-    candidateBlock,
-  ].join("\n");
+  ];
+
+  if (memoryBlock) {
+    parts.push("");
+    parts.push(memoryBlock);
+  }
+
+  parts.push("");
+  parts.push(`候选歌单(${i.candidates.length} 首):`);
+  parts.push(candidateBlock);
+
+  return parts.join("\n");
 }
 
 function validate(obj: unknown, candidateIds: Set<string>): ChosenSong {

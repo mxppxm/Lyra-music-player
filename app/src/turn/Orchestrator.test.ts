@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Orchestrator } from "./Orchestrator";
 import type { CurrentEmotion, LibraryTrack, DialogueTurn, SoulState } from "../types";
+import * as memoryContext from "../memory/context";
+import { EMPTY_MEMORY } from "../memory/parser";
 
 function makeDeps(overrides: Partial<any> = {}) {
   const emotion = {
@@ -60,6 +62,11 @@ function makeDeps(overrides: Partial<any> = {}) {
   };
 }
 
+beforeEach(() => {
+  // Reset memory context to empty before each test so tests are isolated
+  memoryContext.setMemoryContext(EMPTY_MEMORY);
+});
+
 describe("Orchestrator.onUserInput happy path", () => {
   it("emits thinking then playing", async () => {
     const deps = makeDeps();
@@ -91,6 +98,32 @@ describe("Orchestrator.onUserInput happy path", () => {
     expect(turn.agent_response.song_id).toBe("t1");
     expect(turn.agent_response.rationale).toBe("y");
     expect(turn.current_emotion.labels).toContain("疲惫");
+  });
+
+  it("threads livingPortrait and topFacts from MemoryContext into companion.choose", async () => {
+    const portrait = "她偏爱深夜的宁静，古典钢琴是她的庇护所。";
+    const fact = {
+      tags: ["#时段:深夜"],
+      conclusion: "慢速古典钢琴",
+      confidence: 0.87,
+      n: 9,
+      lastVerifiedISO: "2026-07-07",
+    };
+    memoryContext.setMemoryContext({
+      ...EMPTY_MEMORY,
+      facts: [fact],
+      livingPortrait: { paragraphs: [portrait] },
+    });
+
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+
+    expect(deps.companion.choose).toHaveBeenCalledOnce();
+    const chooseArg = (deps.companion.choose as any).mock.calls[0][0];
+    expect(chooseArg.livingPortrait).toBe(portrait);
+    expect(chooseArg.topFacts).toHaveLength(1);
+    expect(chooseArg.topFacts[0].conclusion).toBe("慢速古典钢琴");
   });
 });
 

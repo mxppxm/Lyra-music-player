@@ -7,6 +7,19 @@ import { createDefaultOrchestrator } from "./turn/createOrchestrator";
 import type { Orchestrator } from "./turn/Orchestrator";
 import { bindGlobalKeys } from "./home/keyboard";
 import { reflectNow } from "./reflect/trigger";
+import { readMemoryFile } from "./memory/fileIO";
+import { parseMemoryMd, EMPTY_MEMORY } from "./memory/parser";
+import { setMemoryContext } from "./memory/context";
+
+async function bootMemory(): Promise<void> {
+  try {
+    const content = await readMemoryFile();
+    const parsed = parseMemoryMd(content);
+    setMemoryContext(parsed);
+  } catch {
+    setMemoryContext(EMPTY_MEMORY);
+  }
+}
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -15,6 +28,8 @@ function App() {
 
   useEffect(() => {
     bootProviders()
+      .catch(() => {})
+      .then(() => bootMemory())
       .catch(() => {})
       .finally(() => setBootDone(true));
   }, []);

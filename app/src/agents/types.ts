@@ -1,4 +1,5 @@
 import type { CurrentEmotion, LibraryTrack, SoulState } from "../types";
+import type { Fact } from "../memory/types";
 
 export type TargetProfile = string;
 
@@ -14,6 +15,8 @@ export type CompanionInput = {
   currentEmotion: CurrentEmotion;
   soul: SoulState;
   candidates: Pick<LibraryTrack, "id" | "title" | "artist" | "album" | "duration_ms">[];
+  livingPortrait?: string;
+  topFacts?: Fact[];
 };
 
 export type EmotionInput = {
