@@ -1,11 +1,19 @@
 /**
- * perception/PerceptionAgent.ts — rule-based PerceptionBias inference (Sprint 4 T3)
+ * perception/PerceptionAgent.ts — facade + factory.
  *
- * Deterministic. No LLM calls. All values in-memory.
+ * Since Sprint 7 the concrete inference lives in one of two implementations:
+ * - RulePerceptionAgent: deterministic 5-rule agent (Sprint 4). Fallback path.
+ * - LLMPerceptionAgent: LLM-driven (Sprint 7 T2), composes rule agent as
+ *   fallback for any parse / network / validation failure.
+ *
+ * The facade exposes the interface + type so callers stay ignorant of which
+ * flavor is running. A boot-time setting picks the flavor (Sprint 7 T4).
  */
 
-import type { PAD } from "../types";
+import type { ModelProvider } from "../types/provider";
 import type { BehavioralFeatures } from "./aggregator";
+import type { PAD } from "../types";
+import { RulePerceptionAgent } from "./RulePerceptionAgent";
 
 export type PerceptionBias = {
   /** Additive PAD bias; all values in [-1, 1] before combining */
@@ -16,92 +24,30 @@ export type PerceptionBias = {
   reason: string;
 };
 
-type Rule = {
-  name: string;
-  test: (f: BehavioralFeatures) => boolean;
-  pad_bias: PAD;
-  confidence: number;
-  reason: string;
-};
-
-const RULES: Rule[] = [
-  {
-    name: "high_skip_ratio",
-    test: (f) => f.skipRatio >= 0.6 && f.skips + f.completions >= 3,
-    pad_bias: { p: -0.2, a: 0.1, d: 0 },
-    confidence: 0.5,
-    reason: "high skip ratio suggests frustration",
-  },
-  {
-    name: "long_idle",
-    test: (f) => f.isBlurred && f.activeMs / f.windowMs < 0.05,
-    pad_bias: { p: 0, a: -0.3, d: 0 },
-    confidence: 0.4,
-    reason: "extended blur/idle suggests calm or away",
-  },
-  {
-    name: "rapid_submits",
-    test: (f) => !Number.isNaN(f.avgSubmitGapMs) && f.avgSubmitGapMs < 15_000 && f.submits >= 3,
-    pad_bias: { p: 0, a: 0.2, d: 0.1 },
-    confidence: 0.5,
-    reason: "rapid succession suggests engaged agency",
-  },
-  {
-    name: "proactive_dismisses",
-    test: (f) => f.proactiveDismisses >= 2,
-    pad_bias: { p: -0.15, a: 0, d: 0 },
-    confidence: 0.6,
-    reason: "user dismissing suggests unwelcome or busy",
-  },
-  {
-    name: "high_completion",
-    test: (f) => f.completions >= 3 && f.skips === 0,
-    pad_bias: { p: 0.15, a: 0, d: 0 },
-    confidence: 0.5,
-    reason: "sustained listens suggest resonance",
-  },
-];
-
-const NULL_BIAS: PerceptionBias = {
-  pad_bias: { p: 0, a: 0, d: 0 },
-  confidence: 0,
-  reason: "no signal",
-};
-
-export class PerceptionAgent {
-  infer(features: BehavioralFeatures): PerceptionBias {
-    const fired = RULES.filter((r) => r.test(features));
-    if (fired.length === 0) return NULL_BIAS;
-
-    // Confidence-weighted average of pad_bias values; sum confidences capped at 1.
-    let totalConf = 0;
-    let wp = 0;
-    let wa = 0;
-    let wd = 0;
-
-    for (const r of fired) {
-      totalConf += r.confidence;
-      wp += r.pad_bias.p * r.confidence;
-      wa += r.pad_bias.a * r.confidence;
-      wd += r.pad_bias.d * r.confidence;
-    }
-
-    const avgP = wp / totalConf;
-    const avgA = wa / totalConf;
-    const avgD = wd / totalConf;
-
-    return {
-      pad_bias: {
-        p: clamp(avgP, -1, 1),
-        a: clamp(avgA, -1, 1),
-        d: clamp(avgD, -1, 1),
-      },
-      confidence: Math.min(totalConf, 1),
-      reason: fired.map((r) => r.reason).join("; "),
-    };
-  }
+export interface PerceptionAgent {
+  infer(features: BehavioralFeatures): Promise<PerceptionBias>;
 }
 
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v));
+export type PerceptionMode = "rule" | "llm";
+
+export type CreatePerceptionAgentOpts = {
+  /** Which flavor to instantiate. Default "rule". */
+  mode?: PerceptionMode;
+  /** Required when mode === "llm". Ignored otherwise. */
+  provider?: ModelProvider;
+};
+
+/**
+ * Instantiate the perception agent selected by `opts.mode`.
+ *
+ * If mode is "llm" and no provider is supplied the LLM path can't be built,
+ * so the factory silently returns a rule agent — callers stay simple.
+ */
+export function createPerceptionAgent(
+  opts: CreatePerceptionAgentOpts = {},
+): PerceptionAgent {
+  // Sprint 7 T4 will branch on opts.mode === "llm" + opts.provider. Until T2
+  // lands the LLM class doesn't exist, so we always return rule for now.
+  void opts;
+  return new RulePerceptionAgent();
 }

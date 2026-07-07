@@ -21,7 +21,7 @@ import type { PolitenessState } from "./proactive/types";
 import { bus as perceptionBus } from "./perception/events";
 import { installPerceptionListeners } from "./perception/install";
 import { aggregate as aggregatePerception } from "./perception/aggregator";
-import { PerceptionAgent } from "./perception/PerceptionAgent";
+import { createPerceptionAgent } from "./perception/PerceptionAgent";
 import { RoadmapBoard } from "./ui/RoadmapBoard";
 
 async function bootMemory(): Promise<void> {
@@ -217,12 +217,12 @@ function App() {
       if (!enabled || cancelled) return;
 
       uninstallListeners = installPerceptionListeners(perceptionBus);
-      const agent = new PerceptionAgent();
+      const agent = createPerceptionAgent({ mode: "rule" });
 
-      const tick = () => {
+      const tick = async () => {
         try {
           const features = aggregatePerception(perceptionBus);
-          const bias = agent.infer(features);
+          const bias = await agent.infer(features);
           orchestrator.setPerceptionBias(bias.confidence > 0 ? bias : null);
           if (bias.confidence > 0) {
             console.debug("[lyra] perception bias:", bias);
