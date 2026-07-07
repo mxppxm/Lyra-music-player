@@ -12,6 +12,9 @@ vi.mock("./secrets", () => ({
     dreamIdleMinutes: "dream.idleMinutes",
     perceptionEnabled: "perception.enabled",
     perceptionMode: "perception.mode",
+    embeddingProvider: "embedding.provider",
+    zhipuEmbeddingApiKey: "embedding.zhipu.apiKey",
+    openaiApiKey: "embedding.openai.apiKey",
   },
   setSecret: vi.fn(),
   getSecret: vi.fn(),
@@ -22,12 +25,19 @@ vi.mock("../library/libraryScan", () => ({
   importLibrary: vi.fn(() => Promise.resolve(0)),
 }));
 
+vi.mock("../library/lyricsRefill", () => ({
+  lyricsRefill: vi.fn(() =>
+    Promise.resolve({ started: 0, succeeded: 0, failed: 0 }),
+  ),
+}));
+
 vi.mock("../reflect/trigger", () => ({
   reflectNow: vi.fn(),
 }));
 
 import { setSecret, getSecret } from "./secrets";
 import { importLibrary } from "../library/libraryScan";
+import { lyricsRefill } from "../library/lyricsRefill";
 import { reflectNow } from "../reflect/trigger";
 
 beforeEach(() => {
@@ -35,6 +45,8 @@ beforeEach(() => {
   (getSecret as any).mockReset();
   (importLibrary as any).mockReset();
   (importLibrary as any).mockResolvedValue(0);
+  (lyricsRefill as any).mockReset();
+  (lyricsRefill as any).mockResolvedValue({ started: 0, succeeded: 0, failed: 0 });
   (reflectNow as any).mockReset();
 });
 
@@ -185,6 +197,31 @@ describe("Settings", () => {
       expect(setSecret).toHaveBeenCalledWith("dream.idleMinutes", "60");
       expect(onSchedulerUpdate).toHaveBeenCalledWith("02:30", 60);
       expect(onClose).toHaveBeenCalled();
+    });
+  });
+
+  it("Refill button is enabled after choosing an embedding provider and fires lyricsRefill", async () => {
+    (getSecret as any).mockResolvedValue(null);
+    (lyricsRefill as any).mockResolvedValue({ started: 5, succeeded: 5, failed: 0 });
+    render(<Settings open={true} onClose={() => {}} />);
+
+    await screen.findByLabelText(/anthropic/i);
+    const providerSelect = screen.getByLabelText(
+      /lyrics embedding provider/i,
+    ) as HTMLSelectElement;
+    fireEvent.change(providerSelect, { target: { value: "zhipu" } });
+
+    const btn = await screen.findByRole("button", {
+      name: /refill missing lyrics embeddings/i,
+    });
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(lyricsRefill).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByText(/refill: 5 succeeded, 0 failed \(of 5\)\./i),
+      ).toBeInTheDocument();
     });
   });
 });

@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { SECRET_KEYS, setSecret, getSecret } from "./secrets";
 import { importLibrary } from "../library/libraryScan";
+import { lyricsRefill } from "../library/lyricsRefill";
 import { reflectNow } from "../reflect/trigger";
+
+type EmbeddingChoice = "" | "zhipu" | "openai";
 
 export type SettingsProps = {
   open: boolean;
@@ -18,6 +21,10 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [dreamIdleMinutes, setDreamIdleMinutes] = useState("30");
   const [perceptionEnabled, setPerceptionEnabled] = useState(true);
   const [perceptionMode, setPerceptionMode] = useState<"rule" | "llm">("rule");
+  const [embeddingChoice, setEmbeddingChoice] = useState<EmbeddingChoice>("");
+  const [zhipuEmbeddingKey, setZhipuEmbeddingKey] = useState("");
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [refilling, setRefilling] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scanStatus, setScanStatus] = useState<string>("");
@@ -26,7 +33,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d, z, lib, dt, dim, pe, pm] = await Promise.all([
+      const [a, d, z, lib, dt, dim, pe, pm, ep, zek, ok] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
         getSecret(SECRET_KEYS.zhipuApiKey),
@@ -35,6 +42,9 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         getSecret(SECRET_KEYS.dreamIdleMinutes),
         getSecret(SECRET_KEYS.perceptionEnabled),
         getSecret(SECRET_KEYS.perceptionMode),
+        getSecret(SECRET_KEYS.embeddingProvider),
+        getSecret(SECRET_KEYS.zhipuEmbeddingApiKey),
+        getSecret(SECRET_KEYS.openaiApiKey),
       ]);
       if (cancelled) return;
       setAnthropic(a ?? "");
@@ -46,6 +56,9 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       // Default to enabled; only disable when explicitly stored as "false"
       setPerceptionEnabled(pe !== "false");
       setPerceptionMode(pm === "llm" ? "llm" : "rule");
+      setEmbeddingChoice(ep === "zhipu" || ep === "openai" ? ep : "");
+      setZhipuEmbeddingKey(zek ?? "");
+      setOpenaiKey(ok ?? "");
       setLoaded(true);
     })();
     return () => {
@@ -66,6 +79,9 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.dreamIdleMinutes, dreamIdleMinutes);
       await setSecret(SECRET_KEYS.perceptionEnabled, perceptionEnabled ? "true" : "false");
       await setSecret(SECRET_KEYS.perceptionMode, perceptionMode);
+      await setSecret(SECRET_KEYS.embeddingProvider, embeddingChoice);
+      await setSecret(SECRET_KEYS.zhipuEmbeddingApiKey, zhipuEmbeddingKey);
+      await setSecret(SECRET_KEYS.openaiApiKey, openaiKey);
       if (libraryPath) {
         setScanStatus("Scanning…");
         try {
@@ -80,6 +96,20 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const onRefill = () => {
+    if (refilling) return;
+    setRefilling(true);
+    setScanStatus("Refilling lyrics embeddings…");
+    void lyricsRefill()
+      .then((r) => {
+        setScanStatus(
+          `Refill: ${r.succeeded} succeeded, ${r.failed} failed (of ${r.started}).`,
+        );
+      })
+      .catch(() => setScanStatus("Refill failed silently — check console."))
+      .finally(() => setRefilling(false));
   };
 
   const onReflect = async () => {
@@ -181,6 +211,48 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           <option value="llm">LLM 式（Zhipu/DeepSeek，每 60 秒一次调用）</option>
         </select>
       </label>
+      <label>
+        Lyrics embedding provider
+        <select
+          value={embeddingChoice}
+          onChange={(e) => setEmbeddingChoice(e.target.value as EmbeddingChoice)}
+          disabled={!loaded}
+        >
+          <option value="">（未启用）</option>
+          <option value="zhipu">Zhipu embedding-3</option>
+          <option value="openai">OpenAI text-embedding-3-small</option>
+        </select>
+      </label>
+      {embeddingChoice === "zhipu" && (
+        <label>
+          Zhipu Embedding API Key
+          <input
+            type="password"
+            value={zhipuEmbeddingKey}
+            onChange={(e) => setZhipuEmbeddingKey(e.target.value)}
+            disabled={!loaded}
+          />
+        </label>
+      )}
+      {embeddingChoice === "openai" && (
+        <label>
+          OpenAI API Key
+          <input
+            type="password"
+            value={openaiKey}
+            onChange={(e) => setOpenaiKey(e.target.value)}
+            disabled={!loaded}
+          />
+        </label>
+      )}
+      <div className="settings-actions">
+        <button
+          onClick={onRefill}
+          disabled={refilling || !loaded || !embeddingChoice}
+        >
+          {refilling ? "Refilling…" : "Refill missing lyrics embeddings"}
+        </button>
+      </div>
       <div className="settings-actions">
         <button onClick={onReflect} disabled={saving || !loaded}>
           Reflect now
