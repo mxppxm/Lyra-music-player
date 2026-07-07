@@ -47,4 +47,10 @@ describe("settings/secrets", () => {
   it("exports perceptionEnabled key", () => {
     expect(SECRET_KEYS.perceptionEnabled).toBe("perception.enabled");
   });
+
+  it("exports embedding secret keys", () => {
+    expect(SECRET_KEYS.embeddingProvider).toBe("embedding.provider");
+    expect(SECRET_KEYS.zhipuEmbeddingApiKey).toBe("embedding.zhipu.apiKey");
+    expect(SECRET_KEYS.openaiApiKey).toBe("embedding.openai.apiKey");
+  });
 });

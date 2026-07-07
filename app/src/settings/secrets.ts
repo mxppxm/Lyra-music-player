@@ -9,6 +9,9 @@ export const SECRET_KEYS = {
   dreamIdleMinutes: "dream.idleMinutes",
   perceptionEnabled: "perception.enabled",
   perceptionMode: "perception.mode",
+  embeddingProvider: "embedding.provider",
+  zhipuEmbeddingApiKey: "embedding.zhipu.apiKey",
+  openaiApiKey: "embedding.openai.apiKey",
 } as const;
 
 export async function setSecret(key: string, value: string): Promise<void> {
