@@ -52,6 +52,25 @@ export async function extractFeaturesForTracks(
   return extracted;
 }
 
+/** Sprint 10: run lyrics embedding pass. Sequential (concurrency 1) mirrors
+ *  extractFeaturesForTracks. Missing lyrics / missing provider / network
+ *  failure per-track → skip, keep going. Returns count embedded. */
+export async function extractLyricsForTracks(
+  tracks: LibraryTrack[],
+): Promise<number> {
+  const { computeLyricsEmbedding } = await import("./computeLyricsEmbedding");
+  const { createEmbeddingProvider } = await import(
+    "../providers/embeddingProvider"
+  );
+  const provider = await createEmbeddingProvider();
+  if (!provider) return 0;
+  let n = 0;
+  for (const t of tracks) {
+    if (await computeLyricsEmbedding(t.id, t.path, provider)) n++;
+  }
+  return n;
+}
+
 export type ImportOptions = {
   /** Await feature extraction before returning. Off by default so imports
    *  stay snappy; tests turn it on for determinism. */
@@ -81,13 +100,17 @@ export async function importLibrary(
     await insertTrack(track);
     newTracks.push(track);
   }
-  // Sprint 9: schedule feature extraction. In production we fire-and-forget so
-  // Settings' "Imported N tracks" toast lands immediately; the background loop
-  // upserts features as decodes finish.
+  // Sprint 9 + 10: feature extraction + lyrics embedding. Both fire-and-forget
+  // so the "Imported N tracks" toast lands immediately; background loops
+  // upsert as decodes / API calls finish. Each track is best-effort.
   if (newTracks.length > 0) {
-    const p = extractFeaturesForTracks(newTracks);
-    if (opts.awaitFeatures) await p;
-    else void p.catch(() => {});
+    const pf = extractFeaturesForTracks(newTracks);
+    const pl = extractLyricsForTracks(newTracks);
+    if (opts.awaitFeatures) await Promise.all([pf, pl]);
+    else {
+      void pf.catch(() => {});
+      void pl.catch(() => {});
+    }
   }
   return newTracks.length;
 }

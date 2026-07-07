@@ -12,7 +12,14 @@ vi.mock("../db/repo/libraryRepo", () => ({
   insertTrack: (...args: unknown[]) => insertTrackMock(...args),
 }));
 
-import { scanLibrary, importLibrary } from "./libraryScan";
+// Sprint 10: neutralize the lyrics-embedding dynamic import so
+// extractLyricsForTracks stays deterministic across tests.
+vi.mock("../providers/embeddingProvider", () => ({
+  createEmbeddingProvider: async () => null,
+}));
+
+import { scanLibrary, importLibrary, extractLyricsForTracks } from "./libraryScan";
+import type { LibraryTrack } from "../types";
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -49,5 +56,13 @@ describe("libraryScan", () => {
       expect(t.id.length).toBeGreaterThan(0);
       expect(typeof t.added_at).toBe("number");
     }
+  });
+
+  it("extractLyricsForTracks returns 0 when no provider", async () => {
+    const tracks: LibraryTrack[] = [
+      { id: "t1", path: "/a.mp3", origin: "local", added_at: 0 },
+    ];
+    const n = await extractLyricsForTracks(tracks);
+    expect(n).toBe(0);
   });
 });
