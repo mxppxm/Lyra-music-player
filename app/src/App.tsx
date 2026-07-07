@@ -23,6 +23,7 @@ import { installPerceptionListeners } from "./perception/install";
 import { aggregate as aggregatePerception } from "./perception/aggregator";
 import { createPerceptionAgent, type PerceptionMode } from "./perception/PerceptionAgent";
 import { routeProvider } from "./agents/route";
+import { insert as insertPerceptionAudit } from "./db/repo/perceptionAuditRepo";
 import { RoadmapBoard } from "./ui/RoadmapBoard";
 
 async function bootMemory(): Promise<void> {
@@ -240,6 +241,14 @@ function App() {
           if (bias.confidence > 0) {
             console.debug("[lyra] perception bias:", bias);
           }
+          // Sprint 8: rolling audit so ReflectAgent can tune thresholds.
+          void insertPerceptionAudit({
+            id: `pa-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            ts: Date.now(),
+            source: mode,
+            features_json: JSON.stringify(features),
+            bias_json: JSON.stringify(bias),
+          }).catch(() => {});
         } catch (err) {
           console.warn("[lyra] perception tick failed:", err);
         }

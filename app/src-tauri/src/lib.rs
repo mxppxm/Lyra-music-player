@@ -108,12 +108,20 @@ pub fn run() {
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
                     "sqlite:lyra.db",
-                    vec![Migration {
-                        version: 1,
-                        description: "initial schema",
-                        sql: include_str!("../migrations/001_initial.sql"),
-                        kind: MigrationKind::Up,
-                    }],
+                    vec![
+                        Migration {
+                            version: 1,
+                            description: "initial schema",
+                            sql: include_str!("../migrations/001_initial.sql"),
+                            kind: MigrationKind::Up,
+                        },
+                        Migration {
+                            version: 2,
+                            description: "perception audit table",
+                            sql: include_str!("../migrations/002_perception_audit.sql"),
+                            kind: MigrationKind::Up,
+                        },
+                    ],
                 )
                 .build(),
         )
