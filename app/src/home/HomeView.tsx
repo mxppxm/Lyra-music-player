@@ -97,6 +97,43 @@ function LiveHomeView({
   const noteColor: string | undefined =
     state.kind === "error" ? "rgba(200,80,80,0.75)" : undefined;
 
+  // §7 idle empty state — sparser layout when no turns yet
+  const isSparseIdle = state.kind === "idle" && traceItems.length === 0;
+
+  if (isSparseIdle) {
+    return (
+      <AmbientBackground pad={pad}>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "var(--lyra-viewport-padding)",
+            gap: 0,
+          }}
+        >
+          <div
+            data-testid="lyra-idle-slogan"
+            style={{
+              color: "var(--lyra-color-song-info)",
+              fontSize: "var(--lyra-song-font-size)",
+              fontFamily: "var(--lyra-note-family)",
+              fontStyle: "italic",
+              letterSpacing: "0.04em",
+              marginBottom: "var(--lyra-space-trace-to-input)",
+              opacity: 0.7,
+            }}
+          >
+            Lyra 在听
+          </div>
+          <InputBox onSubmit={submit} />
+        </div>
+      </AmbientBackground>
+    );
+  }
+
   return (
     <AmbientBackground pad={pad}>
       <div

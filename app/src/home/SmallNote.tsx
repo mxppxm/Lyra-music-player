@@ -36,6 +36,7 @@ export function SmallNote({
         textAlign: "center",
         maxWidth: "var(--lyra-cover-size)",
         cursor: isLong ? "pointer" : "default",
+        lineHeight: 1.7,
         transition: "var(--lyra-transition-note-height)",
         whiteSpace: "pre-wrap",
         userSelect: "none",

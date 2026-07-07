@@ -48,16 +48,17 @@ describe("HomeView — cold boot (no orchestrator)", () => {
 });
 
 describe("HomeView — idle state", () => {
-  it("renders structure and idle placeholder note", () => {
+  it("renders sparse idle state with slogan and input (no cover/note yet)", () => {
     const orc = makeStubOrchestrator({ kind: "idle" });
     render(<HomeView onOpenSettings={() => {}} orchestrator={orc} />);
     expect(screen.getByTestId("ambient-surface")).toBeInTheDocument();
-    expect(screen.getByTestId("album-cover-frame")).toBeInTheDocument();
-    expect(screen.getByTestId("emotion-light-band")).toBeInTheDocument();
-    expect(screen.getByTestId("song-info")).toBeInTheDocument();
-    expect(screen.getByTestId("small-note")).toBeInTheDocument();
+    // Sprint 6: sparse idle shows slogan + input only, no cover/band/note
+    expect(screen.getByTestId("lyra-idle-slogan")).toBeInTheDocument();
+    expect(screen.getByText("Lyra 在听")).toBeInTheDocument();
     expect(screen.getByTestId("lyra-input")).toBeInTheDocument();
-    expect(screen.getByText("Lyra 在等你说一句话")).toBeInTheDocument();
+    expect(screen.queryByTestId("album-cover-frame")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("emotion-light-band")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("small-note")).not.toBeInTheDocument();
   });
 });
 

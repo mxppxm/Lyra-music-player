@@ -26,6 +26,10 @@ export function AlbumCover({ coverUrl, alt, titleHint }: AlbumCoverProps) {
         />
       ) : (
         <div
+          className="lyra-cover-breath"
+          style={{ width: "100%", height: "100%" }}
+        >
+        <div
           data-testid="album-cover-placeholder"
           style={{
             width: "100%",
@@ -65,6 +69,7 @@ export function AlbumCover({ coverUrl, alt, titleHint }: AlbumCoverProps) {
               {titleHint}
             </span>
           )}
+        </div>
         </div>
       )}
     </div>

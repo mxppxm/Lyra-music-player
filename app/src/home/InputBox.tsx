@@ -52,7 +52,7 @@ export function InputBox({
         fontFamily: "var(--lyra-song-family)",
         fontSize: "var(--lyra-song-font-size)",
         color: "var(--lyra-color-song-info)",
-        boxShadow: "0 1px 0 0 rgba(0,0,0,0.05)",
+        boxShadow: "0 1px 0 0 rgba(0,0,0,0.05), inset 0 0 0 1px rgba(0,0,0,0.03)",
         display: "block",
       }}
     />

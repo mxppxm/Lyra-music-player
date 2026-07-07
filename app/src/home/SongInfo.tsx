@@ -24,6 +24,8 @@ export function SongInfo({ title, artist }: SongInfoProps) {
         textOverflow: "ellipsis",
         maxWidth: "var(--lyra-cover-size)",
         minHeight: "1.4em",
+        lineHeight: 1.6,
+        letterSpacing: "0.02em",
       }}
     >
       {text}
