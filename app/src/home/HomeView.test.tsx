@@ -113,8 +113,9 @@ describe("HomeView — playing state", () => {
   it("shows real title and artist from song", () => {
     const orc = makeStubOrchestrator(playingState);
     render(<HomeView onOpenSettings={() => {}} orchestrator={orc} />);
-    expect(screen.getByText(/Nuvole Bianche/)).toBeInTheDocument();
-    expect(screen.getByText(/Ludovico Einaudi/)).toBeInTheDocument();
+    const songInfo = screen.getByTestId("song-info");
+    expect(songInfo.textContent).toContain("Nuvole Bianche");
+    expect(songInfo.textContent).toContain("Ludovico Einaudi");
   });
 
   it("shows real rationale in small note", () => {

@@ -113,6 +113,7 @@ function LiveHomeView({
         <AlbumCover
           coverUrl={coverUrl}
           alt={title ? `${title} cover` : "album cover"}
+          titleHint={title || undefined}
         />
         <div style={{ height: "var(--lyra-space-cover-to-band)" }} />
         <EmotionLightBand samples={padSamples} />

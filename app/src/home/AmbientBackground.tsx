@@ -30,13 +30,20 @@ export function AmbientBackground({
     <div
       data-testid="ambient-surface"
       className="lyra-ambient"
-      style={{
-        backgroundColor: bg,
-        minHeight: "100vh",
-        transition: "var(--lyra-transition-ambient)",
-        display: "flex",
-        flexDirection: "column",
-      }}
+      style={
+        {
+          backgroundColor: bg,
+          // Expose the current ambient color as a CSS custom property so
+          // descendants (e.g. the AlbumCover placeholder) can tint themselves
+          // against it — spec §3.2 says the placeholder should be a deeper
+          // version of the ambient, never a dead gray.
+          "--lyra-ambient-color": bg,
+          minHeight: "100vh",
+          transition: "var(--lyra-transition-ambient)",
+          display: "flex",
+          flexDirection: "column",
+        } as React.CSSProperties
+      }
     >
       {children}
     </div>
