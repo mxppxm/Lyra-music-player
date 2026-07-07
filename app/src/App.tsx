@@ -13,6 +13,10 @@ import { setMemoryContext } from "./memory/context";
 import { onSongComplete } from "./audio/player";
 import { DreamScheduler } from "./schedule/dreamScheduler";
 import { SECRET_KEYS, getSecret } from "./settings/secrets";
+import { ProactiveEngine } from "./proactive/engine";
+import { createSulkStore } from "./proactive/sulkStore";
+import { morningRule, careRule, anniversaryRule, shareRule, rhythmRule } from "./proactive/rules";
+import type { PolitenessState } from "./proactive/types";
 
 async function bootMemory(): Promise<void> {
   try {
@@ -29,6 +33,17 @@ function App() {
   const [bootDone, setBootDone] = useState(false);
   const [reflecting, setReflecting] = useState(false);
   const schedulerRef = useRef<DreamScheduler | null>(null);
+  const sulkStoreRef = useRef(createSulkStore());
+  const politenessStateRef = useRef<PolitenessState>({
+    todayProactiveCount: 0,
+    todayKindCount: {},
+    lastKindFireAt: {},
+    sulkUntil: null,
+    isFocusOrSleep: () => false,
+    isPlayingOtherSource: () => false,
+  });
+  const proactiveEngineRef = useRef<ProactiveEngine | null>(null);
+  const todayFirstOpenRef = useRef(true);
 
   useEffect(() => {
     bootProviders()
@@ -76,6 +91,55 @@ function App() {
     () => (bootDone ? createDefaultOrchestrator() : null),
     [bootDone],
   );
+
+  // Construct ProactiveEngine once orchestrator is ready
+  useEffect(() => {
+    if (!orchestrator) return;
+
+    const engine = new ProactiveEngine({
+      rules: [morningRule, careRule, anniversaryRule, shareRule, rhythmRule],
+      politenessState: politenessStateRef.current,
+      sulkStore: sulkStoreRef.current,
+      fulfill: async (intent) => {
+        // v0.2: ask orchestrator to pick a song via its internal logic
+        // For now, emit proactive-pending with a placeholder — real
+        // LibraryAgent/CompanionAgent wiring is T3's job.
+        console.debug("[lyra] proactive fulfill intent:", intent);
+        // Minimal: just log for now; T3 will add full song selection.
+      },
+    });
+    proactiveEngineRef.current = engine;
+
+    // Tick once after boot (in case app opened fresh this morning)
+    void engine.tick({
+      now: new Date(),
+      lastAppOpenAt: null,
+      todayFirstOpen: todayFirstOpenRef.current,
+      sharedMemories: [],
+      dreamSeeds: [],
+      todayKindCount: { ...politenessStateRef.current.todayKindCount },
+    });
+    todayFirstOpenRef.current = false;
+  }, [orchestrator]);
+
+  // Tick on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      const engine = proactiveEngineRef.current;
+      if (!engine) return;
+      void engine.tick({
+        now: new Date(),
+        lastAppOpenAt: null,
+        todayFirstOpen: todayFirstOpenRef.current,
+        sharedMemories: [],
+        dreamSeeds: [],
+        todayKindCount: { ...politenessStateRef.current.todayKindCount },
+      });
+      todayFirstOpenRef.current = false;
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
   const handleReflectNow = useCallback(() => {
     if (reflecting) return;

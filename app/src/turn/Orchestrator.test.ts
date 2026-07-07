@@ -241,6 +241,96 @@ describe("Orchestrator T7: reaction capture", () => {
   });
 });
 
+describe("Orchestrator T2: proactive-pending state", () => {
+  it("startProactiveIntent emits proactive-pending WITHOUT playing audio", () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+
+    const track: import("../types").LibraryTrack = {
+      id: "t1",
+      path: "/x.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "T1",
+    };
+    const intent: import("../proactive/types").ProactiveIntent = {
+      id: "i1",
+      createdAt: 1000,
+      validUntil: 1000 + 30 * 60_000,
+      kind: "morning",
+      urgency: 0.5,
+      hint: "早上第一次打开",
+    };
+
+    orc.startProactiveIntent(intent, track, "morning greeting");
+
+    expect(seen).toEqual(["proactive-pending"]);
+    expect(deps.audio.playFile).not.toHaveBeenCalled();
+
+    const state = orc.getState();
+    expect(state.kind).toBe("proactive-pending");
+    if (state.kind === "proactive-pending") {
+      expect(state.intent).toBe(intent);
+      expect(state.song).toBe(track);
+      expect(state.rationale).toBe("morning greeting");
+    }
+  });
+
+  it("onUserInput after proactive-pending commits the pending turn then processes utterance", async () => {
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    const track: import("../types").LibraryTrack = {
+      id: "t1",
+      path: "/x.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "T1",
+    };
+    const intent: import("../proactive/types").ProactiveIntent = {
+      id: "i1",
+      createdAt: 1000,
+      validUntil: 1000 + 30 * 60_000,
+      kind: "morning",
+      urgency: 0.5,
+      hint: "早上第一次打开",
+    };
+
+    orc.startProactiveIntent(intent, track, "morning greeting");
+    expect(orc.getState().kind).toBe("proactive-pending");
+
+    await orc.onUserInput("好的");
+
+    // Should have inserted the proactive-pending turn + the new user turn
+    expect(deps.turnRepo.insertTurn).toHaveBeenCalledTimes(2);
+    // First call: the proactive-pending turn with modality "proactive-open"
+    const firstTurn = (deps.turnRepo.insertTurn.mock.calls[0] as unknown[])[0] as import("../types").DialogueTurn;
+    expect(firstTurn.user_utterance.modality).toBe("proactive-open");
+    expect(firstTurn.agent_response.song_id).toBe("t1");
+
+    // Should end in playing state
+    expect(orc.getState().kind).toBe("playing");
+    // Audio should have been called once (for the new utterance turn)
+    expect(deps.audio.playFile).toHaveBeenCalledOnce();
+  });
+
+  it("onUserInput from idle state (no proactive-pending) still works normally", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+
+    await orc.onUserInput("来首歌");
+    expect(seen).toEqual(["thinking", "playing"]);
+    expect(deps.turnRepo.insertTurn).toHaveBeenCalledOnce();
+    expect(deps.audio.playFile).toHaveBeenCalledOnce();
+  });
+});
+
 describe("Orchestrator T6: salient moment wiring", () => {
   it("significant turn triggers repo insert + memory.md append", async () => {
     const salientModule = await import("../moments/salient");

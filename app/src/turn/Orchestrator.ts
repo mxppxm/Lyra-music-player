@@ -10,6 +10,7 @@ import { detectSalientMoment } from "../moments/salient";
 import { currentTagsFor } from "./currentTags";
 import { insertSharedMemory } from "../db/repo/sharedMemoryRepo";
 import { appendSalientMomentToMemoryMd } from "../memory/appendSalient";
+import type { ProactiveIntent } from "../proactive/types";
 
 export type SoulStoreLike = {
   load(): Promise<SoulState>;
@@ -22,7 +23,8 @@ export type OrchestratorState =
   | { kind: "idle" }
   | { kind: "thinking"; user_utterance: string }
   | { kind: "playing"; turn: DialogueTurn; song: LibraryTrack }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "proactive-pending"; intent: ProactiveIntent; song: LibraryTrack; rationale: string };
 
 export type OrchestratorDeps = {
   emotion: EmotionAgent;
@@ -222,8 +224,70 @@ export class Orchestrator {
     this.emit({ kind: "playing", turn, song });
   }
 
+  /**
+   * Install a proactive-pending state without playing audio. The song will
+   * only start when the user interacts (types or clicks). Does NOT call
+   * audio.playFile — presentation only.
+   */
+  startProactiveIntent(
+    intent: ProactiveIntent,
+    song: LibraryTrack,
+    rationale: string,
+  ): void {
+    this.emit({ kind: "proactive-pending", intent, song, rationale });
+  }
+
   async onUserInput(text: string): Promise<void> {
     const emotionAgent = this.deps.emotion;
+
+    // If we have a proactive-pending intent, commit it as a real turn first
+    // (backdated with modality "proactive-open"), then process the utterance.
+    const currentState = this.state;
+    if (currentState.kind === "proactive-pending") {
+      const { song, rationale } = currentState;
+      const clock = this.deps.clock ?? Date.now;
+      const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
+      const { soulStore, turnRepo } = this.deps;
+
+      try {
+        const soul = await soulStore.load();
+        const pendingTurn: DialogueTurn = {
+          id: idGen(),
+          timestamp: clock(),
+          current_emotion: {
+            pad: soul.dynamic_mood.current_pad,
+            labels: [],
+            confidence: 0,
+            source: "emotion-agent-inferred" as const,
+          },
+          user_utterance: { modality: "proactive-open", content: "" },
+          agent_response: { song_id: song.id, rationale },
+          user_reaction: {
+            behavioral: {
+              listen_duration_ms: 0,
+              completed: false,
+              skipped: false,
+              repeated: 0,
+              volume_delta: 0,
+            },
+            silence_positive: false,
+          },
+          emotion_delta: ZERO_PAD,
+        };
+        await turnRepo.insertTurn(pendingTurn);
+        // Set as current turn (no audio yet — user consumed it by typing)
+        this.currentTurn = pendingTurn;
+        this.currentSong = song;
+        this.pendingEvents = [];
+      } catch (err) {
+        console.warn("[lyra] failed to commit proactive-pending turn:", err);
+      }
+    }
+
+    // Clear sulk on any user input (user is actively engaging)
+    // (SulkStore instance is not held here; callers wire clearSulk separately
+    //  via the proactive engine's recordOutcome path — this is the Orchestrator's
+    //  responsibility boundary in v0.2.)
 
     this.emit({ kind: "thinking", user_utterance: text });
 
