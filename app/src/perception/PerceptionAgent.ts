@@ -14,6 +14,7 @@ import type { ModelProvider } from "../types/provider";
 import type { BehavioralFeatures } from "./aggregator";
 import type { PAD } from "../types";
 import { RulePerceptionAgent } from "./RulePerceptionAgent";
+import { LLMPerceptionAgent } from "./LLMPerceptionAgent";
 
 export type PerceptionBias = {
   /** Additive PAD bias; all values in [-1, 1] before combining */
@@ -46,8 +47,12 @@ export type CreatePerceptionAgentOpts = {
 export function createPerceptionAgent(
   opts: CreatePerceptionAgentOpts = {},
 ): PerceptionAgent {
-  // Sprint 7 T4 will branch on opts.mode === "llm" + opts.provider. Until T2
-  // lands the LLM class doesn't exist, so we always return rule for now.
-  void opts;
-  return new RulePerceptionAgent();
+  const rule = new RulePerceptionAgent();
+  if (opts.mode === "llm" && opts.provider) {
+    return new LLMPerceptionAgent({
+      provider: opts.provider,
+      fallback: rule,
+    });
+  }
+  return rule;
 }

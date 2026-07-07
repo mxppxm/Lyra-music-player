@@ -1,16 +1,18 @@
 import type { ModelProvider, ProviderId } from "../types";
 import { registry as defaultRegistry, ProviderRegistry } from "../providers/registry";
 
-export type AgentKind = "emotion" | "companion";
+export type AgentKind = "emotion" | "companion" | "perception";
 
 export const PRIMARY_FOR: Record<AgentKind, ProviderId> = {
   emotion: "zhipu",
   companion: "anthropic",
+  perception: "zhipu",
 };
 
 export const FALLBACK_FOR: Record<AgentKind, ProviderId> = {
   emotion: "deepseek",
   companion: "zhipu",
+  perception: "deepseek",
 };
 
 export function routeProvider(

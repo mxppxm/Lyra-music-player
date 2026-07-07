@@ -8,6 +8,7 @@ export const SECRET_KEYS = {
   dreamDailyTime: "dream.dailyTime",
   dreamIdleMinutes: "dream.idleMinutes",
   perceptionEnabled: "perception.enabled",
+  perceptionMode: "perception.mode",
 } as const;
 
 export async function setSecret(key: string, value: string): Promise<void> {

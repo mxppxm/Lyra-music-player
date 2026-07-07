@@ -21,7 +21,8 @@ import type { PolitenessState } from "./proactive/types";
 import { bus as perceptionBus } from "./perception/events";
 import { installPerceptionListeners } from "./perception/install";
 import { aggregate as aggregatePerception } from "./perception/aggregator";
-import { createPerceptionAgent } from "./perception/PerceptionAgent";
+import { createPerceptionAgent, type PerceptionMode } from "./perception/PerceptionAgent";
+import { routeProvider } from "./agents/route";
 import { RoadmapBoard } from "./ui/RoadmapBoard";
 
 async function bootMemory(): Promise<void> {
@@ -217,7 +218,20 @@ function App() {
       if (!enabled || cancelled) return;
 
       uninstallListeners = installPerceptionListeners(perceptionBus);
-      const agent = createPerceptionAgent({ mode: "rule" });
+      const modeStored = await getSecret(SECRET_KEYS.perceptionMode).catch(() => null);
+      const mode: PerceptionMode = modeStored === "llm" ? "llm" : "rule";
+      const provider =
+        mode === "llm"
+          ? (() => {
+              try {
+                return routeProvider("perception");
+              } catch {
+                return undefined;
+              }
+            })()
+          : undefined;
+      const agent = createPerceptionAgent({ mode, provider });
+      console.debug("[lyra] perception agent mode:", mode);
 
       const tick = async () => {
         try {
