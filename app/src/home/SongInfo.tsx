@@ -4,6 +4,13 @@ export type SongInfoProps = {
 };
 
 export function SongInfo({ title, artist }: SongInfoProps) {
+  const t = title.trim();
+  const a = artist.trim();
+  const text = t
+    ? a
+      ? `《${t}》 · ${a}`
+      : `《${t}》`
+    : ""; // completely empty — parent decides whether to render
   return (
     <div
       data-testid="song-info"
@@ -16,7 +23,10 @@ export function SongInfo({ title, artist }: SongInfoProps) {
         overflow: "hidden",
         textOverflow: "ellipsis",
         maxWidth: "var(--lyra-cover-size)",
+        minHeight: "1.4em",
       }}
-    >{`《${title}》 · ${artist}`}</div>
+    >
+      {text}
+    </div>
   );
 }

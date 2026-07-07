@@ -11,6 +11,7 @@ import { bindGlobalKeys } from "./keyboard";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "../turn/Orchestrator";
 import * as turnRepo from "../db/repo/turnRepo";
+import { songDisplayTitle, songDisplayArtist } from "../library/display";
 import type { PAD } from "../types";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
@@ -64,10 +65,10 @@ function LiveHomeView({
     state.kind === "playing" ? null : null; // coverUrl reserved for Sprint 2
 
   const title: string =
-    state.kind === "playing" ? (state.song.title ?? "") : "";
+    state.kind === "playing" ? songDisplayTitle(state.song) : "";
 
   const artist: string =
-    state.kind === "playing" ? (state.song.artist ?? "") : "";
+    state.kind === "playing" ? songDisplayArtist(state.song) : "";
 
   const noteText: string =
     state.kind === "idle"
