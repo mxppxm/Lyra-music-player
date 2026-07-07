@@ -49,6 +49,15 @@ async fn library_scan(path: String) -> Result<Vec<library_scan::ScannedTrack>, S
     library_scan::scan_directory(std::path::Path::new(&path)).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn app_data_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -81,6 +90,7 @@ pub fn run() {
             secret_get,
             secret_delete,
             library_scan,
+            app_data_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
