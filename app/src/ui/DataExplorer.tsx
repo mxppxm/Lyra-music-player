@@ -10,6 +10,7 @@ import * as sharedMemoryRepo from "../db/repo/sharedMemoryRepo";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import * as libraryFeaturesRepo from "../db/repo/libraryFeaturesRepo";
 import type { LibraryFeatures } from "../db/repo/libraryFeaturesRepo";
+import * as lyricsEmbeddingsRepo from "../db/repo/lyricsEmbeddingsRepo";
 import * as perceptionAuditRepo from "../db/repo/perceptionAuditRepo";
 import type { PerceptionAuditRow } from "../db/repo/perceptionAuditRepo";
 import * as engineerAuditRepo from "../db/repo/engineerAuditRepo";
@@ -30,6 +31,7 @@ type TabId =
   | "soul"
   | "salient"
   | "library"
+  | "lyrics_emb"
   | "perception"
   | "roadmap"
   | "features_req"
@@ -42,6 +44,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "soul", label: "灵魂状态" },
   { id: "salient", label: "显著时刻" },
   { id: "library", label: "曲库 + 特征" },
+  { id: "lyrics_emb", label: "歌词 embedding" },
   { id: "perception", label: "感知审计" },
   { id: "roadmap", label: "Roadmap" },
   { id: "features_req", label: "功能请求" },
@@ -180,6 +183,7 @@ export function DataExplorer({ open, onClose }: DataExplorerProps) {
         {tab === "library" && (
           <LibraryPanel expandedId={expandedRowId} onToggle={toggleRow} />
         )}
+        {tab === "lyrics_emb" && <LyricsEmbeddingsPanel />}
         {tab === "perception" && (
           <PerceptionAuditPanel expandedId={expandedRowId} onToggle={toggleRow} />
         )}
@@ -710,5 +714,45 @@ function MemoryMdPanel() {
     >
       {content}
     </pre>
+  );
+}
+
+function LyricsEmbeddingsPanel() {
+  const [cov, setCov] = useState<{
+    total: number;
+    withEmbedding: number;
+    modelId: string | null;
+  } | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        setCov(await lyricsEmbeddingsRepo.countCoverage());
+      } catch {
+        setCov({ total: 0, withEmbedding: 0, modelId: null });
+      }
+    })();
+  }, []);
+  if (cov === null) return <Empty label="加载中…" />;
+  const pct =
+    cov.total === 0
+      ? 0
+      : Math.round((cov.withEmbedding / cov.total) * 100);
+  return (
+    <div data-testid="panel-lyrics_emb">
+      <ul style={{ lineHeight: "1.9" }}>
+        <li>曲库总数：{cov.total.toLocaleString()}</li>
+        <li>
+          已生成 embedding：{cov.withEmbedding.toLocaleString()}
+          {cov.total > 0 ? ` (${pct}%)` : ""}
+        </li>
+        <li>缺失：{(cov.total - cov.withEmbedding).toLocaleString()}</li>
+        <li>当前模型：{cov.modelId ?? "(未启用)"}</li>
+      </ul>
+      <p style={{ opacity: 0.55, fontSize: "0.8rem", marginTop: "1rem" }}>
+        Sprint 10: 歌词从本地 ID3 USLT 抽取 → 云 embedding → 存
+        library_lyrics_embeddings 表。切换 provider 后到 Settings 点 "Refill
+        missing lyrics embeddings" 回填。
+      </p>
+    </div>
   );
 }

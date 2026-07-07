@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { DataExplorer } from "./DataExplorer";
 
 vi.mock("../db/repo/turnRepo", () => ({
   listRecentTurns: vi.fn(() => Promise.resolve([])),
+}));
+vi.mock("../db/repo/lyricsEmbeddingsRepo", () => ({
+  countCoverage: vi.fn(() =>
+    Promise.resolve({
+      total: 100,
+      withEmbedding: 66,
+      modelId: "zhipu:embedding-3",
+    }),
+  ),
 }));
 vi.mock("../db/repo/soulRepo", () => ({
   loadSoulState: vi.fn(() => Promise.resolve(null)),
@@ -50,6 +59,7 @@ describe("DataExplorer", () => {
     expect(screen.getByTestId("tab-soul")).toBeInTheDocument();
     expect(screen.getByTestId("tab-salient")).toBeInTheDocument();
     expect(screen.getByTestId("tab-library")).toBeInTheDocument();
+    expect(screen.getByTestId("tab-lyrics_emb")).toBeInTheDocument();
     expect(screen.getByTestId("tab-perception")).toBeInTheDocument();
     expect(screen.getByTestId("tab-roadmap")).toBeInTheDocument();
     expect(screen.getByTestId("tab-features_req")).toBeInTheDocument();
@@ -62,5 +72,15 @@ describe("DataExplorer", () => {
     await waitFor(() =>
       expect(screen.getByText(/还没有对话回合/)).toBeInTheDocument(),
     );
+  });
+
+  it("lyrics_emb tab shows coverage stats", async () => {
+    render(<DataExplorer open={true} onClose={() => {}} />);
+    fireEvent.click(screen.getByTestId("tab-lyrics_emb"));
+    await waitFor(() =>
+      expect(screen.getByTestId("panel-lyrics_emb")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/66%/)).toBeInTheDocument();
+    expect(screen.getByText(/zhipu:embedding-3/)).toBeInTheDocument();
   });
 });
