@@ -21,6 +21,7 @@ import { bus as perceptionBus } from "./perception/events";
 import { installPerceptionListeners } from "./perception/install";
 import { aggregate as aggregatePerception } from "./perception/aggregator";
 import { PerceptionAgent } from "./perception/PerceptionAgent";
+import { RoadmapBoard } from "./ui/RoadmapBoard";
 
 async function bootMemory(): Promise<void> {
   try {
@@ -34,6 +35,7 @@ async function bootMemory(): Promise<void> {
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [roadmapOpen, setRoadmapOpen] = useState(false);
   const [bootDone, setBootDone] = useState(false);
   const [reflecting, setReflecting] = useState(false);
   const schedulerRef = useRef<DreamScheduler | null>(null);
@@ -156,6 +158,7 @@ function App() {
       onTogglePlayback: () => {},
       onOpenSettings: () => setSettingsOpen(true),
       onReflectNow: handleReflectNow,
+      onOpenRoadmap: () => setRoadmapOpen(true),
     });
   }, [handleReflectNow]);
 
@@ -250,6 +253,7 @@ function App() {
         orchestrator={orchestrator}
       />
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} onSchedulerUpdate={handleSchedulerUpdate} />
+      <RoadmapBoard open={roadmapOpen} onClose={() => setRoadmapOpen(false)} />
     </>
   );
 }

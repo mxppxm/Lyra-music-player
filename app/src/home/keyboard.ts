@@ -2,6 +2,7 @@ export type KeyboardHandlers = {
   onTogglePlayback: () => void;
   onOpenSettings: () => void;
   onReflectNow?: () => void;
+  onOpenRoadmap?: () => void;
 };
 
 export function isPlainSpace(e: KeyboardEvent): boolean {
@@ -14,6 +15,10 @@ export function isMetaEqual(e: KeyboardEvent): boolean {
 
 export function isMetaShiftR(e: KeyboardEvent): boolean {
   return (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "r" || e.key === "R");
+}
+
+export function isMetaShiftE(e: KeyboardEvent): boolean {
+  return (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "e" || e.key === "E");
 }
 
 function isEditingTarget(target: EventTarget | null): boolean {
@@ -36,6 +41,11 @@ export function bindGlobalKeys(h: KeyboardHandlers): () => void {
     if (isMetaShiftR(e)) {
       e.preventDefault();
       h.onReflectNow?.();
+      return;
+    }
+    if (isMetaShiftE(e)) {
+      e.preventDefault();
+      h.onOpenRoadmap?.();
       return;
     }
     if (isPlainSpace(e)) {
