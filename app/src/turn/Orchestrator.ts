@@ -11,6 +11,7 @@ import { currentTagsFor } from "./currentTags";
 import { insertSharedMemory } from "../db/repo/sharedMemoryRepo";
 import { appendSalientMomentToMemoryMd } from "../memory/appendSalient";
 import type { ProactiveIntent } from "../proactive/types";
+import { setBreathing } from "../tray/trayBridge";
 
 export type SoulStoreLike = {
   load(): Promise<SoulState>;
@@ -244,6 +245,9 @@ export class Orchestrator {
     // (backdated with modality "proactive-open"), then process the utterance.
     const currentState = this.state;
     if (currentState.kind === "proactive-pending") {
+      // User is consuming the proactive intent — stop the breathing animation
+      setBreathing(false).catch(() => {/* best-effort; tray unavailable in tests */});
+
       const { song, rationale } = currentState;
       const clock = this.deps.clock ?? Date.now;
       const idGen = this.deps.idGen ?? (() => crypto.randomUUID());

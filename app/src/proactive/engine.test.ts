@@ -3,6 +3,17 @@ import { ProactiveEngine } from "./engine";
 import { createSulkStore } from "./sulkStore";
 import type { ProactiveIntent, PolitenessState, RuleContext } from "./types";
 
+// Mock tray integrations so tests don't need a Tauri runtime
+vi.mock("../tray/trayBridge", () => ({
+  setBreathing: vi.fn(async () => {}),
+}));
+vi.mock("../tray/notification", () => ({
+  sendLyraProactiveNotification: vi.fn(async () => {}),
+}));
+
+import { setBreathing } from "../tray/trayBridge";
+import { sendLyraProactiveNotification } from "../tray/notification";
+
 const NOW = 1_720_000_000_000;
 
 function makeIntent(overrides: Partial<ProactiveIntent> = {}): ProactiveIntent {
@@ -50,6 +61,8 @@ describe("ProactiveEngine.tick", () => {
     fulfill = vi.fn(async () => {});
     sulkStore = createSulkStore();
     politenessState = makePolitenessState();
+    vi.mocked(setBreathing).mockClear();
+    vi.mocked(sendLyraProactiveNotification).mockClear();
   });
 
   it("calls fulfill when a rule returns an intent and gate passes", async () => {
@@ -188,6 +201,39 @@ describe("ProactiveEngine.tick", () => {
 
     await engine.tick(makeCtx());
     expect(fulfill).not.toHaveBeenCalled();
+  });
+
+  it("calls setBreathing(true) and sendLyraProactiveNotification when gate passes", async () => {
+    const intent = makeIntent();
+    const engine = new ProactiveEngine({
+      rules: [() => intent],
+      politenessState,
+      sulkStore,
+      fulfill,
+      now: () => NOW,
+    });
+
+    await engine.tick(makeCtx());
+
+    expect(setBreathing).toHaveBeenCalledWith(true);
+    expect(sendLyraProactiveNotification).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT call setBreathing when gate blocks", async () => {
+    const state = makePolitenessState({ todayProactiveCount: 3 }); // daily limit reached
+
+    const engine = new ProactiveEngine({
+      rules: [() => makeIntent()],
+      politenessState: state,
+      sulkStore,
+      fulfill,
+      now: () => NOW,
+    });
+
+    await engine.tick(makeCtx());
+
+    expect(setBreathing).not.toHaveBeenCalled();
+    expect(sendLyraProactiveNotification).not.toHaveBeenCalled();
   });
 });
 

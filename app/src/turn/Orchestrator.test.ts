@@ -16,6 +16,13 @@ vi.mock("../memory/appendSalient", () => ({
   appendSalientMomentToMemoryMd: vi.fn(async () => {}),
 }));
 
+// ── Mock tray bridge (no Tauri runtime in tests) ──────────────────────────────
+vi.mock("../tray/trayBridge", () => ({
+  setBreathing: vi.fn(async () => {}),
+}));
+
+import { setBreathing } from "../tray/trayBridge";
+
 function makeDeps(overrides: Partial<any> = {}) {
   const emotion = {
     analyze: vi.fn(async () => ({
@@ -81,6 +88,7 @@ beforeEach(() => {
   vi.mocked(sharedMemoryRepo.insertSharedMemory).mockResolvedValue(undefined);
   vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd).mockReset();
   vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd).mockResolvedValue(undefined);
+  vi.mocked(setBreathing).mockClear();
 });
 
 describe("Orchestrator.onUserInput happy path", () => {
@@ -328,6 +336,43 @@ describe("Orchestrator T2: proactive-pending state", () => {
     expect(seen).toEqual(["thinking", "playing"]);
     expect(deps.turnRepo.insertTurn).toHaveBeenCalledOnce();
     expect(deps.audio.playFile).toHaveBeenCalledOnce();
+  });
+
+  it("onUserInput after proactive-pending calls setBreathing(false) to stop animation", async () => {
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    const track: import("../types").LibraryTrack = {
+      id: "t1",
+      path: "/x.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "T1",
+    };
+    const intent: import("../proactive/types").ProactiveIntent = {
+      id: "i1",
+      createdAt: 1000,
+      validUntil: 1000 + 30 * 60_000,
+      kind: "morning",
+      urgency: 0.5,
+      hint: "早上第一次打开",
+    };
+
+    orc.startProactiveIntent(intent, track, "morning greeting");
+    await orc.onUserInput("好的");
+
+    expect(setBreathing).toHaveBeenCalledWith(false);
+  });
+
+  it("onUserInput from idle does NOT call setBreathing", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来首歌");
+
+    expect(setBreathing).not.toHaveBeenCalled();
   });
 });
 

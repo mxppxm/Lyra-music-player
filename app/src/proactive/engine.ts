@@ -1,6 +1,8 @@
 import type { ProactiveIntent, PolitenessState, RuleContext, ProactiveKind } from "./types";
 import type { SulkStore } from "./sulkStore";
 import { politenessGate } from "./politeness";
+import { setBreathing } from "../tray/trayBridge";
+import { sendLyraProactiveNotification } from "../tray/notification";
 
 export type ProactiveEngineDeps = {
   rules: Array<(ctx: RuleContext) => ProactiveIntent | null>;
@@ -49,6 +51,10 @@ export class ProactiveEngine {
         politenessState.todayKindCount[intent.kind] =
           (politenessState.todayKindCount[intent.kind] ?? 0) + 1;
         politenessState.lastKindFireAt[intent.kind] = now;
+
+        // Signal tray + send notification before handing off to fulfill
+        await setBreathing(true);
+        await sendLyraProactiveNotification();
 
         await fulfill(intent);
         return;

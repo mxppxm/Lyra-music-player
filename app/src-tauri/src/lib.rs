@@ -1,10 +1,12 @@
 pub mod audio;
 pub mod library_scan;
 pub mod secrets;
+pub mod tray;
 
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_sql::{Migration, MigrationKind};
+use tray::{TrayController, TrayState};
 
 pub struct AppState {
     pub audio: Arc<audio::AudioPlayer>,
@@ -91,6 +93,7 @@ async fn memory_file_write(app: tauri::AppHandle, content: String) -> Result<(),
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
@@ -109,6 +112,8 @@ pub fn run() {
             app.manage(AppState {
                 audio: Arc::new(player),
             });
+            let tray_ctrl = TrayController::new(&app.handle()).expect("tray init");
+            app.manage(TrayState(tray_ctrl));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -122,6 +127,7 @@ pub fn run() {
             app_data_dir,
             memory_file_read,
             memory_file_write,
+            tray::tray_set_breathing,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
