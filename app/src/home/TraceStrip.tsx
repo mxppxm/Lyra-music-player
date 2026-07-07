@@ -28,9 +28,9 @@ export function TraceStrip({ items, onSelect }: TraceStripProps) {
             borderRadius: 2,
             border: "none",
             padding: 0,
-            opacity: 0.5,
+            opacity: 0.65,
             cursor: "pointer",
-            background: item.coverUrl ? `url(${item.coverUrl})` : "rgba(0,0,0,0.15)",
+            background: item.coverUrl ? `url(${item.coverUrl})` : "rgba(0,0,0,0.28)",
             backgroundSize: "cover",
             backgroundPosition: "center",
             transition: "opacity 200ms ease",
@@ -39,7 +39,7 @@ export function TraceStrip({ items, onSelect }: TraceStripProps) {
             (e.currentTarget as HTMLButtonElement).style.opacity = "1";
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.opacity = "0.5";
+            (e.currentTarget as HTMLButtonElement).style.opacity = "0.65";
           }}
           aria-label={`recall turn ${item.id}`}
         />

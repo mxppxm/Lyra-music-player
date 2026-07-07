@@ -35,8 +35,8 @@
   --lyra-space-band-to-song: 20px;
   --lyra-space-song-to-note: 12px;
   --lyra-space-trace-to-input: 32px;
-  --lyra-trace-item-size: 12px;
-  --lyra-trace-item-gap: 10px;
+  --lyra-trace-item-size: 16px;
+  --lyra-trace-item-gap: 14px;
   --lyra-trace-count: 5;
   --lyra-trace-distance-from-input: 16px;
 

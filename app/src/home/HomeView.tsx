@@ -34,12 +34,19 @@ function LiveHomeView({
 }) {
   const { state, submit } = useTurn(orchestrator);
   const [traceItems, setTraceItems] = useState<TraceStripItem[]>([]);
+  const [historicalPads, setHistoricalPads] = useState<PAD[]>([]);
 
-  // Refresh trace strip whenever state transitions to playing
+  // Refresh trace + emotion history whenever state transitions to playing
   useEffect(() => {
     if (state.kind === "playing") {
-      turnRepo.listRecentTurns(5).then((turns) => {
-        setTraceItems(turns.map((t) => ({ id: t.id, coverUrl: null })));
+      turnRepo.listRecentTurns(20).then((turns) => {
+        setTraceItems(
+          turns.slice(0, 5).map((t) => ({ id: t.id, coverUrl: null })),
+        );
+        // Reverse so oldest is drawn first, newest last (right side of band)
+        setHistoricalPads(
+          turns.map((t) => t.current_emotion.pad).reverse(),
+        );
       }).catch(() => {});
     }
   }, [state.kind]);
@@ -59,7 +66,13 @@ function LiveHomeView({
       ? state.turn.current_emotion.pad
       : ZERO_PAD;
 
-  const padSamples: PAD[] = [pad];
+  // Emotion light band samples: use historical turn PADs when available,
+  // otherwise render as an empty array so EmotionLightBand shows the
+  // spec §3.3 "static silence" hairline midline instead of a single dot.
+  const padSamples: PAD[] =
+    state.kind === "playing" && historicalPads.length >= 2
+      ? historicalPads
+      : [];
 
   const coverUrl: string | null =
     state.kind === "playing" ? null : null; // coverUrl reserved for Sprint 2
