@@ -25,6 +25,7 @@ export function politenessGate(
   intent: ProactiveIntent,
   state: PolitenessState,
   now: number,
+  sulkUntil: number | null = null,
 ): { pass: true } | { pass: false; reason: SkipReason } {
   const { kind, urgency } = intent;
 
@@ -58,8 +59,9 @@ export function politenessGate(
     }
   }
 
-  // 5. Sulk mode
-  if (state.sulkUntil !== null && now < state.sulkUntil) {
+  // 5. Sulk mode — sulkUntil is authoritative via SulkStore (persistent);
+  //    callers pass the live value rather than duplicating it in state.
+  if (sulkUntil !== null && now < sulkUntil) {
     return { pass: false, reason: "sulk" };
   }
 

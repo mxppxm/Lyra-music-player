@@ -38,13 +38,13 @@ export class ProactiveEngine {
     // Build effective politeness state — honour conservative mode (daily_limit → 1)
     const effectiveState: PolitenessState & { _dailyLimit?: number } = {
       ...politenessState,
-      sulkUntil: sulkStore.getSulkUntil(),
       _dailyLimit: sulkStore.isConservativeMode() ? 1 : 3,
     };
+    const sulkUntil = sulkStore.getSulkUntil();
 
     // 3. Run gate; first passing intent wins
     for (const intent of intents) {
-      const gateResult = politenessGate(intent, effectiveState, now);
+      const gateResult = politenessGate(intent, effectiveState, now, sulkUntil);
       if (gateResult.pass) {
         // Update politeness state counters
         politenessState.todayProactiveCount += 1;

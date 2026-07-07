@@ -19,7 +19,6 @@ function makeState(overrides: Partial<PolitenessState> = {}): PolitenessState {
     todayProactiveCount: 0,
     todayKindCount: {},
     lastKindFireAt: {},
-    sulkUntil: null,
     isFocusOrSleep: () => false,
     isPlayingOtherSource: () => false,
     ...overrides,
@@ -127,20 +126,17 @@ describe("politenessGate", () => {
 
   describe("gate 5: sulk", () => {
     it("blocks when sulkUntil is in the future", () => {
-      const state = makeState({ sulkUntil: NOW + 3600_000 });
-      const result = politenessGate(makeIntent(), state, NOW);
+      const result = politenessGate(makeIntent(), makeState(), NOW, NOW + 3600_000);
       expect(result).toEqual({ pass: false, reason: "sulk" });
     });
 
     it("passes when sulkUntil is in the past", () => {
-      const state = makeState({ sulkUntil: NOW - 1 });
-      const result = politenessGate(makeIntent(), state, NOW);
+      const result = politenessGate(makeIntent(), makeState(), NOW, NOW - 1);
       expect(result.pass).toBe(true);
     });
 
     it("passes when sulkUntil is null", () => {
-      const state = makeState({ sulkUntil: null });
-      const result = politenessGate(makeIntent(), state, NOW);
+      const result = politenessGate(makeIntent(), makeState(), NOW, null);
       expect(result.pass).toBe(true);
     });
   });

@@ -28,7 +28,6 @@ export type PolitenessState = {
   todayProactiveCount: number;
   todayKindCount: Partial<Record<ProactiveKind, number>>;
   lastKindFireAt: Partial<Record<ProactiveKind, number>>;
-  sulkUntil: number | null;
   isFocusOrSleep: () => boolean;
   isPlayingOtherSource: () => boolean;
 };

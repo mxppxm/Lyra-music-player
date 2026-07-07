@@ -52,7 +52,6 @@ function App() {
     todayProactiveCount: 0,
     todayKindCount: {},
     lastKindFireAt: {},
-    sulkUntil: null,
     isFocusOrSleep: () => false,
     isPlayingOtherSource: () => false,
   });

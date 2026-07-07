@@ -33,7 +33,6 @@ function makePolitenessState(overrides: Partial<PolitenessState> = {}): Politene
     todayProactiveCount: 0,
     todayKindCount: {},
     lastKindFireAt: {},
-    sulkUntil: null,
     isFocusOrSleep: () => false,
     isPlayingOtherSource: () => false,
     ...overrides,
