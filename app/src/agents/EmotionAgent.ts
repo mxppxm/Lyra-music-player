@@ -52,7 +52,39 @@ function validateEmotion(obj: unknown): CurrentEmotion {
     o.source === "user-declared" || o.source === "ring-signal"
       ? o.source
       : "emotion-agent-inferred";
-  return { pad: { p, a, d }, labels, confidence, source };
+
+  // Validate optional predicted_trajectory; drop (don't throw) if malformed
+  let predicted_trajectory: CurrentEmotion["predicted_trajectory"] | undefined;
+  if (o.predicted_trajectory !== undefined) {
+    const pt = o.predicted_trajectory as Record<string, unknown>;
+    const horizonMin = pt.horizon_min;
+    const predictedPad = pt.predicted_pad as Record<string, unknown> | undefined;
+    const validHorizon =
+      typeof horizonMin === "number" &&
+      Number.isInteger(horizonMin) &&
+      horizonMin >= 5 &&
+      horizonMin <= 120;
+    const pp = predictedPad?.p, pa = predictedPad?.a, pd = predictedPad?.d;
+    const validPad =
+      predictedPad !== undefined &&
+      typeof predictedPad === "object" &&
+      IN_RANGE(pp) && IN_RANGE(pa) && IN_RANGE(pd);
+    if (validHorizon && validPad) {
+      predicted_trajectory = {
+        horizon_min: horizonMin as number,
+        predicted_pad: { p: pp as number, a: pa as number, d: pd as number },
+      };
+    }
+    // else: silently drop malformed field
+  }
+
+  return {
+    pad: { p, a, d },
+    labels,
+    confidence,
+    source,
+    ...(predicted_trajectory !== undefined ? { predicted_trajectory } : {}),
+  };
 }
 
 export class EmotionAgent {

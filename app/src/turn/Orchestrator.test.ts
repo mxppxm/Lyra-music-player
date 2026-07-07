@@ -376,6 +376,93 @@ describe("Orchestrator T2: proactive-pending state", () => {
   });
 });
 
+describe("Orchestrator T8: emotion prediction channel (auto-advance)", () => {
+  it("uses predicted_pad when elapsed_min is in [3, horizon_min]", async () => {
+    // Turn timestamp = 1730_000_000_000; clock for autoAdvance = timestamp + 10 min
+    const turnTs = 1730_000_000_000;
+    const advanceTs = turnTs + 10 * 60_000; // 10 min later → within horizon 30
+    let callCount = 0;
+    const clockFn = () => {
+      callCount++;
+      // First few calls come from runTurnWithEmotion (idGen, etc) — we need the
+      // advance clock only for the onSongComplete path.  Return turnTs for the
+      // first call (turn insert), advanceTs for subsequent calls.
+      return callCount === 1 ? turnTs : advanceTs;
+    };
+
+    const emotionWithPrediction: CurrentEmotion = {
+      pad: { p: 0.1, a: 0.2, d: 0.0 },
+      labels: ["平静"],
+      confidence: 0.8,
+      source: "emotion-agent-inferred",
+      predicted_trajectory: { horizon_min: 30, predicted_pad: { p: -0.7, a: -0.8, d: -0.2 } },
+    };
+    const deps = makeDeps({
+      clock: clockFn,
+      emotion: { analyze: vi.fn(async () => emotionWithPrediction) },
+    });
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("我准备去睡觉了");
+    // Now trigger auto-advance (song complete)
+    await orc.onSongComplete();
+
+    // The second insertTurn call (auto-advance turn) should use predicted_pad
+    expect(deps.turnRepo.insertTurn).toHaveBeenCalledTimes(2);
+    const autoTurn = (deps.turnRepo.insertTurn.mock.calls[1] as unknown[])[0] as DialogueTurn;
+    expect(autoTurn.current_emotion.pad).toEqual({ p: -0.7, a: -0.8, d: -0.2 });
+    // predicted_trajectory should NOT be carried forward
+    expect(autoTurn.current_emotion.predicted_trajectory).toBeUndefined();
+  });
+
+  it("falls back to endedEmotion.pad when elapsed_min < 3", async () => {
+    const turnTs = 1730_000_000_000;
+    const advanceTs = turnTs + 1 * 60_000; // only 1 min — below window
+    let callCount = 0;
+    const clockFn = () => (callCount++ === 0 ? turnTs : advanceTs);
+
+    const emotionWithPrediction: CurrentEmotion = {
+      pad: { p: 0.1, a: 0.2, d: 0.0 },
+      labels: ["平静"],
+      confidence: 0.8,
+      source: "emotion-agent-inferred",
+      predicted_trajectory: { horizon_min: 30, predicted_pad: { p: -0.7, a: -0.8, d: -0.2 } },
+    };
+    const deps = makeDeps({
+      clock: clockFn,
+      emotion: { analyze: vi.fn(async () => emotionWithPrediction) },
+    });
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("准备睡觉");
+    await orc.onSongComplete();
+
+    const autoTurn = (deps.turnRepo.insertTurn.mock.calls[1] as unknown[])[0] as DialogueTurn;
+    // Should use original pad, not predicted_pad
+    expect(autoTurn.current_emotion.pad).toEqual({ p: 0.1, a: 0.2, d: 0.0 });
+  });
+
+  it("auto-advance without predicted_trajectory uses endedEmotion verbatim", async () => {
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("随便来首歌");
+    await orc.onSongComplete();
+
+    expect(deps.turnRepo.insertTurn).toHaveBeenCalledTimes(2);
+    const autoTurn = (deps.turnRepo.insertTurn.mock.calls[1] as unknown[])[0] as DialogueTurn;
+    // Default mock emotion pad
+    expect(autoTurn.current_emotion.pad).toEqual({ p: -0.3, a: -0.2, d: 0 });
+    expect(autoTurn.current_emotion.predicted_trajectory).toBeUndefined();
+  });
+});
+
 describe("Orchestrator T6: salient moment wiring", () => {
   it("significant turn triggers repo insert + memory.md append", async () => {
     const salientModule = await import("../moments/salient");

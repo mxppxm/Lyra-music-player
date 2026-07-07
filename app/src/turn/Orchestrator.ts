@@ -343,6 +343,8 @@ export class Orchestrator {
 
     // Remember what emotion we were on so the next turn can continue from it
     const endedEmotion = this.currentTurn.current_emotion;
+    // Capture timestamp before finalisePreviousTurn clears currentTurn
+    const turnTimestamp = this.currentTurn.timestamp;
 
     // Emit thinking so UI shows "…" while we pick the next song
     this.emit({ kind: "thinking", user_utterance: "" });
@@ -351,13 +353,31 @@ export class Orchestrator {
       // Finalise: no verbal (user is silent), no emotion shift (no new signal)
       await this.finalisePreviousTurn(undefined, endedEmotion.pad);
 
-      // Continue the flow: use the ended emotion, empty utterance, proactive-open modality
+      // If endedEmotion carries a predicted_trajectory and the elapsed time
+      // since the turn started falls within the prediction window, use the
+      // predicted_pad as the baseline emotion for the next turn.
+      const clock = this.deps.clock ?? Date.now;
+      const now = clock();
+      const elapsed_min = (now - turnTimestamp) / 60_000;
+      const pt = endedEmotion.predicted_trajectory;
+      const baseEmotion: import("../types").CurrentEmotion =
+        pt !== undefined && elapsed_min >= 3 && elapsed_min <= pt.horizon_min
+          ? {
+              pad: pt.predicted_pad,
+              labels: endedEmotion.labels,
+              confidence: endedEmotion.confidence,
+              source: "emotion-agent-inferred",
+              // predicted_trajectory intentionally omitted — it is stale after use
+            }
+          : endedEmotion;
+
+      // Continue the flow: use the baseline emotion, empty utterance, proactive-open modality
       await this.runTurnWithEmotion(
-        endedEmotion,
+        baseEmotion,
         "",
         "proactive-open",
-        // For pseudo-target we lean on the ended emotion's labels + a hint
-        `${endedEmotion.labels.join(" ")} 延续`.trim(),
+        // For pseudo-target we lean on the baseline emotion's labels + a hint
+        `${baseEmotion.labels.join(" ")} 延续`.trim(),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
