@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { findByPath, insertTrack } from "../db/repo/libraryRepo";
+import { upsert as upsertFeatures } from "../db/repo/libraryFeaturesRepo";
+import { extractFeatures } from "./extractFeatures";
 import type { LibraryTrack } from "../types";
 
 export type ScannedTrack = {
@@ -24,9 +26,44 @@ function trackId(path: string, at: number): string {
   return `track-${at}-${Math.abs(hashCode(path))}`;
 }
 
-export async function importLibrary(rootPath: string): Promise<number> {
+/** Sprint 9: run audio_extract_features against each newly-imported track and
+ *  persist the result. Sequential (concurrency 1) so a large library doesn't
+ *  fan out N decoders at once. Failures are per-track: one bad decode never
+ *  blocks the rest. Returns the number of tracks that got features. */
+export async function extractFeaturesForTracks(
+  tracks: LibraryTrack[],
+): Promise<number> {
+  let extracted = 0;
+  for (const t of tracks) {
+    const f = await extractFeatures(t.path);
+    if (!f) continue;
+    try {
+      await upsertFeatures({
+        track_id: t.id,
+        bpm: null, // v0.2.1 will add BPM detection
+        energy: f.energy,
+        valence: f.valence,
+      });
+      extracted++;
+    } catch {
+      // best-effort; move on
+    }
+  }
+  return extracted;
+}
+
+export type ImportOptions = {
+  /** Await feature extraction before returning. Off by default so imports
+   *  stay snappy; tests turn it on for determinism. */
+  awaitFeatures?: boolean;
+};
+
+export async function importLibrary(
+  rootPath: string,
+  opts: ImportOptions = {},
+): Promise<number> {
   const scanned = await scanLibrary(rootPath);
-  let inserted = 0;
+  const newTracks: LibraryTrack[] = [];
   const now = Date.now();
   for (const s of scanned) {
     const existing = await findByPath(s.path);
@@ -42,7 +79,15 @@ export async function importLibrary(rootPath: string): Promise<number> {
       added_at: now,
     };
     await insertTrack(track);
-    inserted++;
+    newTracks.push(track);
   }
-  return inserted;
+  // Sprint 9: schedule feature extraction. In production we fire-and-forget so
+  // Settings' "Imported N tracks" toast lands immediately; the background loop
+  // upserts features as decodes finish.
+  if (newTracks.length > 0) {
+    const p = extractFeaturesForTracks(newTracks);
+    if (opts.awaitFeatures) await p;
+    else void p.catch(() => {});
+  }
+  return newTracks.length;
 }
