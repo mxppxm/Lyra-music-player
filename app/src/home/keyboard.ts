@@ -3,6 +3,7 @@ export type KeyboardHandlers = {
   onOpenSettings: () => void;
   onReflectNow?: () => void;
   onOpenRoadmap?: () => void;
+  onOpenDataExplorer?: () => void;
 };
 
 export function isPlainSpace(e: KeyboardEvent): boolean {
@@ -19,6 +20,10 @@ export function isMetaShiftR(e: KeyboardEvent): boolean {
 
 export function isMetaShiftE(e: KeyboardEvent): boolean {
   return (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "e" || e.key === "E");
+}
+
+export function isMetaShiftD(e: KeyboardEvent): boolean {
+  return (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D");
 }
 
 function isEditingTarget(target: EventTarget | null): boolean {
@@ -46,6 +51,11 @@ export function bindGlobalKeys(h: KeyboardHandlers): () => void {
     if (isMetaShiftE(e)) {
       e.preventDefault();
       h.onOpenRoadmap?.();
+      return;
+    }
+    if (isMetaShiftD(e)) {
+      e.preventDefault();
+      h.onOpenDataExplorer?.();
       return;
     }
     if (isPlainSpace(e)) {

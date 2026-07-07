@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { bindGlobalKeys, isMetaEqual, isMetaShiftR, isPlainSpace } from "./keyboard";
+import {
+  bindGlobalKeys,
+  isMetaEqual,
+  isMetaShiftD,
+  isMetaShiftR,
+  isPlainSpace,
+} from "./keyboard";
 
 describe("keyboard predicates", () => {
   it("isPlainSpace detects unmodified space", () => {
@@ -19,6 +25,13 @@ describe("keyboard predicates", () => {
     expect(isMetaShiftR(new KeyboardEvent("keydown", { key: "r", metaKey: true }))).toBe(false);
     expect(isMetaShiftR(new KeyboardEvent("keydown", { key: "r", shiftKey: true }))).toBe(false);
     expect(isMetaShiftR(new KeyboardEvent("keydown", { key: "t", metaKey: true, shiftKey: true }))).toBe(false);
+  });
+
+  it("isMetaShiftD detects Cmd+Shift+D (lowercase and uppercase key)", () => {
+    expect(isMetaShiftD(new KeyboardEvent("keydown", { key: "D", metaKey: true, shiftKey: true }))).toBe(true);
+    expect(isMetaShiftD(new KeyboardEvent("keydown", { key: "d", ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(isMetaShiftD(new KeyboardEvent("keydown", { key: "d", metaKey: true }))).toBe(false);
+    expect(isMetaShiftD(new KeyboardEvent("keydown", { key: "d", shiftKey: true }))).toBe(false);
   });
 });
 
@@ -94,6 +107,33 @@ describe("bindGlobalKeys", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "r", ctrlKey: true, shiftKey: true }));
     expect(onTogglePlayback).not.toHaveBeenCalled();
     expect(onOpenSettings).not.toHaveBeenCalled();
+    off();
+  });
+
+  it("invokes onOpenDataExplorer on Cmd+Shift+D", () => {
+    const onOpenSettings = vi.fn();
+    const onTogglePlayback = vi.fn();
+    const onOpenDataExplorer = vi.fn();
+    const off = bindGlobalKeys({
+      onOpenSettings,
+      onTogglePlayback,
+      onOpenDataExplorer,
+    });
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "D", metaKey: true, shiftKey: true }),
+    );
+    expect(onOpenDataExplorer).toHaveBeenCalled();
+    expect(onOpenSettings).not.toHaveBeenCalled();
+    off();
+  });
+
+  it("does not throw when onOpenDataExplorer is omitted and Cmd+Shift+D is pressed", () => {
+    const off = bindGlobalKeys({ onOpenSettings: vi.fn(), onTogglePlayback: vi.fn() });
+    expect(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "D", metaKey: true, shiftKey: true }),
+      );
+    }).not.toThrow();
     off();
   });
 });
