@@ -129,6 +129,12 @@ pub fn run() {
                             sql: include_str!("../migrations/003_soul_perception_tuning.sql"),
                             kind: MigrationKind::Up,
                         },
+                        Migration {
+                            version: 4,
+                            description: "lyrics embeddings table",
+                            sql: include_str!("../migrations/004_lyrics_embeddings.sql"),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
