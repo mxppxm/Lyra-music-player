@@ -3,7 +3,7 @@ pub mod library_scan;
 pub mod secrets;
 
 use std::sync::Arc;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 pub struct AppState {
@@ -11,10 +11,20 @@ pub struct AppState {
 }
 
 #[tauri::command]
-async fn audio_play(state: State<'_, AppState>, path: String) -> Result<(), String> {
+async fn audio_play(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<u64, String> {
+    let app_for_emit = app.clone();
     state
         .audio
-        .play_file(std::path::Path::new(&path))
+        .play_file(std::path::Path::new(&path), move |id| {
+            // Emit to the frontend so the Orchestrator can advance to the
+            // next turn. If the app is shutting down and the emit fails,
+            // there's nothing meaningful to do — just drop it.
+            let _ = app_for_emit.emit("audio-complete", id);
+        })
         .map_err(|e| e.to_string())
 }
 

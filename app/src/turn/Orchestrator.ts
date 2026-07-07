@@ -33,7 +33,13 @@ export type OrchestratorDeps = {
     insertTurn(t: DialogueTurn): Promise<void>;
     updateTurn?(t: DialogueTurn): Promise<void>;
   };
-  audio: { playFile(path: string): Promise<void>; stop(): Promise<void> };
+  audio: {
+    // playFile may return the Rust playback id (a number) so the caller can
+    // correlate the "audio-complete" event. Orchestrator itself doesn't use
+    // the id; the correlation is done at the App/subscriber level.
+    playFile(path: string): Promise<number | void>;
+    stop(): Promise<void>;
+  };
   clock?: () => number;
   idGen?: () => string;
 };

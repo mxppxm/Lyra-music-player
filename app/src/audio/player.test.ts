@@ -1,21 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { playFile, stopPlayback, isPlaying } from "./player";
 
 const invokeMock = vi.fn();
+const listenMock = vi.fn();
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: (...args: unknown[]) => listenMock(...args),
+}));
+
+import { playFile, stopPlayback, isPlaying, onSongComplete } from "./player";
+
 beforeEach(() => {
   invokeMock.mockReset();
+  listenMock.mockReset();
 });
 
 describe("audio/player", () => {
-  it("playFile calls audio_play command with path", async () => {
-    invokeMock.mockResolvedValueOnce(undefined);
-    await playFile("/tmp/song.mp3");
+  it("playFile calls audio_play command with path and returns the playback id", async () => {
+    invokeMock.mockResolvedValueOnce(42);
+    const id = await playFile("/tmp/song.mp3");
     expect(invokeMock).toHaveBeenCalledWith("audio_play", { path: "/tmp/song.mp3" });
+    expect(id).toBe(42);
   });
 
   it("stopPlayback calls audio_stop", async () => {
@@ -33,5 +41,24 @@ describe("audio/player", () => {
   it("playFile propagates errors from Rust", async () => {
     invokeMock.mockRejectedValueOnce("not initialized");
     await expect(playFile("/x")).rejects.toBe("not initialized");
+  });
+
+  it("onSongComplete subscribes to the audio-complete event and forwards the payload id", async () => {
+    const unlisten = vi.fn();
+    let capturedHandler: ((event: { payload: number }) => void) | undefined;
+    listenMock.mockImplementation(async (_event: string, handler) => {
+      capturedHandler = handler;
+      return unlisten;
+    });
+
+    const cb = vi.fn();
+    const off = await onSongComplete(cb);
+    expect(listenMock).toHaveBeenCalledWith("audio-complete", expect.any(Function));
+
+    // Simulate Rust firing the event
+    capturedHandler?.({ payload: 7 });
+    expect(cb).toHaveBeenCalledWith(7);
+
+    expect(off).toBe(unlisten);
   });
 });
