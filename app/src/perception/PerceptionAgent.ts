@@ -13,6 +13,7 @@
 import type { ModelProvider } from "../types/provider";
 import type { BehavioralFeatures } from "./aggregator";
 import type { PAD } from "../types";
+import type { PerceptionTuning } from "./tuning";
 import { RulePerceptionAgent } from "./RulePerceptionAgent";
 import { LLMPerceptionAgent } from "./LLMPerceptionAgent";
 
@@ -36,6 +37,8 @@ export type CreatePerceptionAgentOpts = {
   mode?: PerceptionMode;
   /** Required when mode === "llm". Ignored otherwise. */
   provider?: ModelProvider;
+  /** Sprint 8: threshold overrides for the rule agent (clamped ±50%). */
+  tuning?: PerceptionTuning;
 };
 
 /**
@@ -47,7 +50,7 @@ export type CreatePerceptionAgentOpts = {
 export function createPerceptionAgent(
   opts: CreatePerceptionAgentOpts = {},
 ): PerceptionAgent {
-  const rule = new RulePerceptionAgent();
+  const rule = new RulePerceptionAgent(opts.tuning);
   if (opts.mode === "llm" && opts.provider) {
     return new LLMPerceptionAgent({
       provider: opts.provider,

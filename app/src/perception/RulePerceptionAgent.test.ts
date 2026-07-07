@@ -92,6 +92,50 @@ describe("RulePerceptionAgent.infer", () => {
     expect(bias.confidence).toBe(0.5);
   });
 
+  describe("PerceptionTuning overrides (Sprint 8 T3)", () => {
+    it("lowered skipRatio threshold makes rule 1 fire earlier", async () => {
+      const tuned = new RulePerceptionAgent({ skipRatio: 0.4 });
+      const f: BehavioralFeatures = {
+        ...base(),
+        skips: 2,
+        completions: 3,
+        skipRatio: 0.4,
+      };
+      const bias = await tuned.infer(f);
+      expect(bias.reason).toContain("high skip ratio");
+    });
+
+    it("raised dismissThreshold makes rule 4 stop firing at old count", async () => {
+      const tuned = new RulePerceptionAgent({ dismissThreshold: 3 });
+      const f: BehavioralFeatures = { ...base(), proactiveDismisses: 2 };
+      const bias = await tuned.infer(f);
+      // Default agent would fire on 2; tuned raises to 3 → no fire.
+      expect(bias.confidence).toBe(0);
+    });
+
+    it("raised completionThreshold suppresses rule 5", async () => {
+      const tuned = new RulePerceptionAgent({ completionThreshold: 4 });
+      const f: BehavioralFeatures = { ...base(), completions: 3, skips: 0, skipRatio: 0 };
+      const bias = await tuned.infer(f);
+      expect(bias.confidence).toBe(0);
+    });
+
+    it("clamps runaway overrides to ±50% of default (safety valve)", async () => {
+      // dismissThreshold default is 2; a suggestion of 100 must clamp to 3.
+      const tuned = new RulePerceptionAgent({ dismissThreshold: 100 });
+      const f: BehavioralFeatures = { ...base(), proactiveDismisses: 3 };
+      const bias = await tuned.infer(f);
+      expect(bias.reason).toContain("user dismissing");
+    });
+
+    it("undefined overrides fall back to defaults", async () => {
+      const tuned = new RulePerceptionAgent({});
+      const f: BehavioralFeatures = { ...base(), proactiveDismisses: 2 };
+      const bias = await tuned.infer(f);
+      expect(bias.reason).toContain("user dismissing");
+    });
+  });
+
   it("multiple rules combine via confidence-weighted average; confidence capped at 1", async () => {
     // Fire Rule 3 (rapid submits, conf=0.5) + Rule 4 (proactive dismisses, conf=0.6)
     const f: BehavioralFeatures = {
