@@ -132,4 +132,72 @@ describe("ReflectAgent.run", () => {
     await expect(agent.run(baseInput)).rejects.toThrow(ReflectAgentError);
     await expect(agent.run(baseInput)).rejects.toThrow(/newConfidence/);
   });
+
+  describe("perception_tuning (Sprint 8 T4)", () => {
+    it("passes through valid tuning after clamping", async () => {
+      const payload = {
+        ...validResult,
+        perception_tuning: { skipRatio: 0.5, dismissThreshold: 3 },
+      };
+      const p = stubProvider(JSON.stringify(payload));
+      const agent = new ReflectAgent({ provider: p });
+      const out = await agent.run(baseInput);
+      expect(out.perceptionTuning).toEqual({ skipRatio: 0.5, dismissThreshold: 3 });
+    });
+
+    it("clamps runaway values into ±50% band", async () => {
+      const payload = {
+        ...validResult,
+        perception_tuning: { dismissThreshold: 999 },
+      };
+      const p = stubProvider(JSON.stringify(payload));
+      const agent = new ReflectAgent({ provider: p });
+      const out = await agent.run(baseInput);
+      // default 2, clamped to 2 * 1.5 = 3
+      expect(out.perceptionTuning?.dismissThreshold).toBe(3);
+    });
+
+    it("omits perceptionTuning entirely when field absent", async () => {
+      const p = stubProvider(JSON.stringify(validResult));
+      const agent = new ReflectAgent({ provider: p });
+      const out = await agent.run(baseInput);
+      expect(out.perceptionTuning).toBeUndefined();
+    });
+
+    it("drops malformed tuning (all non-numeric) silently", async () => {
+      const payload = {
+        ...validResult,
+        perception_tuning: { skipRatio: "wrong", dismissThreshold: null },
+      };
+      const p = stubProvider(JSON.stringify(payload));
+      const agent = new ReflectAgent({ provider: p });
+      const out = await agent.run(baseInput);
+      expect(out.perceptionTuning).toBeUndefined();
+    });
+
+    it("renders recentPerception into the user message", async () => {
+      const p = stubProvider(JSON.stringify(validResult));
+      const agent = new ReflectAgent({ provider: p });
+      await agent.run({
+        ...baseInput,
+        recentPerception: [
+          { ts: 1720000000000, source: "rule", reason: "high skip ratio", confidence: 0.5 },
+        ],
+      });
+      const call = (p.chat as ReturnType<typeof vi.fn>).mock.calls[0];
+      const userContent = (call[0] as ChatMessage[])[1].content;
+      expect(userContent).toContain("感知层最近观测");
+      expect(userContent).toContain("high skip ratio");
+    });
+
+    it("renders 暂无 placeholder when no perception observations supplied", async () => {
+      const p = stubProvider(JSON.stringify(validResult));
+      const agent = new ReflectAgent({ provider: p });
+      await agent.run(baseInput);
+      const call = (p.chat as ReturnType<typeof vi.fn>).mock.calls[0];
+      const userContent = (call[0] as ChatMessage[])[1].content;
+      expect(userContent).toContain("感知层最近观测");
+      expect(userContent).toContain("(暂无)");
+    });
+  });
 });

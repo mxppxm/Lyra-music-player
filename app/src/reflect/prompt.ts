@@ -10,6 +10,7 @@ export const REFLECT_SYSTEM_PROMPT = `你是 Lyra 的反思核心。用户手动
 - 最近的对话回合(包括她说的话、你选的歌、她的反应、当时的情绪)
 - 已有的 Facts 库(带 conf 和 n)
 - 已有的 Living Portrait
+- 感知层最近的观测（PerceptionAgent 的 pad_bias + 触发原因，用于评估当前 5 条规则的敏感度是否合适）
 
 请以 STRICT JSON 返回，形如:
 
@@ -20,7 +21,14 @@ export const REFLECT_SYSTEM_PROMPT = `你是 Lyra 的反思核心。用户手动
     { "op": "increment", "tags": ["#天气:雨天"], "conclusion": "环境音乐", "deltaN": 1 },
     { "op": "adjust", "tags": ["#活动:通勤"], "conclusion": "独立摇滚", "newConfidence": 0.4 }
   ],
-  "dreamNarrative": "一段中文散文,50-150 字"
+  "dreamNarrative": "一段中文散文,50-150 字",
+  "perception_tuning": {
+    "skipRatio": 0.5,
+    "idleRatio": 0.04,
+    "submitGapMs": 12000,
+    "dismissThreshold": 3,
+    "completionThreshold": 3
+  }
 }
 
 原则:
@@ -28,5 +36,11 @@ export const REFLECT_SYSTEM_PROMPT = `你是 Lyra 的反思核心。用户手动
 - Living Portrait 要写"她是什么样的人"、"她最近在什么状态"，不写"她喜欢什么歌"（那是 Facts 的活）。
 - factMutations 里的 conclusion 要具象("慢速古典钢琴"),不能是"平静的音乐"这种废话。
 - Dream 是你回望后剩下的味道,不是流水账。
+
+关于 perception_tuning（可选 — 不确定就整个字段省略）：
+- 只在你从"感知层观测"里明确看出某条规则火得过多或过少时才提。
+- 每个键都是可选的。你只写你想调整的键，其它键省略即可（不要用 null）。
+- 数值会被系统裁剪到默认值的 ±50% 之内，所以温和地调，别激进。
+- 默认值：skipRatio=0.6, idleRatio=0.05, submitGapMs=15000, dismissThreshold=2, completionThreshold=3
 
 不要在 JSON 前后加任何文本。不要用 markdown。`;

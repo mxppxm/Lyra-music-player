@@ -1,12 +1,25 @@
 import type { ModelProvider, DialogueTurn, ChatMessage } from "../types";
 import type { ParsedMemory } from "../memory/types";
+import type { PerceptionTuning } from "../perception/tuning";
+import { clampTuning } from "../perception/tuning";
 import { REFLECT_SYSTEM_PROMPT } from "./prompt";
 import { routeProvider } from "../agents/route";
+
+/** Compact form of one perception_audit row for the Reflect prompt. */
+export type PerceptionObservation = {
+  ts: number;
+  source: "rule" | "llm";
+  reason: string;
+  confidence: number;
+};
 
 export type ReflectInput = {
   recentTurns: DialogueTurn[];
   currentMemory: ParsedMemory;
   todayISO: string;
+  /** Sprint 8: last N perception_audit summaries for self-tuning. Optional
+   *  so existing call sites (tests) don't have to construct it. */
+  recentPerception?: PerceptionObservation[];
 };
 
 export type FactMutation =
@@ -18,6 +31,9 @@ export type ReflectResult = {
   livingPortrait: string;
   factMutations: FactMutation[];
   dreamNarrative: string;
+  /** Sprint 8: optional threshold overrides for RulePerceptionAgent.
+   *  Absent means "no change". Values are pre-clamped to ±50% of defaults. */
+  perceptionTuning?: PerceptionTuning;
 };
 
 export class ReflectAgentError extends Error {
@@ -98,10 +114,30 @@ function validateResult(obj: unknown): ReflectResult {
     } satisfies FactMutation;
   });
 
+  // Sprint 8: optional perception_tuning. Malformed → drop silently.
+  let perceptionTuning: PerceptionTuning | undefined;
+  if (o.perception_tuning && typeof o.perception_tuning === "object") {
+    const raw = o.perception_tuning as Record<string, unknown>;
+    const numeric: PerceptionTuning = {};
+    for (const key of [
+      "skipRatio",
+      "idleRatio",
+      "submitGapMs",
+      "dismissThreshold",
+      "completionThreshold",
+    ] as const) {
+      const v = raw[key];
+      if (typeof v === "number" && Number.isFinite(v)) numeric[key] = v;
+    }
+    const clamped = clampTuning(numeric);
+    if (Object.keys(clamped).length > 0) perceptionTuning = clamped;
+  }
+
   return {
     livingPortrait: o.livingPortrait,
     factMutations,
     dreamNarrative: o.dreamNarrative,
+    ...(perceptionTuning !== undefined ? { perceptionTuning } : {}),
   };
 }
 
@@ -125,6 +161,10 @@ function buildUserMessage(input: ReflectInput): string {
 
   const factsJson = JSON.stringify(input.currentMemory.facts, null, 2);
   const portrait = input.currentMemory.livingPortrait.paragraphs.join("\n\n");
+  const perceptionJson =
+    input.recentPerception && input.recentPerception.length > 0
+      ? JSON.stringify(input.recentPerception, null, 2)
+      : "(暂无)";
 
   return [
     `todayISO: ${input.todayISO}`,
@@ -137,6 +177,9 @@ function buildUserMessage(input: ReflectInput): string {
     ``,
     `## 已有 Living Portrait`,
     portrait || "(空)",
+    ``,
+    `## 感知层最近观测（用于评估规则敏感度）`,
+    perceptionJson,
   ].join("\n");
 }
 
