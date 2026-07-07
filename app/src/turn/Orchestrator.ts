@@ -6,6 +6,10 @@ import type { SoulState } from "../types";
 import { foldReactionEvents, computeEmotionDelta } from "./reactionCapture";
 import type { ReactionEvent } from "./reactionCapture";
 import { getMemoryContext } from "../memory/context";
+import { detectSalientMoment } from "../moments/salient";
+import { currentTagsFor } from "./currentTags";
+import { insertSharedMemory } from "../db/repo/sharedMemoryRepo";
+import { appendSalientMomentToMemoryMd } from "../memory/appendSalient";
 
 export type SoulStoreLike = {
   load(): Promise<SoulState>;
@@ -43,6 +47,8 @@ export class Orchestrator {
 
   /** The turn that is currently playing, accumulating reaction events. */
   private currentTurn: DialogueTurn | null = null;
+  /** The song that is currently playing (paired with currentTurn). */
+  private currentSong: LibraryTrack | null = null;
   /** Pending reaction events for the current turn. */
   private pendingEvents: ReactionEvent[] = [];
 
@@ -106,7 +112,34 @@ export class Orchestrator {
       await turnRepo.updateTurn(finalTurn);
     }
 
+    // Detect salient moment and persist to shared_memory + memory.md
+    const currentSong = this.currentSong;
+    if (currentSong) {
+      try {
+        const moment = detectSalientMoment({
+          turn: finalTurn,
+          song: currentSong,
+          currentTags: currentTagsFor(new Date()),
+        });
+        if (moment) {
+          try {
+            await insertSharedMemory(moment);
+          } catch (e) {
+            console.warn("[lyra] sharedMemoryRepo.insertSharedMemory failed:", e);
+          }
+          try {
+            await appendSalientMomentToMemoryMd(moment);
+          } catch (e) {
+            console.warn("[lyra] appendSalientMomentToMemoryMd failed:", e);
+          }
+        }
+      } catch (e) {
+        console.warn("[lyra] detectSalientMoment failed:", e);
+      }
+    }
+
     this.currentTurn = null;
+    this.currentSong = null;
     this.pendingEvents = [];
   }
 
@@ -179,6 +212,7 @@ export class Orchestrator {
 
       // Step 11: emit playing; store as currentTurn for reaction capture
       this.currentTurn = turn;
+      this.currentSong = song;
       this.pendingEvents = [];
       this.emit({ kind: "playing", turn, song });
     } catch (err) {

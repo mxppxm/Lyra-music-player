@@ -3,6 +3,18 @@ import { Orchestrator } from "./Orchestrator";
 import type { CurrentEmotion, LibraryTrack, DialogueTurn, SoulState } from "../types";
 import * as memoryContext from "../memory/context";
 import { EMPTY_MEMORY } from "../memory/parser";
+import * as sharedMemoryRepo from "../db/repo/sharedMemoryRepo";
+import * as appendSalientMod from "../memory/appendSalient";
+
+// ── Mocks for salient moment wiring ──────────────────────────────────────────
+vi.mock("../db/repo/sharedMemoryRepo", () => ({
+  insertSharedMemory: vi.fn(async () => {}),
+  listRecent: vi.fn(async () => []),
+}));
+
+vi.mock("../memory/appendSalient", () => ({
+  appendSalientMomentToMemoryMd: vi.fn(async () => {}),
+}));
 
 function makeDeps(overrides: Partial<any> = {}) {
   const emotion = {
@@ -65,6 +77,10 @@ function makeDeps(overrides: Partial<any> = {}) {
 beforeEach(() => {
   // Reset memory context to empty before each test so tests are isolated
   memoryContext.setMemoryContext(EMPTY_MEMORY);
+  vi.mocked(sharedMemoryRepo.insertSharedMemory).mockReset();
+  vi.mocked(sharedMemoryRepo.insertSharedMemory).mockResolvedValue(undefined);
+  vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd).mockReset();
+  vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd).mockResolvedValue(undefined);
 });
 
 describe("Orchestrator.onUserInput happy path", () => {
@@ -222,5 +238,53 @@ describe("Orchestrator T7: reaction capture", () => {
     expect(updateTurn).toHaveBeenCalled();
     const updatedTurn = (updateTurn.mock.calls[0] as unknown as [DialogueTurn])[0];
     expect(updatedTurn.user_reaction.behavioral.listen_duration_ms).toBe(12000);
+  });
+});
+
+describe("Orchestrator T6: salient moment wiring", () => {
+  it("significant turn triggers repo insert + memory.md append", async () => {
+    const salientModule = await import("../moments/salient");
+    const fakeMoment = {
+      timestampISO: "2026-07-07T02:30:00.000Z",
+      songTitle: "《T1》",
+      narrative: "《T1》完整听完，沉默正向。",
+      tags: ["#时段:深夜"],
+    };
+    const detectSpy = vi.spyOn(salientModule, "detectSalientMoment").mockReturnValue(fakeMoment);
+
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    // First input: establish a playing turn + current song
+    await orc.onUserInput("来一首歌");
+    // Second input: finalises previous turn → detectSalientMoment returns fakeMoment
+    await orc.onUserInput("继续");
+
+    expect(vi.mocked(sharedMemoryRepo.insertSharedMemory)).toHaveBeenCalledOnce();
+    expect(vi.mocked(sharedMemoryRepo.insertSharedMemory)).toHaveBeenCalledWith(fakeMoment);
+    expect(vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd)).toHaveBeenCalledOnce();
+    expect(vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd)).toHaveBeenCalledWith(fakeMoment);
+
+    detectSpy.mockRestore();
+  });
+
+  it("non-significant turn does NOT call repo insert or memory.md append", async () => {
+    const salientModule = await import("../moments/salient");
+    const detectSpy = vi.spyOn(salientModule, "detectSalientMoment").mockReturnValue(null);
+
+    const deps = makeDeps();
+    const updateTurn = vi.fn(async () => {});
+    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来一首歌");
+    await orc.onUserInput("继续");
+
+    expect(vi.mocked(sharedMemoryRepo.insertSharedMemory)).not.toHaveBeenCalled();
+    expect(vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd)).not.toHaveBeenCalled();
+
+    detectSpy.mockRestore();
   });
 });
