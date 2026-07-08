@@ -6,7 +6,7 @@ export const HERO = {
   inputHint: '我还没能出门，但你可以留一句话给我',
   bottleReplyMain: '「我这里听不到你，但我会记得——等你打开我那天」',
   bottleReplyAside: '你说的那句话，已经存在你的浏览器里了',
-  demoCaptionA: '给你的早',
+  demoCaptionA: '给你的早安',
   demoCaptionB: '我猜你今天想要慢一点',
 } as const;
 
