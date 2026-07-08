@@ -1,4 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useInputDwellBus } from "../perception/useInputDwellBus";
+import { bus as perceptionBus } from "../perception/events";
 
 const DEFAULT_PLACEHOLDER = "和 Lyra 说点什么…";
 
@@ -18,6 +20,7 @@ export function InputBox({
   autoFocus = true,
 }: InputBoxProps) {
   const [value, setValue] = useState("");
+  const { notifySubmit } = useInputDwellBus(perceptionBus, value);
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
@@ -37,9 +40,10 @@ export function InputBox({
       const text = value.trim();
       if (!text) return;
       onSubmit(text);
+      notifySubmit();
       setValue("");
     },
-    [value, onSubmit, disabled],
+    [value, onSubmit, disabled, notifySubmit],
   );
 
   return (

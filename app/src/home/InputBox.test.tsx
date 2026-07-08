@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { InputBox } from "./InputBox";
+import { bus as perceptionBus } from "../perception/events";
 
 describe("InputBox", () => {
   it("renders with the default placeholder", () => {
@@ -68,5 +69,19 @@ describe("InputBox", () => {
     const input = screen.getByPlaceholderText("和 Lyra 说点什么…") as HTMLTextAreaElement;
     await new Promise((r) => setTimeout(r, 5));
     expect(document.activeElement).not.toBe(input);
+  });
+
+  it("emits input_dwell_without_submit on type → dwell → clear (no submit)", () => {
+    vi.useFakeTimers();
+    const before = perceptionBus.recent(60_000).length;
+    const { getByTestId } = render(<InputBox onSubmit={() => {}} />);
+    const ta = getByTestId("lyra-input") as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "considering it" } });
+    vi.advanceTimersByTime(10_001);
+    fireEvent.change(ta, { target: { value: "" } });
+    const after = perceptionBus.recent(60_000);
+    const emitted = after.slice(before).filter((e) => e.kind === "input_dwell_without_submit");
+    expect(emitted.length).toBeGreaterThanOrEqual(1);
+    vi.useRealTimers();
   });
 });
