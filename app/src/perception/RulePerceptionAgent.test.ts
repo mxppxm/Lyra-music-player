@@ -166,4 +166,86 @@ describe("RulePerceptionAgent.infer", () => {
     expect(bias.pad_bias.a).toBeCloseTo(0.1 / 1.1, 5);
     expect(bias.pad_bias.d).toBeCloseTo(0.05 / 1.1, 5);
   });
+
+  describe("Sprint 13 rules", () => {
+    const baseF = {
+      windowMs: 60_000,
+      activeMs: 0,
+      submits: 0,
+      avgSubmitGapMs: NaN,
+      totalChars: 0,
+      skips: 0,
+      completions: 0,
+      skipRatio: 0,
+      proactiveDismisses: 0,
+      isBlurred: false,
+      scrollEvents: 0,
+      hoverDwellCount: 0,
+      totalHoverDwellMs: 0,
+      abandonedInputs: 0,
+      focusIdleMs: 0,
+    };
+
+    it("attentive_hover fires when hoverDwellCount >= threshold", async () => {
+      const agent = new RulePerceptionAgent();
+      const bias = await agent.infer({ ...baseF, hoverDwellCount: 3 });
+      expect(bias.reason).toContain("hover dwell");
+      expect(bias.pad_bias.p).toBeGreaterThan(0);
+    });
+
+    it("attentive_hover also fires when hoverDwellRatio triggers", async () => {
+      const agent = new RulePerceptionAgent();
+      const bias = await agent.infer({
+        ...baseF,
+        hoverDwellCount: 1,
+        totalHoverDwellMs: 12000, // 12000/60000 = 0.20 > 0.15
+      });
+      expect(bias.reason).toContain("hover dwell");
+    });
+
+    it("hesitant_input fires when abandonedInputs >= threshold; pushes P/A/D negative", async () => {
+      const agent = new RulePerceptionAgent();
+      const bias = await agent.infer({ ...baseF, abandonedInputs: 3 });
+      expect(bias.reason).toContain("hesitation");
+      expect(bias.pad_bias.p).toBeLessThan(0);
+      expect(bias.pad_bias.a).toBeLessThan(0);
+      expect(bias.pad_bias.d).toBeLessThan(0);
+    });
+
+    it("quiet_presence fires only when in-room (not blurred) AND focusIdleMs/windowMs>0.5 AND activeMs low", async () => {
+      const agent = new RulePerceptionAgent();
+      const fires = await agent.infer({
+        ...baseF,
+        focusIdleMs: 35_000, // 35/60 = 0.58 > 0.5
+        activeMs: 3_000, // 3/60 = 0.05 < 0.1
+      });
+      expect(fires.reason).toContain("quiet presence");
+
+      const noFire = await agent.infer({
+        ...baseF,
+        isBlurred: true,
+        focusIdleMs: 40_000,
+        activeMs: 0,
+      });
+      expect(noFire.reason).not.toContain("quiet presence");
+    });
+
+    it("multiple new rules fire together, confidence-weighted average is used", async () => {
+      const agent = new RulePerceptionAgent();
+      const bias = await agent.infer({
+        ...baseF,
+        hoverDwellCount: 3,
+        abandonedInputs: 3,
+        focusIdleMs: 40_000,
+        activeMs: 2_000,
+      });
+      // three new rules should all be in the reason chain
+      expect(bias.reason).toContain("hover dwell");
+      expect(bias.reason).toContain("hesitation");
+      expect(bias.reason).toContain("quiet presence");
+      // confidence is a positive number capped at 1
+      expect(bias.confidence).toBeGreaterThan(0);
+      expect(bias.confidence).toBeLessThanOrEqual(1);
+    });
+  });
 });

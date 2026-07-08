@@ -64,6 +64,32 @@ function buildRules(t: Required<PerceptionTuning>): Rule[] {
       confidence: 0.5,
       reason: "sustained listens suggest resonance",
     },
+    {
+      name: "attentive_hover",
+      test: (f) =>
+        (f.hoverDwellCount ?? 0) >= t.hoverDwellCountThreshold ||
+        (f.totalHoverDwellMs ?? 0) / f.windowMs > t.hoverDwellRatioThreshold,
+      pad_bias: { p: 0.1, a: 0.05, d: 0 },
+      confidence: 0.4,
+      reason: "hover dwell suggests attention to ambient",
+    },
+    {
+      name: "hesitant_input",
+      test: (f) => (f.abandonedInputs ?? 0) >= t.abandonedInputsThreshold,
+      pad_bias: { p: -0.1, a: -0.1, d: -0.15 },
+      confidence: 0.5,
+      reason: "typed-then-discarded suggests hesitation",
+    },
+    {
+      name: "quiet_presence",
+      test: (f) =>
+        !f.isBlurred &&
+        (f.focusIdleMs ?? 0) / f.windowMs > t.quietPresenceRatioThreshold &&
+        f.activeMs / f.windowMs < 0.1,
+      pad_bias: { p: 0.05, a: -0.2, d: 0 },
+      confidence: 0.6,
+      reason: "in the room, listening — quiet presence",
+    },
   ];
 }
 
