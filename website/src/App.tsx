@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { AmbientBackground } from './components/AmbientBackground';
+import { LyraString } from './components/LyraString';
 import { useSectionAmbient } from './hooks/useSectionAmbient';
 import { SECTION_COLORS, DARK_SECTIONS } from './theme/ambient';
 import {
@@ -9,7 +10,7 @@ import {
 
 export default function App() {
   const refs = Array.from({ length: 8 }, () => useRef<HTMLElement>(null));
-  const [, setActive] = useState(0);
+  const [active, setActive] = useState(0);
   useSectionAmbient(refs, {
     colors: SECTION_COLORS,
     darkSections: DARK_SECTIONS,
@@ -24,6 +25,7 @@ export default function App() {
   return (
     <>
       <AmbientBackground />
+      <LyraString activeSectionIndex={active} silentSectionIndex={5} />
       <main>
         {titles.map((t, i) => (
           <section key={i} ref={refs[i]}>
