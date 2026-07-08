@@ -26,7 +26,7 @@ export async function getTurn(id: string): Promise<DialogueTurn | null> {
   const db = await getDb();
   const rows = await db.select<DialogueTurnRow[]>(
     `SELECT id, timestamp, user_utterance_json, agent_response_json,
-            user_reaction_json, current_emotion_json, emotion_delta_json
+            user_reaction_json, current_emotion_json, emotion_delta_json, turn_latency_ms
      FROM dialogue_turns WHERE id = ?`,
     [id],
   );
@@ -37,7 +37,7 @@ export async function listRecentTurns(limit: number): Promise<DialogueTurn[]> {
   const db = await getDb();
   const rows = await db.select<DialogueTurnRow[]>(
     `SELECT id, timestamp, user_utterance_json, agent_response_json,
-            user_reaction_json, current_emotion_json, emotion_delta_json
+            user_reaction_json, current_emotion_json, emotion_delta_json, turn_latency_ms
      FROM dialogue_turns ORDER BY timestamp DESC LIMIT ?`,
     [limit],
   );

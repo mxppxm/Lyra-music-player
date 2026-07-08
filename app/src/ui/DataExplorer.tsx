@@ -316,6 +316,16 @@ function TurnsPanel({ expandedId, onToggle }: PanelProps) {
               <span style={{ opacity: 0.7 }}>
                 → {t.agent_response.rationale?.slice(0, 40) ?? "no rationale"}
               </span>
+              <span
+                style={{
+                  opacity: 0.5,
+                  minWidth: 70,
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {t.turn_latency_ms != null ? `${t.turn_latency_ms}ms` : "—"}
+              </span>
             </div>
           }
           detail={t}

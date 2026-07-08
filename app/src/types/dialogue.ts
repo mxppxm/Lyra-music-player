@@ -58,4 +58,8 @@ export type DialogueTurn = {
   agent_response: AgentResponse;
   user_reaction: UserReaction;
   emotion_delta: PAD;
+  /** Sprint 11: end-to-end latency from user submit → song plays. Written
+   *  after the turn by Orchestrator via setTurnLatency; NULL for older
+   *  rows and for turns whose latency write failed. */
+  turn_latency_ms?: number | null;
 };
