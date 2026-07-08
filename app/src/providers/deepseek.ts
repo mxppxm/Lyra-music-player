@@ -28,6 +28,7 @@ export class DeepSeekProvider implements ModelProvider {
     };
     if (opts?.max_tokens != null) body.max_tokens = opts.max_tokens;
     if (opts?.temperature != null) body.temperature = opts.temperature;
+    if (opts?.response_format) body.response_format = opts.response_format;
 
     const res = await fetch(ENDPOINT, {
       method: "POST",

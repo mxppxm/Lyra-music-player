@@ -5,6 +5,7 @@ import { clampTuning } from "../perception/tuning";
 import { REFLECT_SYSTEM_PROMPT } from "./prompt";
 import { routeProvider } from "../agents/route";
 import { writeTrace } from "../reasoning/writeTrace";
+import { parseLooseJson } from "../lib/parseLooseJson";
 
 /** Compact form of one perception_audit row for the Reflect prompt. */
 export type PerceptionObservation = {
@@ -45,12 +46,8 @@ export class ReflectAgentError extends Error {
 }
 
 function extractJson(raw: string): unknown {
-  let s = raw.trim();
-  if (s.startsWith("```")) {
-    s = s.replace(/^```(json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  }
   try {
-    return JSON.parse(s);
+    return parseLooseJson(raw);
   } catch {
     throw new ReflectAgentError(`bad JSON: ${raw.slice(0, 200)}`);
   }
@@ -201,6 +198,7 @@ export class ReflectAgent {
     const res = await this.provider.chat(messages, {
       max_tokens: 4096,
       temperature: 0.5,
+      response_format: { type: "json_object" },
       agent: "reflect",
     });
     const obj = extractJson(res.content);

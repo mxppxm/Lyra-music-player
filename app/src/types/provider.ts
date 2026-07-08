@@ -10,6 +10,9 @@ export type ChatOptions = {
   model?: string;
   max_tokens?: number;
   temperature?: number;
+  // OpenAI-compat JSON mode. Providers that support it (Zhipu, DeepSeek) forward
+  // it as `response_format: {type: "json_object"}`. Others silently ignore it.
+  response_format?: { type: "json_object" };
   // Attribution for the LLM-usage log. Providers ignore this; the usage-logging
   // decorator reads it to tag which agent originated the call.
   agent?: string;

@@ -2,6 +2,7 @@ import type { ModelProvider, ChatMessage } from "../types";
 import { COMPANION_SYSTEM_PROMPT } from "./prompts/companion";
 import { routeProvider } from "./route";
 import { writeTrace } from "../reasoning/writeTrace";
+import { parseLooseJson } from "../lib/parseLooseJson";
 import type { ChosenSong, CompanionInput } from "./types";
 
 const SHIFTS = ["接住", "点燃", "陪着", "打断"] as const;
@@ -15,12 +16,8 @@ export class CompanionAgentError extends Error {
 }
 
 function extractJson(raw: string): unknown {
-  let s = raw.trim();
-  if (s.startsWith("```")) {
-    s = s.replace(/^```(json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  }
   try {
-    return JSON.parse(s);
+    return parseLooseJson(raw);
   } catch {
     throw new CompanionAgentError(`bad JSON: ${raw.slice(0, 200)}`);
   }
@@ -130,7 +127,12 @@ export class CompanionAgent {
     ];
 
     const t0 = performance.now();
-    const res = await this.provider.chat(messages, { max_tokens: 1024, temperature: 0.7, agent: "companion" });
+    const res = await this.provider.chat(messages, {
+      max_tokens: 1024,
+      temperature: 0.7,
+      response_format: { type: "json_object" },
+      agent: "companion",
+    });
     let picked = parsePartial(extractJson(res.content));
 
     writeTrace({
@@ -154,6 +156,7 @@ export class CompanionAgent {
       const retryRes = await this.provider.chat(retryMessages, {
         max_tokens: 512,
         temperature: 0.3,
+        response_format: { type: "json_object" },
         agent: "companion",
       });
       picked = parsePartial(extractJson(retryRes.content));

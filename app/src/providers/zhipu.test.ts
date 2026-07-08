@@ -57,6 +57,30 @@ describe("ZhipuProvider", () => {
     ]);
   });
 
+  it("forwards response_format when caller requests JSON mode", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"a":1}' } }] }),
+    });
+    const p = new ZhipuProvider({ apiKey: "x" });
+    await p.chat([{ role: "user", content: "hi" }], {
+      response_format: { type: "json_object" },
+    });
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.response_format).toEqual({ type: "json_object" });
+  });
+
+  it("omits response_format when caller does not set it", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+    });
+    const p = new ZhipuProvider({ apiKey: "x" });
+    await p.chat([{ role: "user", content: "hi" }]);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.response_format).toBeUndefined();
+  });
+
   it("throws on non-ok status with body text and status code", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
