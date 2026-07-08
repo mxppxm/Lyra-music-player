@@ -119,6 +119,7 @@ describe("Sprint 13 install additions", () => {
     let now = 1000;
     installPerceptionListeners(bus, { win, doc, now: () => now } as Parameters<typeof installPerceptionListeners>[1]);
     const target = {
+      scrollTop: 100,
       closest: (sel: string) =>
         sel === "[data-lyra-scroll]"
           ? { getAttribute: () => "data_explorer" }
@@ -129,6 +130,40 @@ describe("Sprint 13 install additions", () => {
     const ev = recent.find((e) => e.kind === "scroll");
     expect(ev?.kind).toBe("scroll");
     expect((ev as { container?: string } | undefined)?.container).toBe("data_explorer");
+  });
+
+  it("scroll direction is 'down' when scrollTop increases and 'up' when it decreases", () => {
+    const bus = new EventBus();
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const doc = {
+      addEventListener: (name: string, fn: (e: unknown) => void) => { handlers[name] = fn; },
+      removeEventListener: () => {},
+    };
+    const win = { addEventListener: () => {}, removeEventListener: () => {} };
+    let now = 1000;
+    installPerceptionListeners(bus, { win, doc, now: () => now } as Parameters<typeof installPerceptionListeners>[1]);
+
+    const makeTarget = (scrollTop: number) => ({
+      scrollTop,
+      closest: (sel: string) =>
+        sel === "[data-lyra-scroll]"
+          ? { getAttribute: () => "data_explorer" }
+          : null,
+    });
+
+    // First scroll: scrollTop goes from 0 to 100 → direction "down"
+    handlers["scroll"]({ target: makeTarget(100) } as unknown);
+    const ev1 = bus.recent(10_000, now + 5000).find((e) => e.kind === "scroll");
+    expect((ev1 as { direction?: string } | undefined)?.direction).toBe("down");
+
+    // Second scroll: scrollTop goes from 100 to 50 → direction "up"
+    // Advance time past throttle window
+    now += 1000;
+    handlers["scroll"]({ target: makeTarget(50) } as unknown);
+    const ev2 = bus.recent(10_000, now + 5000).find(
+      (e) => e.kind === "scroll" && (e as { direction?: string }).direction === "up",
+    );
+    expect((ev2 as { direction?: string } | undefined)?.direction).toBe("up");
   });
 
   it("hover on data-lyra-hover fires hover_dwell after 3000ms if not left", () => {
@@ -155,6 +190,38 @@ describe("Sprint 13 install additions", () => {
     const hover = bus.recent(10_000).find((e) => e.kind === "hover_dwell") as { kind: string; target: string } | undefined;
     expect(hover?.kind).toBe("hover_dwell");
     expect(hover?.target).toBe("album_cover");
+    vi.useRealTimers();
+  });
+
+  it("mouseout before 3000ms cancels hover_dwell timer — no event emitted", () => {
+    vi.useFakeTimers();
+    const bus = new EventBus();
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const doc = {
+      addEventListener: (name: string, fn: (e: unknown) => void) => { handlers[name] = fn; },
+      removeEventListener: () => {},
+    };
+    const win = { addEventListener: () => {}, removeEventListener: () => {} };
+    installPerceptionListeners(bus, { win, doc, now: () => Date.now() } as Parameters<typeof installPerceptionListeners>[1]);
+
+    const hoverTarget = {
+      closest: (sel: string) =>
+        sel === "[data-lyra-hover]"
+          ? { getAttribute: () => "album_cover" }
+          : null,
+    };
+
+    // Hover in
+    handlers["mouseover"]({ target: hoverTarget });
+    // Advance to just before dwell fires
+    vi.advanceTimersByTime(2999);
+    // Mouse leaves before timer fires
+    handlers["mouseout"]({ target: hoverTarget });
+    // Advance 100ms more (past where the dwell would have fired)
+    vi.advanceTimersByTime(100);
+
+    // No hover_dwell should have been emitted
+    expect(bus.recent(10_000).find((e) => e.kind === "hover_dwell")).toBeUndefined();
     vi.useRealTimers();
   });
 

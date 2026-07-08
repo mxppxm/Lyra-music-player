@@ -61,19 +61,16 @@ export function installPerceptionListeners(
 
   // ── focus_no_interaction state ───────────────────────────────────────────
   let lastInteractionAt = clock();
-  let currentlyFocused = true;
-  let currentlyBlurred = false;
+  let focused = true;
   let firedForThisIdle = false;
 
   // ── window listeners (existing 4, with focus_no_interaction tracking) ───
   const onFocus = () => {
-    currentlyFocused = true;
-    currentlyBlurred = false;
+    focused = true;
     throttleEmit("window_focus", (at) => ({ kind: "window_focus", at }));
   };
   const onBlur = () => {
-    currentlyFocused = false;
-    currentlyBlurred = true;
+    focused = false;
     throttleEmit("window_blur", (at) => ({ kind: "window_blur", at }));
   };
   const onMouseMove = () => {
@@ -94,9 +91,15 @@ export function installPerceptionListeners(
 
   // ── scroll listener (capture, per-container throttle) ───────────────────
   const scrollLastEmit: Partial<Record<string, number>> = {};
+  const lastScrollTop: Map<string, number> = new Map();
   const onScroll = (e: Event) => {
-    const container = extractContainer((e as Event & { target: EventTarget | null }).target);
+    const el = (e as Event & { target: EventTarget | null }).target as (Element & { scrollTop?: number }) | null;
+    const container = extractContainer(el);
     if (!container) return;
+    const scrollTop = el?.scrollTop ?? 0;
+    const prevScrollTop = lastScrollTop.get(container) ?? 0;
+    lastScrollTop.set(container, scrollTop);
+    const direction: "up" | "down" = scrollTop < prevScrollTop ? "up" : "down";
     const at = clock();
     if (at - (scrollLastEmit[container] ?? 0) < THROTTLE_MS) return;
     scrollLastEmit[container] = at;
@@ -104,7 +107,7 @@ export function installPerceptionListeners(
       kind: "scroll",
       at,
       container: container as "data_explorer" | "roadmap" | "other",
-      direction: "down", // direction not tracked per spec §5; field kept for schema compat
+      direction,
     });
   };
   if (doc) {
@@ -119,7 +122,8 @@ export function installPerceptionListeners(
     if (dwellTimers.has(target)) return; // already timing
     const start = clock();
     const id = st(() => {
-      bus.emit({ kind: "hover_dwell", at: clock(), target: target as "album_cover" | "small_note" | "trace_strip", ms: clock() - start });
+      const now = clock();
+      bus.emit({ kind: "hover_dwell", at: now, target: target as "album_cover" | "small_note" | "trace_strip", ms: now - start });
       dwellTimers.delete(target);
     }, HOVER_DWELL_MS);
     dwellTimers.set(target, id);
@@ -140,7 +144,7 @@ export function installPerceptionListeners(
 
   // ── focus_no_interaction poll every 30s ──────────────────────────────────
   const idlePollId = si(() => {
-    if (!currentlyFocused || currentlyBlurred) return;
+    if (!focused) return;
     const sinceMs = clock() - lastInteractionAt;
     if (sinceMs < FOCUS_IDLE_MS) return;
     if (firedForThisIdle) return;
@@ -154,9 +158,9 @@ export function installPerceptionListeners(
     win.removeEventListener("mousemove", onMouseMove);
     win.removeEventListener("keydown", onKeyDown);
     if (doc) {
-      doc.removeEventListener("scroll", onScroll as EventListener);
-      doc.removeEventListener("mouseover", onMouseOver as EventListener);
-      doc.removeEventListener("mouseout", onMouseOut as EventListener);
+      doc.removeEventListener("scroll", onScroll as EventListener, { capture: true });
+      doc.removeEventListener("mouseover", onMouseOver as EventListener, true);
+      doc.removeEventListener("mouseout", onMouseOut as EventListener, true);
     }
     ci(idlePollId);
     for (const id of dwellTimers.values()) {
