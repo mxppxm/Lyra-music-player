@@ -4,7 +4,7 @@
 **代码基线**：main @ `9dde5df`（Sprint 12 BPM + 本会话 JSON 加固 / 竖屏窗口 之后）
 **规模**：625 vitest / 33 cargo / typecheck 0 / build 308 KB / 83 test files
 
-这份文档不是路线图，是**当下的状态**——已经建成的东西、每一层做了什么、代码在哪。设计原理性讨论在 `2026-07-06-music-player-design.md`、需求原话在 `design-answers.md`、每一 sprint 的实现细节在 `plans/`。
+这份文档不是路线图，是**当下的状态**——已经建成的东西、每一层做了什么、代码在哪。设计原理性讨论在 `2026-07-06-music-player-design.md`、需求原话在 `design-answers.md`、每一 sprint 的实现细节在 `plans/`。单项能力的深挖:EmotionAgent 中文含蓄识别的蒸馏 + 接入 + eval 见 `2026-07-08-emotion-capture-cn-skill.md`。
 
 ---
 
@@ -98,6 +98,8 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - delta 反算：`emotion_delta = post_pad - pre_pad` 累积到 `soul.dynamic_mood.current_pad`（clamp [-1,1]）
 - **预测通道**：EmotionAgent 可选输出 `predicted_trajectory { horizon_min, predicted_pad }`，Orchestrator `onSongComplete` autoAdvance 时若上一 turn 带预测就用它起手，否则用 endedEmotion 原值。schema / validate / drop-if-malformed 三条路径完备
 - **三层节律**：turn（分钟）/ week（Reflect）/ quarter（灵魂底色演化，v0.3 才动）
+- **中文含蓄识别加固（本会话）**：EmotionAgent 的 system prompt 在 `emotion.ts` 里注入 `CN_UNDERSTATEMENT_TABLE`（13 条中文含蓄词条 → 隐藏 PAD + confidence 上限）+ `CN_FEWSHOT`（8 条覆盖含蓄/直白/反例/反讽 的示例）+ 强度副词缩放规则。蒸馏来源见外部 skill `/Users/daoyu/Documents/skills-repo/emotion-capture-cn-skill/`（含 PAD-Plutchik 中心点表、NVC 感受词表、41 条含蓄词典、打分 rubric 与 20 条示例)。详见 `2026-07-08-emotion-capture-cn-skill.md`
+- **回归 eval**：`src/agents/emotion-eval.regression.{jsonl,test.ts}` + `pnpm eval:emotion`。12 条 held-out 中文短句测 PAD L1 距离 + \|Δconf\|，门禁 `LYRA_EVAL=1` 避免默认 test 打真实 API。trace 落 `.eval-runs/`（gitignored)，用于 prompt 迭代的 A/B 对比
 
 ### 4.4 曲库 · Library 层
 
@@ -180,6 +182,7 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - `/settings` → 打开 Settings
 - `/stats` → 打开 Data Explorer 的 LLM 用量 tab
 - `/explorer` → 打开 Data Explorer 默认 tab
+- `/help` → 打开 HelpOverlay（第一人称文案:命令表 · 五字理念 · 怎么和我说话 · 数据在哪里)。Esc / 背景点击 / 「好」按钮均可关闭
 - 严格匹配前缀 trim 后完全等于命令，其他一律 falls through 进 Orchestrator 走正常对话
 
 ### 4.13 LLM 输出加固（本会话）

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# EmotionAgent eval traces (per-run JSONL)
+.eval-runs
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
