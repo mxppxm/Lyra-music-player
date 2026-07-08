@@ -7,6 +7,9 @@ import { invoke } from "@tauri-apps/api/core";
 export type AudioFeatures = {
   energy: number;
   valence: number;
+  /** Sprint 12: detected BPM in [60, 200], or 0 when detection is
+   *  inconclusive (silence / no periodic onsets). */
+  bpm: number;
   duration_ms: number;
 };
 

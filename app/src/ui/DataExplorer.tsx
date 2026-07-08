@@ -416,9 +416,9 @@ function LibraryPanel({ expandedId, onToggle }: PanelProps) {
                   {" — "}
                   {t.artist ?? "(无艺人)"}
                 </span>
-                <span style={{ opacity: 0.6, minWidth: 140 }}>
+                <span style={{ opacity: 0.6, minWidth: 200 }}>
                   {f
-                    ? `energy ${(f.energy ?? 0).toFixed(2)} · valence ${(f.valence ?? 0).toFixed(2)}`
+                    ? `energy ${(f.energy ?? 0).toFixed(2)} · valence ${(f.valence ?? 0).toFixed(2)} · bpm ${f.bpm ?? "—"}`
                     : "no features"}
                 </span>
               </div>

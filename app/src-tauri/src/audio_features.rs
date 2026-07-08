@@ -15,13 +15,17 @@ use serde::Serialize;
 use std::fs::File;
 use std::io::BufReader;
 
-/// Extracted features. All floats are in [0, 1].
+/// Extracted features. Floats energy/valence are in [0, 1]; bpm is in
+/// [60, 200] or 0 if detection failed.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct AudioFeatures {
     /// RMS energy, normalised to [0, 1].
     pub energy: f32,
     /// Spectral centroid divided by Nyquist. Bright material → higher.
     pub valence: f32,
+    /// Detected beats-per-minute in [60, 200], or 0 when detection is
+    /// inconclusive (silence, no discernible periodic onsets, etc).
+    pub bpm: u32,
     /// Duration of the source in milliseconds (from the file header).
     pub duration_ms: u64,
 }
@@ -84,6 +88,87 @@ pub fn compute_spectral_centroid(samples: &[f32], sample_rate: u32) -> f32 {
     (centroid_hz / nyquist).clamp(0.0, 1.0)
 }
 
+/// Beat tracker via spectral-flux onset envelope + autocorrelation.
+/// Returns detected BPM in [60, 200], or 0 when the signal is silent
+/// or has no periodic onset structure worth reporting. Sprint 12.
+pub fn compute_bpm(samples: &[f32], sample_rate: u32) -> u32 {
+    const FRAME: usize = 1024;
+    const HOP: usize = 512;
+    if samples.len() < FRAME * 4 || sample_rate == 0 {
+        return 0;
+    }
+    let frame_rate = sample_rate as f32 / HOP as f32; // frames per second
+    let mut planner = FftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(FRAME);
+
+    // 1) Spectral flux per hop.
+    let mut prev_mag = vec![0.0f32; FRAME / 2];
+    let mut flux: Vec<f32> = Vec::with_capacity(samples.len() / HOP);
+    let mut i = 0;
+    while i + FRAME <= samples.len() {
+        let mut buf: Vec<Complex<f32>> = (0..FRAME)
+            .map(|k| {
+                let w = 0.5
+                    - 0.5 * (2.0 * std::f32::consts::PI * k as f32 / (FRAME as f32 - 1.0)).cos();
+                Complex::new(samples[i + k] * w, 0.0)
+            })
+            .collect();
+        fft.process(&mut buf);
+        let half = FRAME / 2;
+        let mut sum_positive = 0.0f32;
+        for k in 0..half {
+            let mag = buf[k].norm();
+            let diff = mag - prev_mag[k];
+            if diff > 0.0 {
+                sum_positive += diff;
+            }
+            prev_mag[k] = mag;
+        }
+        flux.push(sum_positive);
+        i += HOP;
+    }
+    if flux.len() < 32 {
+        return 0;
+    }
+
+    // 2) Normalize by mean, half-wave rectify to isolate onsets.
+    let mean_flux = flux.iter().sum::<f32>() / flux.len() as f32;
+    if mean_flux == 0.0 {
+        return 0;
+    }
+    let onset: Vec<f32> = flux
+        .iter()
+        .map(|&v| (v / mean_flux - 1.0).max(0.0))
+        .collect();
+
+    // 3) Autocorrelation over the plausible tempo range [60, 200] BPM.
+    let min_lag = (frame_rate * 60.0 / 200.0).floor() as usize;
+    let max_lag = (frame_rate * 60.0 / 60.0).ceil() as usize;
+    let max_lag = max_lag.min(onset.len() / 2);
+    if max_lag <= min_lag {
+        return 0;
+    }
+
+    let mut best_lag = min_lag;
+    let mut best_score = 0.0f32;
+    for lag in min_lag..=max_lag {
+        let mut s = 0.0f32;
+        for k in 0..(onset.len() - lag) {
+            s += onset[k] * onset[k + lag];
+        }
+        if s > best_score {
+            best_score = s;
+            best_lag = lag;
+        }
+    }
+    if best_score <= 0.0 {
+        return 0;
+    }
+
+    let bpm = 60.0 * frame_rate / best_lag as f32;
+    bpm.round().clamp(60.0, 200.0) as u32
+}
+
 /// Load a track and extract features. Reads at most `max_secs` of audio,
 /// downmixed to mono. Returns an error if the file can't be opened or
 /// decoded.
@@ -115,6 +200,7 @@ pub fn extract(path: &Path) -> Result<AudioFeatures, AudioFeaturesError> {
 
     let energy = compute_rms(&mono);
     let valence = compute_spectral_centroid(&mono, sample_rate);
+    let bpm = compute_bpm(&mono, sample_rate);
     let duration_ms = total_duration
         .map(|d| d.as_millis().min(u64::MAX as u128) as u64)
         .unwrap_or(0);
@@ -122,6 +208,7 @@ pub fn extract(path: &Path) -> Result<AudioFeatures, AudioFeaturesError> {
     Ok(AudioFeatures {
         energy,
         valence,
+        bpm,
         duration_ms,
     })
 }
@@ -205,5 +292,50 @@ mod tests {
     #[test]
     fn spectral_centroid_of_empty_is_zero() {
         assert_eq!(compute_spectral_centroid(&[], 44_100), 0.0);
+    }
+
+    // Sprint 12: BPM detection tests --------------------------------------
+
+    #[test]
+    fn bpm_of_empty_is_zero() {
+        assert_eq!(compute_bpm(&[], 44_100), 0);
+    }
+
+    #[test]
+    fn bpm_of_silence_is_zero() {
+        let sr = 44_100u32;
+        let silence = vec![0.0f32; sr as usize * 5];
+        assert_eq!(compute_bpm(&silence, sr), 0);
+    }
+
+    #[test]
+    fn bpm_of_120bpm_click_track_detects_120() {
+        // Click every 0.5s = 120 BPM. Each click is a 10ms pulse of
+        // white-noise-ish content so spectral flux has something to
+        // latch onto.
+        let sr = 44_100u32;
+        let seconds = 8.0f32;
+        let n = (sr as f32 * seconds) as usize;
+        let period_samples = sr as usize / 2; // 0.5s → 120 BPM
+        let mut buf = vec![0.0f32; n];
+        let click_len = (sr as f32 * 0.010) as usize;
+        for k in 0..(n / period_samples) {
+            let start = k * period_samples;
+            for j in 0..click_len {
+                if start + j < n {
+                    // deterministic pseudo-noise
+                    let phase = (start + j) as f32 * 12.34;
+                    buf[start + j] = 0.8 * phase.sin() * (1.0 - j as f32 / click_len as f32);
+                }
+            }
+        }
+        let bpm = compute_bpm(&buf, sr);
+        // Allow ±5 BPM slack because 44.1 kHz / 512 hop = 86.13 fps
+        // and lag quantisation for 120 BPM is ~1 BPM per lag step.
+        assert!(
+            (bpm as i32 - 120).abs() <= 5,
+            "expected ≈120 BPM, got {}",
+            bpm
+        );
     }
 }

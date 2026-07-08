@@ -40,7 +40,9 @@ export async function extractFeaturesForTracks(
     try {
       await upsertFeatures({
         track_id: t.id,
-        bpm: null, // v0.2.1 will add BPM detection
+        // Sprint 12: 0 means "detection inconclusive" — treat as unavailable
+        // downstream rather than pretending 0 BPM is meaningful.
+        bpm: f.bpm > 0 ? f.bpm : null,
         energy: f.energy,
         valence: f.valence,
       });
