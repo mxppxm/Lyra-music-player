@@ -4,6 +4,7 @@ import type { PerceptionTuning } from "../perception/tuning";
 import { clampTuning } from "../perception/tuning";
 import { REFLECT_SYSTEM_PROMPT } from "./prompt";
 import { routeProvider } from "../agents/route";
+import { writeTrace } from "../reasoning/writeTrace";
 
 /** Compact form of one perception_audit row for the Reflect prompt. */
 export type PerceptionObservation = {
@@ -191,16 +192,26 @@ export class ReflectAgent {
   }
 
   async run(input: ReflectInput): Promise<ReflectResult> {
+    const brief = buildUserMessage(input);
     const messages: ChatMessage[] = [
       { role: "system", content: REFLECT_SYSTEM_PROMPT },
-      { role: "user", content: buildUserMessage(input) },
+      { role: "user", content: brief },
     ];
+    const t0 = performance.now();
     const res = await this.provider.chat(messages, {
       max_tokens: 4096,
       temperature: 0.5,
       agent: "reflect",
     });
     const obj = extractJson(res.content);
-    return validateResult(obj);
+    const parsed = validateResult(obj);
+    writeTrace({
+      agent_kind: "reflect",
+      prompt_text: brief,
+      raw_response: res.content,
+      parsed_json: parsed,
+      duration_ms: Math.round(performance.now() - t0),
+    });
+    return parsed;
   }
 }

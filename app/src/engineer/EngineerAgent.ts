@@ -2,6 +2,7 @@
 // PROPOSE-ONLY: never writes source files, never spawns CLI.
 import type { ModelProvider, ChatMessage } from "../types";
 import { routeProvider } from "../agents/route";
+import { writeTrace } from "../reasoning/writeTrace";
 import { ENGINEER_SYSTEM_PROMPT } from "./prompt";
 import { partitionByZone } from "./boundaryMap";
 import type { RoadmapItem } from "./types";
@@ -97,12 +98,20 @@ export class EngineerAgent {
     ];
 
     let rawContent: string;
+    const t0 = performance.now();
     try {
       const res = await this.provider.chat(messages, {
         max_tokens: 2048,
         temperature: 0.5,
       });
       rawContent = res.content;
+      writeTrace({
+        agent_kind: "engineer",
+        prompt_text: context,
+        raw_response: rawContent,
+        parsed_json: null,   // filled by trace of proposals below is overkill
+        duration_ms: Math.round(performance.now() - t0),
+      });
     } catch (err) {
       await engineerAuditRepo.insertEntry({
         id: crypto.randomUUID(),

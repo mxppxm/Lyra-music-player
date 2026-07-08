@@ -1,5 +1,6 @@
 import type { ModelProvider, CurrentEmotion, ChatMessage } from "../types";
 import { EMOTION_SYSTEM_PROMPT } from "./prompts/emotion";
+import { writeTrace } from "../reasoning/writeTrace";
 import { routeProvider } from "./route";
 import type { EmotionInput } from "./types";
 
@@ -99,12 +100,21 @@ export class EmotionAgent {
       { role: "system", content: EMOTION_SYSTEM_PROMPT },
       { role: "user", content: input.userUtterance },
     ];
+    const t0 = performance.now();
     const res = await this.provider.chat(messages, {
       max_tokens: 400,
       temperature: 0.3,
       agent: "emotion",
     });
     const obj = extractJson(res.content);
-    return validateEmotion(obj);
+    const parsed = validateEmotion(obj);
+    writeTrace({
+      agent_kind: "emotion",
+      prompt_text: input.userUtterance,
+      raw_response: res.content,
+      parsed_json: parsed,
+      duration_ms: Math.round(performance.now() - t0),
+    });
+    return parsed;
   }
 }

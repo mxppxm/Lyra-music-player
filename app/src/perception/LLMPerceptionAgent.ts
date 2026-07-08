@@ -8,6 +8,7 @@
  */
 
 import type { ChatMessage, ModelProvider } from "../types";
+import { writeTrace } from "../reasoning/writeTrace";
 import type { BehavioralFeatures } from "./aggregator";
 import type { PerceptionAgent, PerceptionBias } from "./PerceptionAgent";
 import {
@@ -72,11 +73,13 @@ export class LLMPerceptionAgent implements PerceptionAgent {
   }
 
   async infer(features: BehavioralFeatures): Promise<PerceptionBias> {
+    const userContent = buildPerceptionUserContent(features);
     try {
       const messages: ChatMessage[] = [
         { role: "system", content: PERCEPTION_SYSTEM_PROMPT },
-        { role: "user", content: buildPerceptionUserContent(features) },
+        { role: "user", content: userContent },
       ];
+      const t0 = performance.now();
       const chatPromise = this.provider.chat(messages, {
         max_tokens: 300,
         temperature: 0.2,
@@ -89,7 +92,15 @@ export class LLMPerceptionAgent implements PerceptionAgent {
       });
       const res = await Promise.race([chatPromise, timeoutPromise]);
       const parsed = extractJson(res.content);
-      return validate(parsed);
+      const validated = validate(parsed);
+      writeTrace({
+        agent_kind: "perception",
+        prompt_text: userContent,
+        raw_response: res.content,
+        parsed_json: validated,
+        duration_ms: Math.round(performance.now() - t0),
+      });
+      return validated;
     } catch (err) {
       // Any failure — network, JSON, schema — hands off to the rule agent.
       // This is intentional: perception must never break the tick loop.

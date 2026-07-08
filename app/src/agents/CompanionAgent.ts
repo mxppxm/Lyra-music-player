@@ -1,6 +1,7 @@
 import type { ModelProvider, ChatMessage } from "../types";
 import { COMPANION_SYSTEM_PROMPT } from "./prompts/companion";
 import { routeProvider } from "./route";
+import { writeTrace } from "../reasoning/writeTrace";
 import type { ChosenSong, CompanionInput } from "./types";
 
 const SHIFTS = ["接住", "点燃", "陪着", "打断"] as const;
@@ -122,13 +123,23 @@ export class CompanionAgent {
   async choose(input: CompanionInput): Promise<ChosenSong> {
     const candidateIds = input.candidates.map((c) => c.id);
     const idSet = new Set(candidateIds);
+    const brief = buildBrief(input);
     const messages: ChatMessage[] = [
       { role: "system", content: COMPANION_SYSTEM_PROMPT },
-      { role: "user", content: buildBrief(input) },
+      { role: "user", content: brief },
     ];
 
+    const t0 = performance.now();
     const res = await this.provider.chat(messages, { max_tokens: 1024, temperature: 0.7, agent: "companion" });
     let picked = parsePartial(extractJson(res.content));
+
+    writeTrace({
+      agent_kind: "companion",
+      prompt_text: brief,
+      raw_response: res.content,
+      parsed_json: picked,
+      duration_ms: Math.round(performance.now() - t0),
+    });
 
     // Retry once if the LLM picked a song_id outside the candidate set.
     if (!idSet.has(picked.song_id)) {
