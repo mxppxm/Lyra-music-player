@@ -24,6 +24,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [embeddingChoice, setEmbeddingChoice] = useState<EmbeddingChoice>("");
   const [zhipuEmbeddingKey, setZhipuEmbeddingKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
+  const [embeddingDirty, setEmbeddingDirty] = useState(false);
   const [refilling, setRefilling] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,6 +60,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       setEmbeddingChoice(ep === "zhipu" || ep === "openai" ? ep : "");
       setZhipuEmbeddingKey(zek ?? "");
       setOpenaiKey(ok ?? "");
+      setEmbeddingDirty(false);
       setLoaded(true);
     })();
     return () => {
@@ -82,6 +84,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.embeddingProvider, embeddingChoice);
       await setSecret(SECRET_KEYS.zhipuEmbeddingApiKey, zhipuEmbeddingKey);
       await setSecret(SECRET_KEYS.openaiApiKey, openaiKey);
+      setEmbeddingDirty(false);
       if (libraryPath) {
         setScanStatus("Scanning…");
         try {
@@ -215,7 +218,10 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         Lyrics embedding provider
         <select
           value={embeddingChoice}
-          onChange={(e) => setEmbeddingChoice(e.target.value as EmbeddingChoice)}
+          onChange={(e) => {
+            setEmbeddingChoice(e.target.value as EmbeddingChoice);
+            setEmbeddingDirty(true);
+          }}
           disabled={!loaded}
         >
           <option value="">（未启用）</option>
@@ -229,7 +235,10 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           <input
             type="password"
             value={zhipuEmbeddingKey}
-            onChange={(e) => setZhipuEmbeddingKey(e.target.value)}
+            onChange={(e) => {
+              setZhipuEmbeddingKey(e.target.value);
+              setEmbeddingDirty(true);
+            }}
             disabled={!loaded}
           />
         </label>
@@ -240,7 +249,10 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           <input
             type="password"
             value={openaiKey}
-            onChange={(e) => setOpenaiKey(e.target.value)}
+            onChange={(e) => {
+              setOpenaiKey(e.target.value);
+              setEmbeddingDirty(true);
+            }}
             disabled={!loaded}
           />
         </label>
@@ -248,7 +260,14 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       <div className="settings-actions">
         <button
           onClick={onRefill}
-          disabled={refilling || !loaded || !embeddingChoice}
+          disabled={
+            refilling || !loaded || !embeddingChoice || embeddingDirty
+          }
+          title={
+            embeddingDirty
+              ? "Save first — the provider/key isn't persisted yet."
+              : undefined
+          }
         >
           {refilling ? "Refilling…" : "Refill missing lyrics embeddings"}
         </button>

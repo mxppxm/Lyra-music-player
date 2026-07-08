@@ -200,9 +200,8 @@ describe("Settings", () => {
     });
   });
 
-  it("Refill button is enabled after choosing an embedding provider and fires lyricsRefill", async () => {
+  it("Refill button is disabled after picking a provider until Save persists it", async () => {
     (getSecret as any).mockResolvedValue(null);
-    (lyricsRefill as any).mockResolvedValue({ started: 5, succeeded: 5, failed: 0 });
     render(<Settings open={true} onClose={() => {}} />);
 
     await screen.findByLabelText(/anthropic/i);
@@ -214,7 +213,22 @@ describe("Settings", () => {
     const btn = await screen.findByRole("button", {
       name: /refill missing lyrics embeddings/i,
     });
-    expect(btn).not.toBeDisabled();
+    expect(btn).toBeDisabled(); // dirty — Save first
+  });
+
+  it("Refill button fires lyricsRefill once provider is loaded from storage", async () => {
+    (getSecret as any).mockImplementation((k: string) =>
+      k === "embedding.provider" ? Promise.resolve("zhipu") : Promise.resolve(null),
+    );
+    (lyricsRefill as any).mockResolvedValue({ started: 5, succeeded: 5, failed: 0 });
+    render(<Settings open={true} onClose={() => {}} />);
+
+    await screen.findByLabelText(/anthropic/i);
+    const btn = await screen.findByRole("button", {
+      name: /refill missing lyrics embeddings/i,
+    });
+    // Provider was hydrated from storage → dirty=false → enabled
+    await waitFor(() => expect(btn).not.toBeDisabled());
     fireEvent.click(btn);
 
     await waitFor(() => {

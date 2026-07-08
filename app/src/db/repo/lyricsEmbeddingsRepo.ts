@@ -30,11 +30,19 @@ function encode(v: Float32Array): number[] {
 }
 
 function decode(raw: number[] | Uint8Array, dim: number): Float32Array {
-  const u8 = raw instanceof Uint8Array ? raw : Uint8Array.from(raw);
-  const buf = new ArrayBuffer(u8.byteLength);
-  new Uint8Array(buf).set(u8);
-  const out = new Float32Array(buf);
-  return out.length === dim ? out : new Float32Array(0);
+  // Silent-skip posture: any malformed blob (non-aligned byteLength, dim
+  // mismatch, corruption) yields an empty vector. Downstream (LibraryAgent
+  // cosine check) treats empty as "sem unavailable" and degrades cleanly.
+  try {
+    const u8 = raw instanceof Uint8Array ? raw : Uint8Array.from(raw);
+    if (u8.byteLength % 4 !== 0) return new Float32Array(0);
+    const buf = new ArrayBuffer(u8.byteLength);
+    new Uint8Array(buf).set(u8);
+    const out = new Float32Array(buf);
+    return out.length === dim ? out : new Float32Array(0);
+  } catch {
+    return new Float32Array(0);
+  }
 }
 
 export async function upsert(row: LyricsEmbedding): Promise<void> {

@@ -129,7 +129,17 @@ export class LibraryAgent {
     const rawKeyword = all.map((t) => keywordScore(t, tokens));
     const maxHits = Math.max(...rawKeyword, 0);
     const anyKeyword = maxHits > 0;
-    const anyFeatures = featuresByTrack.size > 0;
+    // "any features" means at least one row has a usable (non-null) axis.
+    // A features table full of all-null rows must NOT count — otherwise the
+    // scored path yields identical zeros for every track and JS stable sort
+    // degrades to insertion order (deterministic same-N-forever).
+    let anyFeatures = false;
+    for (const f of featuresByTrack.values()) {
+      if (f.energy !== null || f.valence !== null) {
+        anyFeatures = true;
+        break;
+      }
+    }
     const anySem = targetVec !== null && lyricsByTrack.size > 0;
 
     if (!anyKeyword && !anyFeatures && !anySem) {
