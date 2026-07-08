@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { AmbientBackground } from './components/AmbientBackground';
 import { LyraString } from './components/LyraString';
+import { Constellation } from './components/Constellation';
 import { useSectionAmbient } from './hooks/useSectionAmbient';
 import { SECTION_COLORS, DARK_SECTIONS } from './theme/ambient';
 import {
@@ -27,11 +28,30 @@ export default function App() {
       <AmbientBackground />
       <LyraString activeSectionIndex={active} silentSectionIndex={5} />
       <main>
-        {titles.map((t, i) => (
-          <section key={i} ref={refs[i]}>
-            <h2 style={{ fontSize: 32, fontWeight: 400 }}>{t}</h2>
-          </section>
-        ))}
+        {titles.map((t, i) => {
+          const inner = <h2 style={{ fontSize: 32, fontWeight: 400 }}>{t}</h2>;
+          if (i === 0) {
+            return (
+              <section key={i} ref={refs[i]} style={{ position: 'relative' }}>
+                <Constellation mode="hero" active />
+                {inner}
+              </section>
+            );
+          }
+          if (i === 4) {
+            return (
+              <section key={i} ref={refs[i]} style={{ position: 'relative' }}>
+                <Constellation mode="fullscreen" active={active === 4} />
+                {inner}
+              </section>
+            );
+          }
+          return (
+            <section key={i} ref={refs[i]}>
+              {inner}
+            </section>
+          );
+        })}
       </main>
     </>
   );
