@@ -63,3 +63,21 @@ describe("EventBus", () => {
     expect((received[0] as { kind: string }).kind).toBe("key_active");
   });
 });
+
+describe("EventBus new event kinds (Sprint 13)", () => {
+  it("emits and retrieves scroll / hover_dwell / input_dwell_without_submit / focus_no_interaction", () => {
+    const bus = new EventBus();
+    bus.emit({ kind: "scroll", at: 100, container: "data_explorer", direction: "down" });
+    bus.emit({ kind: "hover_dwell", at: 200, target: "album_cover", ms: 3200 });
+    bus.emit({ kind: "input_dwell_without_submit", at: 300, charsTyped: 7, dwellMs: 12000 });
+    bus.emit({ kind: "focus_no_interaction", at: 400, sinceMs: 185000 });
+
+    const events = bus.recent(10_000, 5_000);
+    expect(events.map((e) => e.kind)).toEqual([
+      "scroll",
+      "hover_dwell",
+      "input_dwell_without_submit",
+      "focus_no_interaction",
+    ]);
+  });
+});

@@ -14,7 +14,11 @@ export type LyraEvent =
   | { kind: "listen_progress"; at: number; turnId: string; ms: number }
   | { kind: "skip"; at: number; turnId: string }
   | { kind: "complete"; at: number; turnId: string }
-  | { kind: "proactive_dismissed"; at: number; intentId: string };
+  | { kind: "proactive_dismissed"; at: number; intentId: string }
+  | { kind: "scroll"; at: number; container: "data_explorer" | "roadmap" | "other"; direction: "up" | "down" }
+  | { kind: "hover_dwell"; at: number; target: "album_cover" | "small_note" | "trace_strip"; ms: number }
+  | { kind: "input_dwell_without_submit"; at: number; charsTyped: number; dwellMs: number }
+  | { kind: "focus_no_interaction"; at: number; sinceMs: number };
 
 export type EventListener = (e: LyraEvent) => void;
 
