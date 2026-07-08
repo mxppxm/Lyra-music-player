@@ -104,3 +104,51 @@ describe("aggregate", () => {
     expect(f.totalChars).toBe(7);
   });
 });
+
+describe("aggregator new dims (Sprint 13)", () => {
+  const NOW = 1_000_000;
+  const WIN = 60_000;
+
+  it("counts scrollEvents", () => {
+    const bus = new EventBus();
+    bus.emit({ kind: "scroll", at: NOW - 1000, container: "data_explorer", direction: "up" });
+    bus.emit({ kind: "scroll", at: NOW - 500, container: "roadmap", direction: "down" });
+    bus.emit({ kind: "scroll", at: NOW - 100, container: "other", direction: "up" });
+    expect(aggregate(bus, WIN, NOW).scrollEvents).toBe(3);
+  });
+
+  it("counts hoverDwellCount and sums totalHoverDwellMs", () => {
+    const bus = new EventBus();
+    bus.emit({ kind: "hover_dwell", at: NOW - 5000, target: "album_cover", ms: 3200 });
+    bus.emit({ kind: "hover_dwell", at: NOW - 3000, target: "small_note", ms: 4100 });
+    const f = aggregate(bus, WIN, NOW);
+    expect(f.hoverDwellCount).toBe(2);
+    expect(f.totalHoverDwellMs).toBe(7300);
+  });
+
+  it("counts abandonedInputs from input_dwell_without_submit events", () => {
+    const bus = new EventBus();
+    bus.emit({ kind: "input_dwell_without_submit", at: NOW - 4000, charsTyped: 12, dwellMs: 11000 });
+    bus.emit({ kind: "input_dwell_without_submit", at: NOW - 2000, charsTyped: 5, dwellMs: 15000 });
+    expect(aggregate(bus, WIN, NOW).abandonedInputs).toBe(2);
+  });
+
+  it("sums focusIdleMs from focus_no_interaction sinceMs values", () => {
+    const bus = new EventBus();
+    bus.emit({ kind: "focus_no_interaction", at: NOW - 30000, sinceMs: 180000 });
+    bus.emit({ kind: "focus_no_interaction", at: NOW - 5000, sinceMs: 200000 });
+    expect(aggregate(bus, WIN, NOW).focusIdleMs).toBe(380000);
+  });
+
+  it("does not perturb existing dims when new events are present (regression)", () => {
+    const bus = new EventBus();
+    bus.emit({ kind: "mouse_active", at: NOW - 3000 });
+    bus.emit({ kind: "input_submit", at: NOW - 2000, charCount: 10 });
+    bus.emit({ kind: "scroll", at: NOW - 1000, container: "data_explorer", direction: "up" });
+    bus.emit({ kind: "hover_dwell", at: NOW - 500, target: "album_cover", ms: 3200 });
+    const f = aggregate(bus, WIN, NOW);
+    expect(f.activeMs).toBe(500);
+    expect(f.submits).toBe(1);
+    expect(f.totalChars).toBe(10);
+  });
+});

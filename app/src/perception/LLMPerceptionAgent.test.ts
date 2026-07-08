@@ -18,6 +18,11 @@ function base(): BehavioralFeatures {
     skipRatio: 0,
     proactiveDismisses: 0,
     isBlurred: false,
+    scrollEvents: 0,
+    hoverDwellCount: 0,
+    totalHoverDwellMs: 0,
+    abandonedInputs: 0,
+    focusIdleMs: 0,
   };
 }
 

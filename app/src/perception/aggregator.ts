@@ -28,6 +28,16 @@ export type BehavioralFeatures = {
   proactiveDismisses: number;
   /** true if window has a blur event without a subsequent focus event */
   isBlurred: boolean;
+  /** Sprint 13: window内 scroll 事件总数(所有 container 合计) */
+  scrollEvents: number;
+  /** Sprint 13: window内 hover_dwell 触发次数 */
+  hoverDwellCount: number;
+  /** Sprint 13: window内 hover_dwell 停留时长总和,ms */
+  totalHoverDwellMs: number;
+  /** Sprint 13: 输入后放弃的次数 (typed → dwell → cleared) */
+  abandonedInputs: number;
+  /** Sprint 13: focus_no_interaction 事件累积的静默时长,ms */
+  focusIdleMs: number;
 };
 
 const DEFAULT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
@@ -94,6 +104,24 @@ export function aggregate(
     else if (e.kind === "window_blur") isBlurred = true;
   }
 
+  // ── Sprint 13 new dims ───────────────────────────────────────────────────
+  const scrollEvents = events.filter((e) => e.kind === "scroll").length;
+
+  const hoverDwellEvents = events.filter((e) => e.kind === "hover_dwell");
+  const hoverDwellCount = hoverDwellEvents.length;
+  const totalHoverDwellMs = hoverDwellEvents.reduce(
+    (sum, e) => sum + (e.kind === "hover_dwell" ? e.ms : 0),
+    0,
+  );
+
+  const abandonedInputs = events.filter(
+    (e) => e.kind === "input_dwell_without_submit",
+  ).length;
+
+  const focusIdleMs = events
+    .filter((e) => e.kind === "focus_no_interaction")
+    .reduce((sum, e) => sum + (e.kind === "focus_no_interaction" ? e.sinceMs : 0), 0);
+
   return {
     windowMs,
     activeMs,
@@ -105,5 +133,10 @@ export function aggregate(
     skipRatio,
     proactiveDismisses,
     isBlurred,
+    scrollEvents,
+    hoverDwellCount,
+    totalHoverDwellMs,
+    abandonedInputs,
+    focusIdleMs,
   };
 }
