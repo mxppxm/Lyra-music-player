@@ -43,6 +43,8 @@ describe("withUsageLogging", () => {
     expect(entry.input_tokens).toBe(12);
     expect(entry.output_tokens).toBe(5);
     expect(typeof entry.ts).toBe("number");
+    expect(typeof entry.duration_ms).toBe("number");
+    expect(entry.duration_ms).toBeGreaterThanOrEqual(0);
   });
 
   it("skips logging when usage is missing on the response", async () => {

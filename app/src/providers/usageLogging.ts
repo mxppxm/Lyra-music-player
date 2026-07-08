@@ -17,6 +17,7 @@ type Logger = (entry: {
   agent: string | null;
   input_tokens: number;
   output_tokens: number;
+  duration_ms: number | null;
 }) => Promise<void>;
 
 const defaultLogger: Logger = (entry) => llmUsageRepo.insert(entry);
@@ -28,7 +29,9 @@ export function withUsageLogging(
   const wrapped: ModelProvider = {
     id: inner.id,
     async chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> {
+      const t0 = performance.now();
       const res = await inner.chat(messages, opts);
+      const duration_ms = Math.round(performance.now() - t0);
       if (res.usage) {
         logger({
           ts: Date.now(),
@@ -37,6 +40,7 @@ export function withUsageLogging(
           agent: opts?.agent ?? null,
           input_tokens: res.usage.input_tokens,
           output_tokens: res.usage.output_tokens,
+          duration_ms,
         }).catch((err) => {
           console.warn("[lyra] llm_usage log failed:", err);
         });

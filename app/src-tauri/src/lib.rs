@@ -141,6 +141,12 @@ pub fn run() {
                             sql: include_str!("../migrations/005_llm_usage.sql"),
                             kind: MigrationKind::Up,
                         },
+                        Migration {
+                            version: 6,
+                            description: "reasoning traces + latency columns",
+                            sql: include_str!("../migrations/006_reasoning_traces.sql"),
+                            kind: MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
