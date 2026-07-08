@@ -42,6 +42,9 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [roadmapOpen, setRoadmapOpen] = useState(false);
   const [dataExplorerOpen, setDataExplorerOpen] = useState(false);
+  const [dataExplorerInitialTab, setDataExplorerInitialTab] = useState<
+    import("./ui/DataExplorer").DataExplorerProps["initialTab"]
+  >(undefined);
   const [bootDone, setBootDone] = useState(false);
   const [reflecting, setReflecting] = useState(false);
   const schedulerRef = useRef<DreamScheduler | null>(null);
@@ -294,11 +297,19 @@ function App() {
       )}
       <HomeView
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenDataExplorer={(tab) => {
+          setDataExplorerInitialTab(tab);
+          setDataExplorerOpen(true);
+        }}
         orchestrator={orchestrator}
       />
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} onSchedulerUpdate={handleSchedulerUpdate} />
       <RoadmapBoard open={roadmapOpen} onClose={() => setRoadmapOpen(false)} />
-      <DataExplorer open={dataExplorerOpen} onClose={() => setDataExplorerOpen(false)} />
+      <DataExplorer
+        open={dataExplorerOpen}
+        onClose={() => setDataExplorerOpen(false)}
+        initialTab={dataExplorerInitialTab}
+      />
     </>
   );
 }

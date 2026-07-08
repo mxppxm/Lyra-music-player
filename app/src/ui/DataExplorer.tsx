@@ -56,10 +56,19 @@ const TABS: { id: TabId; label: string }[] = [
 export type DataExplorerProps = {
   open: boolean;
   onClose: () => void;
+  initialTab?: TabId;
 };
 
-export function DataExplorer({ open, onClose }: DataExplorerProps) {
-  const [tab, setTab] = useState<TabId>("turns");
+export function DataExplorer({
+  open,
+  onClose,
+  initialTab,
+}: DataExplorerProps) {
+  const [tab, setTab] = useState<TabId>(initialTab ?? "turns");
+  // If parent passes a fresh initialTab when opening, honor it.
+  useEffect(() => {
+    if (open && initialTab) setTab(initialTab);
+  }, [open, initialTab]);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   const toggleRow = useCallback((id: string) => {

@@ -8,6 +8,7 @@ import { TraceStrip } from "./TraceStrip";
 import type { TraceStripItem } from "./TraceStrip";
 import { InputBox } from "./InputBox";
 import { bindGlobalKeys } from "./keyboard";
+import { parseSlashCommand } from "./slashCommand";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "../turn/Orchestrator";
 import * as turnRepo from "../db/repo/turnRepo";
@@ -16,8 +17,14 @@ import type { PAD } from "../types";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 
+export type DataExplorerTabId =
+  | "turns" | "soul" | "salient" | "library" | "lyrics_emb"
+  | "perception" | "roadmap" | "features_req" | "engineer"
+  | "llm_usage" | "memory_md";
+
 type HomeViewProps = {
   onOpenSettings: () => void;
+  onOpenDataExplorer: (tab?: DataExplorerTabId) => void;
   orchestrator: Orchestrator | null;
 };
 
@@ -27,12 +34,27 @@ export type { HomeViewProps };
 
 function LiveHomeView({
   onOpenSettings,
+  onOpenDataExplorer,
   orchestrator,
 }: {
   onOpenSettings: () => void;
+  onOpenDataExplorer: (tab?: DataExplorerTabId) => void;
   orchestrator: Orchestrator;
 }) {
-  const { state, submit } = useTurn(orchestrator);
+  const { state, submit: rawSubmit } = useTurn(orchestrator);
+
+  // Slash commands intercept before the Orchestrator runs. Known commands
+  // dispatch a UI action and never become a DialogueTurn — no LLM call,
+  // no memory write. Falls through for anything else so normal chat still
+  // flows to Lyra.
+  const submit = (text: string): Promise<void> => {
+    const cmd = parseSlashCommand(text);
+    if (cmd === null) return rawSubmit(text);
+    if (cmd.kind === "settings") onOpenSettings();
+    else if (cmd.kind === "stats") onOpenDataExplorer("llm_usage");
+    else if (cmd.kind === "explorer") onOpenDataExplorer();
+    return Promise.resolve();
+  };
   const [traceItems, setTraceItems] = useState<TraceStripItem[]>([]);
   const [historicalPads, setHistoricalPads] = useState<PAD[]>([]);
 
@@ -246,9 +268,19 @@ function ColdBootView({ onOpenSettings }: { onOpenSettings: () => void }) {
 
 // ── Public export ─────────────────────────────────────────────────────────────
 
-export function HomeView({ onOpenSettings, orchestrator }: HomeViewProps) {
+export function HomeView({
+  onOpenSettings,
+  onOpenDataExplorer,
+  orchestrator,
+}: HomeViewProps) {
   if (orchestrator === null) {
     return <ColdBootView onOpenSettings={onOpenSettings} />;
   }
-  return <LiveHomeView onOpenSettings={onOpenSettings} orchestrator={orchestrator} />;
+  return (
+    <LiveHomeView
+      onOpenSettings={onOpenSettings}
+      onOpenDataExplorer={onOpenDataExplorer}
+      orchestrator={orchestrator}
+    />
+  );
 }
