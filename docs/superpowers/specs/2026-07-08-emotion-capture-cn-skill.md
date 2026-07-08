@@ -241,7 +241,9 @@ describe.runIf(RUN)("EmotionAgent regression eval", () => { … });
 
 ---
 
-## 8. 验收基线(2026-07-08 完工时的实况)
+## 8. 验收基线
+
+### 8.1 工程实况(2026-07-08 完工时)
 
 ```
 typecheck        : 0 error
@@ -250,6 +252,32 @@ EmotionAgent 单测 : 9/9 pass(未被 prompt 改动影响)
 prompt tokens 增量: ~850
 Zhipu 单次成本增量: < ¥0.001 / turn
 ```
+
+### 8.2 首次 eval baseline(2026-07-08 21:09 · zhipu glm-5.1)
+
+`pnpm eval:emotion` 首跑,12 条 held-out 中文短句:
+
+| 指标 | 值 | 目标线 | 状态 |
+|---|---|---|---|
+| mean PAD L1 | **0.338** | < 0.5 = 好 | ✅ 好 |
+| mean \|Δconf\| | **0.054** | < 0.10 = 好 | ✅ 好 |
+| worst L1 | **0.88** | < 1.0 = 好 | ✅ 好 |
+| 完成率 | 12/12 | — | ✅ |
+| 用时 | 30.7s | — | ~2.5s/条 |
+
+**trace**:`app/.eval-runs/emotion-2026-07-08T13-09-58-540Z.jsonl`(gitignored,本地保留;未来 diff 的锚点)
+
+**Worst 3 分析**:
+
+| # | 输入 | L1 | 归类 | 修法 |
+|---|---|---|---|---|
+| 1 | 最近开会开到吐 | 0.88 | 期望值可能偏软(burnout vs. rage-quit 边界) | 修期望值,非模型问题 |
+| 2 | 最近有点想哭 | 0.52 | 规则冲突:"想哭"强度信号被"有点"缩放到 0.6 | 加一条 override:"想哭"pattern 优先于强度副词缩放 |
+| 3 | 呵呵,行吧 | 0.50 | "呵呵"真正的歧义(攻击性 vs. 泄气) | 不建议为它调参 |
+
+### 8.3 判断:Step 3 rubric 短期不加
+
+原计划 mean L1 > 0.5 时才把 [`pad-scoring-rubric.md`](file:///Users/daoyu/Documents/skills-repo/emotion-capture-cn-skill/references/pad-scoring-rubric.md) 塞进 prompt。当前 0.338 已稳稳在"好"档,rubric 收益空间有限。**先观察真人对话 3-7 天**,发现真值得修的模式再动。
 
 ---
 
