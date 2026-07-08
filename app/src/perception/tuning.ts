@@ -18,6 +18,14 @@ export type PerceptionTuning = {
   dismissThreshold?: number;
   /** Rule 5 · completions ≥ N + skips = 0 triggers resonance bias. Default 3. */
   completionThreshold?: number;
+  /** Sprint 13: hover dwell count threshold. Default 2. */
+  hoverDwellCountThreshold?: number;
+  /** Sprint 13: hover dwell ratio threshold. Default 0.15. */
+  hoverDwellRatioThreshold?: number;
+  /** Sprint 13: abandoned inputs threshold. Default 2. */
+  abandonedInputsThreshold?: number;
+  /** Sprint 13: quiet presence ratio threshold. Default 0.5. */
+  quietPresenceRatioThreshold?: number;
 };
 
 export const DEFAULT_TUNING: Required<PerceptionTuning> = {
@@ -26,6 +34,10 @@ export const DEFAULT_TUNING: Required<PerceptionTuning> = {
   submitGapMs: 15_000,
   dismissThreshold: 2,
   completionThreshold: 3,
+  hoverDwellCountThreshold: 2,
+  hoverDwellRatioThreshold: 0.15,
+  abandonedInputsThreshold: 2,
+  quietPresenceRatioThreshold: 0.5,
 };
 
 /** Clamp each supplied override so it lands within ±50% of the default. Any
