@@ -279,6 +279,7 @@ export function RoadmapBoard({ open, onClose }: RoadmapBoardProps) {
 
       {/* Item list */}
       <div
+        data-lyra-scroll="roadmap"
         style={{
           flex: 1,
           overflowY: "auto",

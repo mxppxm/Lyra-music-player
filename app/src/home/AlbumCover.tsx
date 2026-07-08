@@ -9,6 +9,7 @@ export function AlbumCover({ coverUrl, alt, titleHint }: AlbumCoverProps) {
   return (
     <div
       data-testid="album-cover-frame"
+      data-lyra-hover="album_cover"
       style={{
         width: "var(--lyra-cover-size)",
         height: "var(--lyra-cover-size)",

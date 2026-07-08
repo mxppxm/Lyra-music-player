@@ -27,6 +27,7 @@ export function SmallNote({
   return (
     <div
       data-testid="small-note"
+      data-lyra-hover="small_note"
       onClick={() => isLong && setExpanded((e) => !e)}
       style={{
         color: color ?? "var(--lyra-color-small-note)",

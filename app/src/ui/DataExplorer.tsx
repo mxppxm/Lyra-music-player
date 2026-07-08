@@ -181,6 +181,7 @@ export function DataExplorer({
 
       {/* Content */}
       <div
+        data-lyra-scroll="data_explorer"
         style={{
           flex: 1,
           overflowY: "auto",

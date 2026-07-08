@@ -12,6 +12,7 @@ export function TraceStrip({ items, onSelect }: TraceStripProps) {
   return (
     <div
       data-testid="trace-strip"
+      data-lyra-hover="trace_strip"
       style={{
         display: "flex",
         justifyContent: "center",
