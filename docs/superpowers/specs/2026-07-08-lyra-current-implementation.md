@@ -1,8 +1,8 @@
 # Lyra · 现有实现总览
 
 **日期**：2026-07-08
-**代码基线**：main @ `78b9956`（Sprint 11 follow-up 之后）
-**规模**：616 vitest / 30 cargo / typecheck 0 / build 307 KB
+**代码基线**：main @ `9dde5df`（Sprint 12 BPM + 本会话 JSON 加固 / 竖屏窗口 之后）
+**规模**：625 vitest / 33 cargo / typecheck 0 / build 308 KB / 83 test files
 
 这份文档不是路线图，是**当下的状态**——已经建成的东西、每一层做了什么、代码在哪。设计原理性讨论在 `2026-07-06-music-player-design.md`、需求原话在 `design-answers.md`、每一 sprint 的实现细节在 `plans/`。
 
@@ -96,13 +96,14 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - LLM 分析用户话 → 输出 `pad + labels + confidence + source`
 - Perception 偏差加权：`src/turn/blendEmotionWithBias.ts` 用 α=0.6 主 + 0.4 bias
 - delta 反算：`emotion_delta = post_pad - pre_pad` 累积到 `soul.dynamic_mood.current_pad`（clamp [-1,1]）
+- **预测通道**：EmotionAgent 可选输出 `predicted_trajectory { horizon_min, predicted_pad }`，Orchestrator `onSongComplete` autoAdvance 时若上一 turn 带预测就用它起手，否则用 endedEmotion 原值。schema / validate / drop-if-malformed 三条路径完备
 - **三层节律**：turn（分钟）/ week（Reflect）/ quarter（灵魂底色演化，v0.3 才动）
 
 ### 4.4 曲库 · Library 层
 
 **L1 · 索引**：`libraryScan.ts` + Rust `library_scan.rs`（walkdir + lofty）
 **L2 · 关键词**：`LibraryAgent.tokenize + keywordScore`
-**L3 · 特征匹配**（Sprint 9 加）：`libraryFeaturesRepo` 存 RMS energy + 谱重心 valence，Rust `audio_features.rs` 用 rustfft 提取
+**L3 · 特征匹配**（Sprint 9/12）：`libraryFeaturesRepo` 存 RMS energy + 谱重心 valence + BPM，Rust `audio_features.rs` 用 rustfft 提取。BPM 走 spectral-flux + autocorrelation，[60, 200] 范围,120 BPM click track ±5 内命中,无节拍返 0 → NULL。已入 Data Explorer 曲库 tab,**尚未** 进入 LibraryAgent 打分公式（等 PAD→target BPM 的推断设计）
 **L3.5 · 语义**（Sprint 10 加）：`lyricsEmbeddingsRepo` 存 Zhipu/OpenAI embedding，`LibraryAgent` 加 sem 分量。三分加权公式 `sem 0.5 / pad 0.3 / kw 0.2`，缺分量自动归一化（老 Sprint 9 公式 0.4/0.6 是等价降级路径）
 
 ### 4.5 记忆 · Reflect 层
@@ -172,6 +173,7 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - **SmallNote**：`agent_response.rationale` 淡灰意大利体
 - **Idle 空态**（Sprint 6 zen polish）：只显示 "Lyra 在听" italic 字 + 输入框，其他一律不 render（不是 hidden，是 DOM 里不存在）
 - **Cold boot 页**：无 provider 时显示 "Lyra needs an API key to talk. Cmd+= to open Settings"
+- **窗口形状**（本会话）：Tauri 主窗口 520×820 竖屏,minWidth 480 / minHeight 720。呼应哲学「虚·空」,让 HomeView 的垂直堆叠有一个陪伴型贴边小面板的容器,而不是横屏媒体播放器矩形
 
 ### 4.12 Slash Commands（本次会话加）
 
@@ -180,7 +182,14 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - `/explorer` → 打开 Data Explorer 默认 tab
 - 严格匹配前缀 trim 后完全等于命令，其他一律 falls through 进 Orchestrator 走正常对话
 
-### 4.13 Settings 面板（Cmd+=）
+### 4.13 LLM 输出加固（本会话）
+
+- **`src/lib/parseLooseJson`**：三层降级——直接 `JSON.parse` → 剥 `<think>...</think>` 块 + 剥 ```` ```json ```` 围栏 → 首`{`末`}` slice 兜底
+- Companion / Emotion / Reflect 三个 agent 废弃各自 inline `extractJson`,统一走这条路径。所有 agent 一起受益于 reasoning 模型(GLM-5.x / DeepSeek-R)的 think block 兼容
+- **JSON mode 透传**：`ChatOptions.response_format?: {type: "json_object"}`,Zhipu / DeepSeek 透传给上游 OpenAI-compat 接口,其他 provider 静默忽略。三个 JSON-emitting agent 都 opt-in——让模型先自收窄,parseLooseJson 再兜底
+- 覆盖测试：parseLooseJson 7 case(纯 JSON / 围栏 / think 块 / prose 包裹 / 组合)+ zhipu 2 case(有/无 flag)
+
+### 4.14 Settings 面板（Cmd+=）
 
 字段：
 - Music library folder（触发 import）
@@ -192,12 +201,12 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - Reflect now 按钮
 - Save / Cancel
 
-### 4.14 托盘 · Tray
+### 4.15 托盘 · Tray
 
 - **持久呼吸动画**：dim ↔ bright icon 500ms 交替
 - **AtomicBool** 控制开关
 
-### 4.15 密钥 · BYOK
+### 4.16 密钥 · BYOK
 
 - macOS Keychain via `keyring` crate
 - 三 provider（Anthropic / DeepSeek / Zhipu）+ 两 embedding provider（Zhipu embedding / OpenAI）
@@ -226,7 +235,8 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 | 选歌 | `src/agents/CompanionAgent.ts` + `prompts/companion.ts` |
 | 曲库检索 | `src/agents/LibraryAgent.ts` |
 | 曲库导入 | `src/library/libraryScan.ts` + `src-tauri/src/library_scan.rs` |
-| 音频特征提取 | `src-tauri/src/audio_features.rs` |
+| 音频特征提取（含 BPM） | `src-tauri/src/audio_features.rs` |
+| LLM 输出解析 | `src/lib/parseLooseJson.ts` |
 | 歌词 embedding | `src/library/lyricsExtract.ts` + `computeLyricsEmbedding.ts` + `providers/embeddingProvider.ts` + `src-tauri/src/lyrics.rs` |
 | 灵魂状态 | `src/turn/soulStore.ts` + `db/repo/soulRepo.ts` |
 | 记忆(`memory.md`) | `src/memory/parser.ts` + `writer.ts` + `context.ts` + `appendSalient.ts` |
@@ -261,13 +271,12 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 **技术 defer（等时机）：**
 - **网络多源曲库解析**（网易云 / QQ / YouTube）—— 灰区，需要用户拍板
 - **豆包 Seed-Music** 音乐生成兜底（候选歌都不合适时她自作一首）
-- **情感 agent 预测通道**（`predicted_trajectory` schema 已有，EmotionAgent 未输出）
-- **BPM 检测**（Sprint 9 defer，rustfft 已装，200 行 Rust 可补齐）
+- **BPM 参与打分**（BPM 已入库+展示,尚未进 LibraryAgent 三分加权——需 PAD→target BPM 的推断设计）
 - **感知 agent 广谱事件**（现只 focus/click/input，需求文档要求覆盖所有 UI 事件——工程量约 1 周）
 - **工程师 agent 真代码写入通道**（v0.3-α 只 propose）
 - **Yellow zone diff preview + Discuss with agent 聊天面板**
 - **季度演化 + evolution log**（数据不够）
-- **情感 agent 从 rule 升级到 LLM**
+- **情感 agent 从 rule 升级到 LLM**（EmotionAgent 已是 LLM 层,但 Perception 那侧还有 rule/llm 双档,升级为默认 LLM 需再评估成本）
 - **智能戒指集成**（v0.3+，需硬件调研）
 - **多用户/云同步**——反范围（spec §6.5），永远不做
 - **MCP/Skill 插件形态**（进入其他 IDE 上下文）——需要重新与 5 字哲学对齐
@@ -286,12 +295,13 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 |---|---|---|
 | v0.1 | 本地曲库 + 对话 + 记忆 | ✅ 完成 |
 | v0.2-α | Perception Agent v1（规则式）| ✅ 完成（Sprint 4） |
-| v0.2 | Perception LLM + 自调参数 + 音频特征 + 歌词 embedding + 观察性 | ✅ 完成（Sprint 7/8/9/10/11） |
-| v0.2.x | 剩余功能：网络多源、豆包 Seed-Music、情感预测通道、BPM、感知广谱 | 待做 |
+| v0.2 | Perception LLM + 自调参数 + 音频特征 + 歌词 embedding + 观察性 + BPM + 情感预测通道 | ✅ 完成（Sprint 7/8/9/10/11/12） |
+| v0.2.x | 剩余功能：网络多源、豆包 Seed-Music、BPM 参与打分、感知广谱 | 待做 |
+| v0.2.y | 平台加固（本会话）：LLM 输出容错(parseLooseJson) + JSON mode 透传 + 竖屏窗口 | ✅ 完成 |
 | v0.3-α | 工程师 agent propose-only | ✅ 完成（Sprint 5） |
-| v0.3 | 工程师真代码通道 + 季度演化 + 情感 LLM 化 | 待做 |
+| v0.3 | 工程师真代码通道 + 季度演化 + Perception LLM 默认化 | 待做 |
 | v0.4+ | 身体连接（戒指等） | 待评估是否符合哲学 |
 
-**代码基线**：616 vitest / 30 cargo / typecheck 0 / build 307 KB / 82 test files。
+**代码基线**：625 vitest / 33 cargo / typecheck 0 / build 308 KB / 83 test files。
 
 **Lyra 不完美，但她是活的。**
