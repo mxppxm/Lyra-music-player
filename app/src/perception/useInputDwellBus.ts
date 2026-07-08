@@ -15,7 +15,9 @@ const DWELL_MS = 10_000;
 
 type State = "IDLE" | "TYPING" | "DWELLING";
 
-export function useInputDwellBus(bus: EventBus, value: string) {
+export function useInputDwellBus(bus: EventBus, value: string, now?: () => number) {
+  const nowRef = useRef(now ?? Date.now);
+  nowRef.current = now ?? Date.now;
   const stateRef = useRef<State>("IDLE");
   const charsRef = useRef(0);
   const dwellStartRef = useRef(0);
@@ -32,7 +34,7 @@ export function useInputDwellBus(bus: EventBus, value: string) {
     clearTimer();
     timerRef.current = setTimeout(() => {
       stateRef.current = "DWELLING";
-      dwellStartRef.current = Date.now();
+      dwellStartRef.current = nowRef.current();
     }, DWELL_MS);
   }, []);
 
@@ -64,11 +66,12 @@ export function useInputDwellBus(bus: EventBus, value: string) {
 
     // state === "DWELLING"
     if (len === 0) {
+      const emitAt = nowRef.current();
       bus.emit({
         kind: "input_dwell_without_submit",
-        at: Date.now(),
+        at: emitAt,
         charsTyped: charsRef.current,
-        dwellMs: Date.now() - dwellStartRef.current,
+        dwellMs: emitAt - dwellStartRef.current,
       });
       stateRef.current = "IDLE";
       return;

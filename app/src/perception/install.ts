@@ -167,6 +167,9 @@ export function installPerceptionListeners(
       ct(id);
     }
     dwellTimers.clear();
+    lastScrollTop.clear();
+    for (const k of Object.keys(scrollLastEmit)) delete scrollLastEmit[k];
+    for (const k of Object.keys(lastEmit)) delete (lastEmit as Record<string, unknown>)[k];
   };
 }
 

@@ -46,4 +46,36 @@ describe("useInputDwellBus", () => {
     expect(bus.recent(60_000).filter((e) => e.kind === "input_dwell_without_submit").length).toBe(0);
     vi.useRealTimers();
   });
+
+  it("DWELLING→TYPING→DWELLING→clear: exactly 1 emit with charsTyped from 2nd round and dwellMs from 2nd dwell entry", () => {
+    vi.useFakeTimers();
+    // Stable clock object — avoids useCallback invalidation on every rerender.
+    const clock = { t: 0 };
+    const stableNow = () => clock.t;
+    const bus = new EventBus();
+    const { rerender } = renderHook(
+      ({ v }) => useInputDwellBus(bus, v, stableNow),
+      { initialProps: { v: "" } },
+    );
+    // Round 1: type → wait 10s+ → first DWELLING entry
+    rerender({ v: "hesitating" });
+    clock.t += 10_001;
+    vi.advanceTimersByTime(10_001); // timer fires → DWELLING, dwellStartRef = 10001
+    // Resume typing → DWELLING→TYPING, new 10s dwell timer armed
+    rerender({ v: "hesitating more" });
+    // Round 2: wait 10s+ → second DWELLING entry (dwellStartRef overwritten to 20002)
+    clock.t += 10_001;
+    vi.advanceTimersByTime(10_001); // timer fires → DWELLING again, dwellStartRef = 20002
+    // Clear → emits once; measurements anchored at 2nd dwell entry
+    rerender({ v: "" });
+    // Pass clock.t as the `now` anchor so recent() uses the same fake timeline.
+    const emitted = bus.recent(60_000, clock.t).filter((e) => e.kind === "input_dwell_without_submit");
+    expect(emitted.length).toBe(1);
+    const ev = emitted[0] as { charsTyped: number; dwellMs: number };
+    expect(ev.charsTyped).toBe(15); // "hesitating more".length === 15
+    // dwellMs measured from 2nd dwell start (20002) to clear (20002) → 0ms,
+    // not ~20000ms — confirms dwellStartRef is overwritten on each DWELLING entry.
+    expect(ev.dwellMs).toBeLessThan(10_001);
+    vi.useRealTimers();
+  });
 });

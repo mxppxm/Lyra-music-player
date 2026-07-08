@@ -66,6 +66,8 @@ function buildRules(t: Required<PerceptionTuning>): Rule[] {
     },
     {
       name: "attentive_hover",
+      // OR is intentional: count-path catches many short hovers (e.g. 2 × 3 s);
+      // ratio-path catches one long stare (e.g. 10 s / 60 s window > 0.15).
       test: (f) =>
         (f.hoverDwellCount ?? 0) >= t.hoverDwellCountThreshold ||
         (f.totalHoverDwellMs ?? 0) / f.windowMs > t.hoverDwellRatioThreshold,
