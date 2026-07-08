@@ -8,6 +8,7 @@
  */
 
 import type { BehavioralFeatures } from "./aggregator";
+import { coarsen } from "./coarsening";
 
 export const PERCEPTION_SYSTEM_PROMPT = `你是 Lyra 的**感知层 agent**。用户此刻没在说话——你只看到他 60 秒内的行为数据。你的任务是从这些行为里推断一个隐性的情绪 bias，补充给 EmotionAgent 使用。
 
@@ -33,6 +34,12 @@ BehavioralFeatures 字段释义（作为你的推理线索）：
 - isBlurred = 窗口失焦。true + 低 activeMs → 完全离开电脑。
 - totalChars = 60s 内敲字量。高值说明专注但可能情绪激烈。
 
+signals 是 4 个粗化维度（只发级别、不发数值，保护用户隐私）：
+- hover_attention: 用户在专辑封面/歌词轨迹等氛围元素上驻留的强度
+- input_hesitation: 用户打字后又清空、欲言又止的次数
+- quiet_presence: 窗口在场但用户完全不动的比例——"在同一个房间里安静地坐着"
+- scroll_activity: 用户在 Data Explorer/Roadmap 里翻阅她的记忆/想法的强度
+
 没有明显信号时返回：
 { "pad_bias": { "p": 0, "a": 0, "d": 0 }, "confidence": 0, "reason": "no signal" }
 
@@ -54,5 +61,5 @@ export function buildPerceptionUserContent(features: BehavioralFeatures): string
     proactiveDismisses: features.proactiveDismisses,
     isBlurred: features.isBlurred,
   };
-  return JSON.stringify(payload, null, 2);
+  return JSON.stringify({ features: payload, signals: coarsen(features) }, null, 2);
 }

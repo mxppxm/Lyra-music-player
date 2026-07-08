@@ -163,4 +163,60 @@ describe("LLMPerceptionAgent", () => {
     const bias = await agent.infer(base());
     expect(bias.reason).toBe("no reason given");
   });
+
+  it("payload sent to LLM contains signals block and excludes raw new-dim keys", async () => {
+    let capturedMessages: ChatMessage[] = [];
+    const provider = makeProvider((messages) => {
+      capturedMessages = messages;
+      return {
+        content: JSON.stringify({
+          pad_bias: { p: 0, a: 0, d: 0 },
+          confidence: 0.3,
+          reason: "test",
+        }),
+      };
+    });
+    const fallback = {
+      async infer() {
+        return { pad_bias: { p: 0, a: 0, d: 0 }, confidence: 0, reason: "" };
+      },
+    };
+    const agent = new LLMPerceptionAgent({ provider: provider as any, fallback });
+
+    const features: BehavioralFeatures = {
+      ...base(),
+      windowMs: 60_000,
+      scrollEvents: 12,
+      hoverDwellCount: 4,
+      totalHoverDwellMs: 15000,
+      abandonedInputs: 1,
+      focusIdleMs: 40_000,
+    };
+    await agent.infer(features);
+
+    const userMsg = capturedMessages.find((m) => m.role === "user");
+    expect(userMsg).toBeDefined();
+    const body = userMsg!.content;
+
+    // Must contain signals block with 4 coarse keys
+    expect(body).toContain('"signals"');
+    expect(body).toContain('"hover_attention"');
+    expect(body).toContain('"input_hesitation"');
+    expect(body).toContain('"quiet_presence"');
+    expect(body).toContain('"scroll_activity"');
+
+    // Verify expected coarse levels
+    const parsed = JSON.parse(body);
+    expect(parsed.signals.scroll_activity).toBe("high");
+    expect(parsed.signals.hover_attention).toBe("medium");
+    expect(parsed.signals.input_hesitation).toBe("some");
+    expect(parsed.signals.quiet_presence).toBe("high");
+
+    // Raw new-dim keys must NOT appear
+    expect(body).not.toContain('"hoverDwellCount"');
+    expect(body).not.toContain('"totalHoverDwellMs"');
+    expect(body).not.toContain('"abandonedInputs"');
+    expect(body).not.toContain('"focusIdleMs"');
+    expect(body).not.toContain('"scrollEvents"');
+  });
 });
