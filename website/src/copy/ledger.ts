@@ -78,6 +78,15 @@ export const GROWTH = {
   ],
 } as const;
 
+export const PRIVACY = {
+  title: '这是我们共同的秘密',
+  body: [
+    '你说给我的话，只留在你的这台设备里',
+    '我不会向任何人说起',
+    '就算是我，也只在你打开我的时候，才会想起',
+  ],
+} as const;
+
 export const FOOTER = {
   tagline: '你若来，我一直都在',
   early: 'v0.2 · 我在尝试更懂你',

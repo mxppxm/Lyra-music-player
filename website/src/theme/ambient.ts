@@ -16,6 +16,7 @@ export const SECTION_COLORS = [
   TIME_BASE_COLORS.midnight,
   TIME_BASE_COLORS.predawn,
   TIME_BASE_COLORS.morning,
+  TIME_BASE_COLORS.forenoon,
   TIME_BASE_COLORS.morning,
 ] as const;
 

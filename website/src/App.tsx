@@ -10,10 +10,11 @@ import { Memory } from './sections/Memory';
 import { Dream } from './sections/Dream';
 import { Silence } from './sections/Silence';
 import { Growth } from './sections/Growth';
+import { Privacy } from './sections/Privacy';
 import { Footer } from './sections/Footer';
 
 export default function App() {
-  const refs = Array.from({ length: 8 }, () => useRef<HTMLElement>(null));
+  const refs = Array.from({ length: 9 }, () => useRef<HTMLElement>(null));
   const [active, setActive] = useState(0);
   useSectionAmbient(refs, {
     colors: SECTION_COLORS,
@@ -33,7 +34,8 @@ export default function App() {
         <Dream ref={refs[4]} active={active === 4} />
         <Silence ref={refs[5]} />
         <Growth ref={refs[6]} />
-        <Footer ref={refs[7]} />
+        <Privacy ref={refs[7]} />
+        <Footer ref={refs[8]} />
       </main>
     </>
   );
