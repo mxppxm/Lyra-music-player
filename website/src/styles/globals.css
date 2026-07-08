@@ -1,0 +1,46 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; }
+
+:root {
+  --ambient-color: hsl(30, 15%, 92%);
+  --text-color: rgba(0, 0, 0, 0.85);
+  --text-color-soft: rgba(0, 0, 0, 0.55);
+  --text-color-dim: rgba(0, 0, 0, 0.35);
+  --motion-slow: 4000ms;
+  --motion-medium: 600ms;
+  --motion-fast: 400ms;
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text-color);
+  background-color: var(--ambient-color);
+  transition: background-color var(--motion-slow) var(--ease-out),
+              color var(--motion-slow) var(--ease-out);
+  overflow-x: hidden;
+}
+
+body[data-dark='true'] {
+  --text-color: rgba(255, 255, 255, 0.90);
+  --text-color-soft: rgba(255, 255, 255, 0.65);
+  --text-color-dim: rgba(255, 255, 255, 0.40);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+section {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 40px;
+}

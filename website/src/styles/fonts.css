@@ -1,0 +1,7 @@
+@import '@fontsource/lora/400-italic.css';
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+               'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
+  --font-serif-italic: 'Lora', Georgia, 'Times New Roman', serif;
+}
