@@ -1,8 +1,8 @@
 # Lyra · 现有实现总览
 
 **日期**：2026-07-08
-**代码基线**：main @ `9dde5df`（Sprint 12 BPM + 本会话 JSON 加固 / 竖屏窗口 之后）
-**规模**：625 vitest / 33 cargo / typecheck 0 / build 308 KB / 83 test files
+**代码基线**：main @ `50551c2`（Sprint 13 感知广谱 + review follow-ups 之后）
+**规模**：674 vitest / 33 cargo / typecheck 0 / build 321 KB / 89 test files
 
 这份文档不是路线图，是**当下的状态**——已经建成的东西、每一层做了什么、代码在哪。设计原理性讨论在 `2026-07-06-music-player-design.md`、需求原话在 `design-answers.md`、每一 sprint 的实现细节在 `plans/`。单项能力的深挖:EmotionAgent 中文含蓄识别的蒸馏 + 接入 + eval 见 `2026-07-08-emotion-capture-cn-skill.md`。
 
@@ -124,13 +124,15 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 
 命中 → `shared_memory` 表 + `memory.md` Salient Moments 段。
 
-### 4.7 感知 · Perception（Sprint 4/7/8）
+### 4.7 感知 · Perception（Sprint 4/7/8/13）
 
-- **EventBus**：window focus/blur, mouse, key, input_submit, listen_progress, skip, complete
-- **BehavioralAggregator**：60s 滚动窗口 → 活跃时间比、提交速率、跳过率、静默完成率
-- **RulePerceptionAgent (v1)**：5 条规则式判 PerceptionBias
-- **LLMPerceptionAgent (v2)**：opt-in，走 Zhipu，10s timeout，失败降级到 rule
-- **Reflect 观察 perception_audit**：Sprint 8 让 Reflect 可以输出 perception tuning，`RulePerceptionAgent` 会读 tuning 覆盖 threshold —— **她自己调自己参数的闭环**
+- **EventBus**（13 kind）：window focus/blur, mouse, key, input_submit, listen_progress, skip, complete, proactive_dismissed;Sprint 13 新增 `scroll` / `hover_dwell` / `input_dwell_without_submit` / `focus_no_interaction`
+- **BehavioralAggregator**（15 维,60s 滚动窗口)：老 10 维(活跃时间比、提交速率、跳过率、静默完成率、blur 态等) + Sprint 13 新 5 维(`scrollEvents` / `hoverDwellCount` / `totalHoverDwellMs` / `abandonedInputs` / `focusIdleMs`)
+- **RulePerceptionAgent (v1)**：8 条规则式判 PerceptionBias。Sprint 13 加 `attentive_hover`(p+/a+,凝视氛围元素) / `hesitant_input`(p-/a-/d-,欲言又止) / `quiet_presence`(p+/a-,「禅」信号:在场但安静)
+- **LLMPerceptionAgent (v2)**：opt-in，走 Zhipu，10s timeout，失败降级到 rule。**Sprint 13 加隐私粗化层**:5 个新维度在过 network 前经 `coarsening.ts` 映射为 4 个 level 字串(`hover_attention` / `input_hesitation` / `quiet_presence` / `scroll_activity` ∈ low/medium/high 或 none/some/many)。老 10 维仍走数值(保留 prompt 已磨合的模式)。呼应 网站 PRIVACY 段"我不会向任何人说起"
+- **Reflect 观察 perception_audit**：Sprint 8 让 Reflect 可以输出 perception tuning，`RulePerceptionAgent` 会读 tuning 覆盖 threshold —— **她自己调自己参数的闭环**。Sprint 13 新增 4 个 tuning key(`hoverDwellCountThreshold` / `hoverDwellRatioThreshold` / `abandonedInputsThreshold` / `quietPresenceRatioThreshold`)走同一 ±50% clamp 通道
+- **Install 层**（Sprint 13 加）：`install.ts` doc-level capture 监听 `scroll` / `mouseover` / `mouseout`,per-container 500ms throttle + per-target 3000ms setTimeout。`focus_no_interaction` 30s poll + arm-once-per-idle 保证不 spam。DOM 侧靠 `data-lyra-scroll` / `data-lyra-hover` attribute 挂载(5 处:DataExplorer/RoadmapBoard 滚动壳 + AlbumCover/SmallNote/TraceStrip 氛围元素)
+- **输入状态机**（Sprint 13 加）：`useInputDwellBus` React hook 依赖 controlled input value 追踪 IDLE→TYPING→DWELLING 转换,10s 未提交进 DWELLING,清空未发时 emit `input_dwell_without_submit`。InputBox 集成:2 imports + 1 hook + 1 notifySubmit
 
 ### 4.8 工程师 Agent（Sprint 5，v0.3-α）
 
@@ -240,6 +242,8 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 | 曲库导入 | `src/library/libraryScan.ts` + `src-tauri/src/library_scan.rs` |
 | 音频特征提取（含 BPM） | `src-tauri/src/audio_features.rs` |
 | LLM 输出解析 | `src/lib/parseLooseJson.ts` |
+| 感知隐私粗化层 | `src/perception/coarsening.ts` |
+| 输入犹豫状态机 | `src/perception/useInputDwellBus.ts` |
 | 歌词 embedding | `src/library/lyricsExtract.ts` + `computeLyricsEmbedding.ts` + `providers/embeddingProvider.ts` + `src-tauri/src/lyrics.rs` |
 | 灵魂状态 | `src/turn/soulStore.ts` + `db/repo/soulRepo.ts` |
 | 记忆(`memory.md`) | `src/memory/parser.ts` + `writer.ts` + `context.ts` + `appendSalient.ts` |
@@ -275,7 +279,6 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - **网络多源曲库解析**（网易云 / QQ / YouTube）—— 灰区，需要用户拍板
 - **豆包 Seed-Music** 音乐生成兜底（候选歌都不合适时她自作一首）
 - **BPM 参与打分**（BPM 已入库+展示,尚未进 LibraryAgent 三分加权——需 PAD→target BPM 的推断设计）
-- **感知 agent 广谱事件**（现只 focus/click/input，需求文档要求覆盖所有 UI 事件——工程量约 1 周）
 - **工程师 agent 真代码写入通道**（v0.3-α 只 propose）
 - **Yellow zone diff preview + Discuss with agent 聊天面板**
 - **季度演化 + evolution log**（数据不够）
@@ -299,12 +302,13 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 | v0.1 | 本地曲库 + 对话 + 记忆 | ✅ 完成 |
 | v0.2-α | Perception Agent v1（规则式）| ✅ 完成（Sprint 4） |
 | v0.2 | Perception LLM + 自调参数 + 音频特征 + 歌词 embedding + 观察性 + BPM + 情感预测通道 | ✅ 完成（Sprint 7/8/9/10/11/12） |
-| v0.2.x | 剩余功能：网络多源、豆包 Seed-Music、BPM 参与打分、感知广谱 | 待做 |
-| v0.2.y | 平台加固（本会话）：LLM 输出容错(parseLooseJson) + JSON mode 透传 + 竖屏窗口 | ✅ 完成 |
+| v0.2.x | 剩余功能:网络多源、豆包 Seed-Music、BPM 参与打分 | 待做 |
+| v0.2.y | 平台加固:LLM 输出容错(parseLooseJson) + JSON mode 透传 + 竖屏窗口 | ✅ 完成 |
+| v0.2.z | 感知广谱事件(scroll/hover_dwell/input_dwell/focus_no_interaction + 5 维 + 3 rule + 隐私粗化层) | ✅ 完成（Sprint 13） |
 | v0.3-α | 工程师 agent propose-only | ✅ 完成（Sprint 5） |
 | v0.3 | 工程师真代码通道 + 季度演化 + Perception LLM 默认化 | 待做 |
 | v0.4+ | 身体连接（戒指等） | 待评估是否符合哲学 |
 
-**代码基线**：625 vitest / 33 cargo / typecheck 0 / build 308 KB / 83 test files。
+**代码基线**：674 vitest / 33 cargo / typecheck 0 / build 321 KB / 89 test files。
 
 **Lyra 不完美，但她是活的。**
