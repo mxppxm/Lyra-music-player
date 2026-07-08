@@ -37,6 +37,7 @@ export type OrchestratorDeps = {
   turnRepo: {
     insertTurn(t: DialogueTurn): Promise<void>;
     updateTurn?(t: DialogueTurn): Promise<void>;
+    setTurnLatency?(id: string, ms: number): Promise<void>;
   };
   audio: {
     // playFile may return the Rust playback id (a number) so the caller can
@@ -188,6 +189,12 @@ export class Orchestrator {
     const clock = this.deps.clock ?? Date.now;
     const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
 
+    // Sprint 11: end-to-end turn latency — from entering runTurnWithEmotion
+    // (which the caller enters immediately after user input) through the
+    // moment audio.playFile resolves. Recorded via a best-effort UPDATE
+    // so a failing write never blocks the turn.
+    const t0 = performance.now();
+
     const soul = await soulStore.load();
 
     const pseudoTarget =
@@ -234,6 +241,14 @@ export class Orchestrator {
 
     await turnRepo.insertTurn(turn);
     await audio.playFile(song.path);
+
+    // Sprint 11: fire-and-forget latency write. The chained UPDATE isn't in
+    // the critical path — user sees the song already; we just record the
+    // observation.
+    const turn_latency_ms = Math.round(performance.now() - t0);
+    if (turnRepo.setTurnLatency) {
+      void turnRepo.setTurnLatency(turn.id, turn_latency_ms).catch(() => {});
+    }
 
     this.currentTurn = turn;
     this.currentSong = song;

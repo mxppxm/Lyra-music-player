@@ -66,6 +66,17 @@ export async function updateTurn(t: DialogueTurn): Promise<void> {
   );
 }
 
+/** Sprint 11: record the end-to-end turn latency (user submit → song
+ *  starts playing). Called from Orchestrator once runTurnWithEmotion
+ *  resolves. Best-effort — a failing UPDATE just drops the sample. */
+export async function setTurnLatency(id: string, ms: number): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `UPDATE dialogue_turns SET turn_latency_ms = ? WHERE id = ?`,
+    [ms, id],
+  );
+}
+
 export async function countTurns(): Promise<number> {
   const db = await getDb();
   const rows = await db.select<{ n: number }[]>(

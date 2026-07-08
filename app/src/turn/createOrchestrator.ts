@@ -46,6 +46,7 @@ export function createDefaultOrchestrator(): Orchestrator | null {
     turnRepo: {
       insertTurn: turnRepo.insertTurn,
       updateTurn: turnRepo.updateTurn,
+      setTurnLatency: turnRepo.setTurnLatency,
     },
     audio,
     eventBus: perceptionBus,
