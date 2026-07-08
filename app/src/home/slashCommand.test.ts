@@ -14,6 +14,14 @@ describe("parseSlashCommand", () => {
     expect(parseSlashCommand("/explorer")).toEqual({ kind: "explorer" });
   });
 
+  it("recognises /help", () => {
+    expect(parseSlashCommand("/help")).toEqual({ kind: "help" });
+  });
+
+  it("recognises /reload-musics", () => {
+    expect(parseSlashCommand("/reload-musics")).toEqual({ kind: "reload-musics" });
+  });
+
   it("trims surrounding whitespace", () => {
     expect(parseSlashCommand("  /settings  ")).toEqual({ kind: "settings" });
   });

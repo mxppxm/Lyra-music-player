@@ -13,9 +13,22 @@ import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "../turn/Orchestrator";
 import * as turnRepo from "../db/repo/turnRepo";
 import { songDisplayTitle, songDisplayArtist } from "../library/display";
+import { reloadLibrary, type ReloadProgress } from "../library/reloadLibrary";
 import type { PAD } from "../types";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
+
+// Voice: first-person, matches Lyra's tone in the rest of the UI.
+function reloadNoteText(p: ReloadProgress): string {
+  switch (p.kind) {
+    case "starting": return "我正在准备重新加载曲库…";
+    case "clearing": return "我把旧曲目记录清了…";
+    case "scanning": return "我在扫描曲库,请稍等…";
+    case "done": return `曲库重新加载完成:${p.imported} 首`;
+    case "no-root": return "还没设置曲库路径 — /settings 里填一下";
+    case "failed": return `重新加载失败:${p.message}`;
+  }
+}
 
 export type DataExplorerTabId =
   | "turns" | "soul" | "salient" | "library" | "lyrics_emb"
@@ -25,6 +38,7 @@ export type DataExplorerTabId =
 type HomeViewProps = {
   onOpenSettings: () => void;
   onOpenDataExplorer: (tab?: DataExplorerTabId) => void;
+  onOpenHelp: () => void;
   orchestrator: Orchestrator | null;
 };
 
@@ -35,13 +49,16 @@ export type { HomeViewProps };
 function LiveHomeView({
   onOpenSettings,
   onOpenDataExplorer,
+  onOpenHelp,
   orchestrator,
 }: {
   onOpenSettings: () => void;
   onOpenDataExplorer: (tab?: DataExplorerTabId) => void;
+  onOpenHelp: () => void;
   orchestrator: Orchestrator;
 }) {
   const { state, submit: rawSubmit } = useTurn(orchestrator);
+  const [reloadStatus, setReloadStatus] = useState<string | null>(null);
 
   // Slash commands intercept before the Orchestrator runs. Known commands
   // dispatch a UI action and never become a DialogueTurn — no LLM call,
@@ -53,7 +70,16 @@ function LiveHomeView({
     if (cmd.kind === "settings") onOpenSettings();
     else if (cmd.kind === "stats") onOpenDataExplorer("llm_usage");
     else if (cmd.kind === "explorer") onOpenDataExplorer();
+    else if (cmd.kind === "help") onOpenHelp();
+    else if (cmd.kind === "reload-musics") void handleReload();
     return Promise.resolve();
+  };
+
+  const handleReload = async () => {
+    await reloadLibrary((p) => setReloadStatus(reloadNoteText(p)));
+    // Leave the terminal status visible briefly, then let the normal
+    // SmallNote text take over again.
+    setTimeout(() => setReloadStatus(null), 5000);
   };
   const [traceItems, setTraceItems] = useState<TraceStripItem[]>([]);
   const [historicalPads, setHistoricalPads] = useState<PAD[]>([]);
@@ -106,7 +132,8 @@ function LiveHomeView({
     state.kind === "playing" ? songDisplayArtist(state.song) : "";
 
   const noteText: string =
-    state.kind === "idle"
+    reloadStatus ??
+    (state.kind === "idle"
       ? "Lyra 在等你说一句话"
       : state.kind === "thinking"
         ? "…"
@@ -114,10 +141,12 @@ function LiveHomeView({
           ? state.turn.agent_response.rationale
           : state.kind === "error"
             ? state.message
-            : "";
+            : "");
 
   const noteColor: string | undefined =
-    state.kind === "error" ? "rgba(200,80,80,0.75)" : undefined;
+    state.kind === "error" && reloadStatus === null
+      ? "rgba(200,80,80,0.75)"
+      : undefined;
 
   // §7 idle empty state — sparser layout when no turns yet
   const isSparseIdle = state.kind === "idle" && traceItems.length === 0;
@@ -148,7 +177,7 @@ function LiveHomeView({
               opacity: 0.7,
             }}
           >
-            Lyra 在听
+            {reloadStatus ?? "Lyra 在听"}
           </div>
           <InputBox onSubmit={submit} />
         </div>
@@ -271,6 +300,7 @@ function ColdBootView({ onOpenSettings }: { onOpenSettings: () => void }) {
 export function HomeView({
   onOpenSettings,
   onOpenDataExplorer,
+  onOpenHelp,
   orchestrator,
 }: HomeViewProps) {
   if (orchestrator === null) {
@@ -280,6 +310,7 @@ export function HomeView({
     <LiveHomeView
       onOpenSettings={onOpenSettings}
       onOpenDataExplorer={onOpenDataExplorer}
+      onOpenHelp={onOpenHelp}
       orchestrator={orchestrator}
     />
   );

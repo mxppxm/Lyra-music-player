@@ -27,6 +27,7 @@ import { insert as insertPerceptionAudit } from "./db/repo/perceptionAuditRepo";
 import { loadSoulState } from "./db/repo/soulRepo";
 import { RoadmapBoard } from "./ui/RoadmapBoard";
 import { DataExplorer } from "./ui/DataExplorer";
+import { HelpOverlay } from "./home/HelpOverlay";
 
 async function bootMemory(): Promise<void> {
   try {
@@ -41,6 +42,7 @@ async function bootMemory(): Promise<void> {
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [roadmapOpen, setRoadmapOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [dataExplorerOpen, setDataExplorerOpen] = useState(false);
   const [dataExplorerInitialTab, setDataExplorerInitialTab] = useState<
     import("./ui/DataExplorer").DataExplorerProps["initialTab"]
@@ -310,6 +312,7 @@ function App() {
           setDataExplorerInitialTab(tab);
           setDataExplorerOpen(true);
         }}
+        onOpenHelp={() => setHelpOpen(true)}
         orchestrator={orchestrator}
       />
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} onSchedulerUpdate={handleSchedulerUpdate} />
@@ -319,6 +322,7 @@ function App() {
         onClose={() => setDataExplorerOpen(false)}
         initialTab={dataExplorerInitialTab}
       />
+      <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
     </>
   );
 }

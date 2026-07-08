@@ -33,7 +33,7 @@ vi.mock("../db/repo/turnRepo", () => ({
 
 describe("HomeView — cold boot (no orchestrator)", () => {
   it("renders Lyra hero identity and cold-boot hint", () => {
-    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} orchestrator={null} />);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={null} />);
     expect(screen.getByText("Lyra")).toBeInTheDocument();
     expect(screen.getByText(/Your emotional music companion/)).toBeInTheDocument();
     expect(screen.getByText(/陪你说话，替你选一首歌/)).toBeInTheDocument();
@@ -42,7 +42,7 @@ describe("HomeView — cold boot (no orchestrator)", () => {
   });
 
   it("still renders the ambient surface in cold-boot state", () => {
-    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} orchestrator={null} />);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={null} />);
     expect(screen.getByTestId("ambient-surface")).toBeInTheDocument();
   });
 });
@@ -50,7 +50,7 @@ describe("HomeView — cold boot (no orchestrator)", () => {
 describe("HomeView — idle state", () => {
   it("renders sparse idle state with slogan and input (no cover/note yet)", () => {
     const orc = makeStubOrchestrator({ kind: "idle" });
-    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} orchestrator={orc} />);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
     expect(screen.getByTestId("ambient-surface")).toBeInTheDocument();
     // Sprint 6: sparse idle shows slogan + input only, no cover/band/note
     expect(screen.getByTestId("lyra-idle-slogan")).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe("HomeView — idle state", () => {
 describe("HomeView — thinking state", () => {
   it("shows ellipsis note while thinking", () => {
     const orc = makeStubOrchestrator({ kind: "thinking", user_utterance: "最近有点累" });
-    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} orchestrator={orc} />);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
     expect(screen.getByTestId("small-note")).toHaveTextContent("…");
   });
 });
@@ -113,7 +113,7 @@ describe("HomeView — playing state", () => {
 
   it("shows real title and artist from song", () => {
     const orc = makeStubOrchestrator(playingState);
-    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} orchestrator={orc} />);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
     const songInfo = screen.getByTestId("song-info");
     expect(songInfo.textContent).toContain("Nuvole Bianche");
     expect(songInfo.textContent).toContain("Ludovico Einaudi");
@@ -121,13 +121,13 @@ describe("HomeView — playing state", () => {
 
   it("shows real rationale in small note", () => {
     const orc = makeStubOrchestrator(playingState);
-    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} orchestrator={orc} />);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
     expect(screen.getByTestId("small-note")).toHaveTextContent("舒缓的旋律，陪你慢下来");
   });
 
   it("renders emotion light band with PAD samples", () => {
     const orc = makeStubOrchestrator(playingState);
-    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} orchestrator={orc} />);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
     expect(screen.getByTestId("emotion-light-band")).toBeInTheDocument();
   });
 });
@@ -138,7 +138,7 @@ describe("HomeView — error state", () => {
       kind: "error",
       message: "library is empty; add music in Settings",
     });
-    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} orchestrator={orc} />);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
     expect(screen.getByTestId("small-note")).toHaveTextContent(
       "library is empty; add music in Settings",
     );
