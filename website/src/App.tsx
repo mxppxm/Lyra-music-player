@@ -1,14 +1,16 @@
 import { useRef, useState } from 'react';
 import { AmbientBackground } from './components/AmbientBackground';
 import { LyraString } from './components/LyraString';
-import { Constellation } from './components/Constellation';
-import { Hero } from './sections/Hero';
 import { useSectionAmbient } from './hooks/useSectionAmbient';
 import { SECTION_COLORS, DARK_SECTIONS } from './theme/ambient';
-import {
-  LISTENING, ONE_SONG_ONE_LINE, MEMORY,
-  DREAM, SILENCE, GROWTH, FOOTER,
-} from './copy/ledger';
+import { Hero } from './sections/Hero';
+import { Listening } from './sections/Listening';
+import { OneSongOneLine } from './sections/OneSongOneLine';
+import { Memory } from './sections/Memory';
+import { Dream } from './sections/Dream';
+import { Silence } from './sections/Silence';
+import { Growth } from './sections/Growth';
+import { Footer } from './sections/Footer';
 
 export default function App() {
   const refs = Array.from({ length: 8 }, () => useRef<HTMLElement>(null));
@@ -19,34 +21,19 @@ export default function App() {
     onActiveChange: setActive,
   });
 
-  const restTitles = [
-    LISTENING.title, ONE_SONG_ONE_LINE.title, MEMORY.title,
-    DREAM.title, SILENCE.title, GROWTH.title, FOOTER.tagline,
-  ];
-
   return (
     <>
       <AmbientBackground />
       <LyraString activeSectionIndex={active} silentSectionIndex={5} />
       <main>
         <Hero ref={refs[0]} />
-        {restTitles.map((t, ri) => {
-          const i = ri + 1;
-          const inner = <h2 style={{ fontSize: 32, fontWeight: 400 }}>{t}</h2>;
-          if (i === 4) {
-            return (
-              <section key={i} ref={refs[i]} style={{ position: 'relative' }}>
-                <Constellation mode="fullscreen" active={active === 4} />
-                {inner}
-              </section>
-            );
-          }
-          return (
-            <section key={i} ref={refs[i]}>
-              {inner}
-            </section>
-          );
-        })}
+        <Listening ref={refs[1]} />
+        <OneSongOneLine ref={refs[2]} />
+        <Memory ref={refs[3]} />
+        <Dream ref={refs[4]} active={active === 4} />
+        <Silence ref={refs[5]} />
+        <Growth ref={refs[6]} />
+        <Footer ref={refs[7]} />
       </main>
     </>
   );
