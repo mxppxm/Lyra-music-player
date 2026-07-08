@@ -11,6 +11,8 @@ import * as libraryRepo from "../db/repo/libraryRepo";
 import * as libraryFeaturesRepo from "../db/repo/libraryFeaturesRepo";
 import type { LibraryFeatures } from "../db/repo/libraryFeaturesRepo";
 import * as lyricsEmbeddingsRepo from "../db/repo/lyricsEmbeddingsRepo";
+import * as reasoningTracesRepo from "../db/repo/reasoningTracesRepo";
+import type { ReasoningTrace } from "../db/repo/reasoningTracesRepo";
 import * as perceptionAuditRepo from "../db/repo/perceptionAuditRepo";
 import type { PerceptionAuditRow } from "../db/repo/perceptionAuditRepo";
 import * as engineerAuditRepo from "../db/repo/engineerAuditRepo";
@@ -37,6 +39,7 @@ type TabId =
   | "features_req"
   | "engineer"
   | "llm_usage"
+  | "reasoning"
   | "memory_md";
 
 const TABS: { id: TabId; label: string }[] = [
@@ -50,6 +53,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "features_req", label: "功能请求" },
   { id: "engineer", label: "工程师审计" },
   { id: "llm_usage", label: "LLM 用量" },
+  { id: "reasoning", label: "推理轨迹" },
   { id: "memory_md", label: "memory.md" },
 ];
 
@@ -207,6 +211,9 @@ export function DataExplorer({
         )}
         {tab === "llm_usage" && (
           <LlmUsagePanel expandedId={expandedRowId} onToggle={toggleRow} />
+        )}
+        {tab === "reasoning" && (
+          <ReasoningTracesPanel expandedId={expandedRowId} onToggle={toggleRow} />
         )}
         {tab === "memory_md" && <MemoryMdPanel />}
       </div>
@@ -630,6 +637,15 @@ function LlmUsagePanel({ expandedId, onToggle }: PanelProps) {
                 <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
                   Output
                 </th>
+                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
+                  Avg ms
+                </th>
+                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
+                  p50 ms
+                </th>
+                <th style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}>
+                  p99 ms
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -654,6 +670,21 @@ function LlmUsagePanel({ expandedId, onToggle }: PanelProps) {
                     style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}
                   >
                     {(a.output_tokens ?? 0).toLocaleString()}
+                  </td>
+                  <td
+                    style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}
+                  >
+                    {a.avg_ms ?? "—"}
+                  </td>
+                  <td
+                    style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}
+                  >
+                    {a.p50_ms ?? "—"}
+                  </td>
+                  <td
+                    style={{ padding: "0.4rem 0.5rem", textAlign: "right" }}
+                  >
+                    {a.p99_ms ?? "—"}
                   </td>
                 </tr>
               ))}
@@ -723,6 +754,136 @@ function MemoryMdPanel() {
     >
       {content}
     </pre>
+  );
+}
+
+function ReasoningTracesPanel({ expandedId, onToggle }: PanelProps) {
+  const [rows, setRows] = useState<ReasoningTrace[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        setRows(await reasoningTracesRepo.listRecent(200));
+      } catch {
+        setRows([]);
+      }
+    })();
+  }, []);
+  if (rows === null) return <Empty label="加载中…" />;
+  if (rows.length === 0) {
+    return (
+      <Empty label="还没有推理轨迹 — 触发对话或 Reflect / Perception 后再来看" />
+    );
+  }
+
+  return (
+    <div>
+      <p style={{ opacity: 0.6, marginBottom: "0.5rem" }}>
+        最近 {rows.length} 条推理轨迹（新→旧）
+      </p>
+      {rows.map((r) => {
+        const isOpen = expandedId === r.id;
+        const summary = summariseTrace(r);
+        return (
+          <div
+            key={r.id}
+            data-testid="reasoning-row"
+            style={{
+              borderTop: "1px solid rgba(255,255,255,0.06)",
+              padding: "0.5rem 0.25rem",
+              cursor: "pointer",
+            }}
+            onClick={() => onToggle(r.id)}
+          >
+            <div
+              style={{
+                display: "flex",
+                gap: "0.75rem",
+                fontSize: "0.8rem",
+                alignItems: "baseline",
+              }}
+            >
+              <span style={{ opacity: 0.55, fontVariantNumeric: "tabular-nums" }}>
+                {new Date(r.ts).toLocaleString("zh-CN")}
+              </span>
+              <span
+                style={{
+                  padding: "0.05rem 0.5rem",
+                  borderRadius: 3,
+                  background: "rgba(255,255,255,0.08)",
+                  fontSize: "0.72rem",
+                }}
+              >
+                {r.agent_kind}
+              </span>
+              <span style={{ opacity: 0.55, fontVariantNumeric: "tabular-nums" }}>
+                {r.duration_ms !== null ? `${r.duration_ms}ms` : "—"}
+              </span>
+              <span style={{ opacity: 0.75, flex: 1 }}>{summary}</span>
+            </div>
+            {isOpen && (
+              <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.75rem" }}>
+                <TraceBlock title="Prompt" content={r.prompt_text} />
+                <TraceBlock title="Raw response" content={r.raw_response ?? "(none)"} />
+                <TraceBlock title="Parsed" content={prettyJson(r.parsed_json)} />
+                {r.turn_id && (
+                  <p style={{ opacity: 0.55, fontSize: "0.75rem" }}>
+                    turn_id: {r.turn_id}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function summariseTrace(r: ReasoningTrace): string {
+  if (!r.parsed_json) return "(no parsed output)";
+  try {
+    const obj = JSON.parse(r.parsed_json) as Record<string, unknown>;
+    if (typeof obj.rationale === "string") return obj.rationale;
+    if (Array.isArray(obj.labels) && obj.labels.every((x) => typeof x === "string")) {
+      return (obj.labels as string[]).join(", ");
+    }
+    if (typeof obj.needed_shift === "string") return `→ ${obj.needed_shift}`;
+    return `${Object.keys(obj).slice(0, 3).join(", ")}…`;
+  } catch {
+    return r.parsed_json.slice(0, 80);
+  }
+}
+
+function prettyJson(raw: string | null): string {
+  if (!raw) return "(none)";
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function TraceBlock({ title, content }: { title: string; content: string }) {
+  return (
+    <div>
+      <p style={{ opacity: 0.55, fontSize: "0.75rem", margin: "0 0 0.25rem" }}>
+        {title}
+      </p>
+      <pre
+        style={{
+          background: "rgba(0,0,0,0.4)",
+          padding: "0.75rem",
+          borderRadius: 4,
+          fontSize: "0.75rem",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          maxHeight: "24rem",
+          overflow: "auto",
+        }}
+      >
+        {content}
+      </pre>
+    </div>
   );
 }
 

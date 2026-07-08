@@ -20,7 +20,7 @@ const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 export type DataExplorerTabId =
   | "turns" | "soul" | "salient" | "library" | "lyrics_emb"
   | "perception" | "roadmap" | "features_req" | "engineer"
-  | "llm_usage" | "memory_md";
+  | "llm_usage" | "reasoning" | "memory_md";
 
 type HomeViewProps = {
   onOpenSettings: () => void;

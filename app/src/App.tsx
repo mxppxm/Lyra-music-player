@@ -94,6 +94,15 @@ function App() {
         sched.start();
       })
       .catch(() => {})
+      .then(async () => {
+        // Sprint 11: TTL trace cleanup. Prompts are large; keep 7 days of
+        // reasoning traces. Non-blocking — if the delete fails we skip
+        // this pass and try again on next boot.
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        const repo = await import("./db/repo/reasoningTracesRepo");
+        await repo.deleteOlderThan(cutoff).catch(() => {});
+      })
+      .catch(() => {})
       .finally(() => setBootDone(true));
 
     return () => {
