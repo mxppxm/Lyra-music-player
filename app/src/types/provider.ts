@@ -13,6 +13,10 @@ export type ChatOptions = {
   // OpenAI-compat JSON mode. Providers that support it (Zhipu, DeepSeek) forward
   // it as `response_format: {type: "json_object"}`. Others silently ignore it.
   response_format?: { type: "json_object" };
+  // Zhipu-specific: disable the reasoning (CoT) phase on GLM-5.x/GLM-Zero
+  // models — set false to avoid the model burning `max_tokens` on
+  // `reasoning_content` before ever writing `content`. Other providers ignore.
+  enable_thinking?: boolean;
   // Attribution for the LLM-usage log. Providers ignore this; the usage-logging
   // decorator reads it to tag which agent originated the call.
   agent?: string;

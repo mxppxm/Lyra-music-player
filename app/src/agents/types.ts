@@ -14,7 +14,7 @@ export type CompanionInput = {
   userUtterance: string;
   currentEmotion: CurrentEmotion;
   soul: SoulState;
-  candidates: Pick<LibraryTrack, "id" | "title" | "artist" | "album" | "duration_ms">[];
+  candidates: Pick<LibraryTrack, "id" | "path" | "title" | "artist" | "album" | "duration_ms">[];
   livingPortrait?: string;
   topFacts?: Fact[];
 };

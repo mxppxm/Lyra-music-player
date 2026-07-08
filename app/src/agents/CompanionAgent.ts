@@ -3,6 +3,7 @@ import { COMPANION_SYSTEM_PROMPT } from "./prompts/companion";
 import { routeProvider } from "./route";
 import { writeTrace } from "../reasoning/writeTrace";
 import { parseLooseJson } from "../lib/parseLooseJson";
+import { songDisplayTitle } from "../library/display";
 import type { ChosenSong, CompanionInput } from "./types";
 
 const SHIFTS = ["接住", "点燃", "陪着", "打断"] as const;
@@ -52,7 +53,7 @@ function buildBrief(i: CompanionInput): string {
   const candidateBlock = i.candidates
     .map(
       (c, idx) =>
-        `[${idx + 1}] id=${c.id} · ${c.title ?? "(无标题)"} · ${c.artist ?? "(无艺人)"} · ${
+        `[${idx + 1}] id=${c.id} · ${songDisplayTitle(c)} · ${c.artist ?? "(无艺人)"} · ${
           c.album ?? "-"
         } · ${c.duration_ms ? Math.round(c.duration_ms / 1000) + "s" : "-"}`,
     )
@@ -128,9 +129,12 @@ export class CompanionAgent {
 
     const t0 = performance.now();
     const res = await this.provider.chat(messages, {
-      max_tokens: 1024,
+      // Bumped 1024 → 3000 to survive GLM-5.x reasoning burn on the Zhipu
+      // fallback path. Anthropic (primary) treats this as an upper cap.
+      max_tokens: 3000,
       temperature: 0.7,
       response_format: { type: "json_object" },
+      enable_thinking: false,
       agent: "companion",
     });
     let picked = parsePartial(extractJson(res.content));
@@ -154,9 +158,10 @@ export class CompanionAgent {
         { role: "user", content: buildCorrectionBrief(picked, candidateIds) },
       ];
       const retryRes = await this.provider.chat(retryMessages, {
-        max_tokens: 512,
+        max_tokens: 1500,
         temperature: 0.3,
         response_format: { type: "json_object" },
+        enable_thinking: false,
         agent: "companion",
       });
       picked = parsePartial(extractJson(retryRes.content));

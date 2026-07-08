@@ -29,8 +29,8 @@ const soul: SoulState = {
 };
 
 const candidates = [
-  { id: "t1", title: "Nuvole Bianche", artist: "Ludovico Einaudi", album: "Una Mattina", duration_ms: 358_000 },
-  { id: "t2", title: "Comptine d'un autre été", artist: "Yann Tiersen", album: "Amelie OST", duration_ms: 143_000 },
+  { id: "t1", path: "/tmp/nuvole.mp3", title: "Nuvole Bianche", artist: "Ludovico Einaudi", album: "Una Mattina", duration_ms: 358_000 },
+  { id: "t2", path: "/tmp/comptine.mp3", title: "Comptine d'un autre été", artist: "Yann Tiersen", album: "Amelie OST", duration_ms: 143_000 },
 ];
 
 const validResponse = JSON.stringify({

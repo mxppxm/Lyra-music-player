@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { DialogueTurn, LibraryTrack, SoulState } from "../types";
+import { songDisplayTitle } from "../library/display";
 import type { SalientMoment } from "../memory/types";
 import * as turnRepo from "../db/repo/turnRepo";
 import * as soulRepo from "../db/repo/soulRepo";
@@ -412,7 +413,7 @@ function LibraryPanel({ expandedId, onToggle }: PanelProps) {
             summary={
               <div style={{ display: "flex", gap: "0.75rem" }}>
                 <span style={{ flex: 1 }}>
-                  <strong>{t.title ?? "(无标题)"}</strong>
+                  <strong>{songDisplayTitle(t)}</strong>
                   {" — "}
                   {t.artist ?? "(无艺人)"}
                 </span>

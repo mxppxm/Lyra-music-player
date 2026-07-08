@@ -4,7 +4,7 @@ import type { LibraryTrack } from "../types";
  * Extract a human-readable title from a track.
  * Prefers the metadata title; falls back to the file basename without extension.
  */
-export function songDisplayTitle(track: LibraryTrack): string {
+export function songDisplayTitle(track: Pick<LibraryTrack, "title" | "path">): string {
   const raw = track.title?.trim();
   if (raw) return raw;
   return basenameNoExt(track.path);
@@ -15,7 +15,7 @@ export function songDisplayTitle(track: LibraryTrack): string {
  * Returns empty string when metadata is missing — callers should skip
  * rendering the artist line when this is empty rather than showing "· ".
  */
-export function songDisplayArtist(track: LibraryTrack): string {
+export function songDisplayArtist(track: Pick<LibraryTrack, "artist">): string {
   return track.artist?.trim() ?? "";
 }
 

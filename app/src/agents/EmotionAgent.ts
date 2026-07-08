@@ -99,9 +99,17 @@ export class EmotionAgent {
     ];
     const t0 = performance.now();
     const res = await this.provider.chat(messages, {
-      max_tokens: 400,
+      // Raised from 400 → 2048 because GLM-5.x reasoning models can burn the
+      // whole budget in `reasoning_content` before writing `content`. Emotion
+      // JSON output is small (<500 tokens); the headroom is free (it's a cap,
+      // not consumption).
+      max_tokens: 2048,
       temperature: 0.3,
       response_format: { type: "json_object" },
+      // Emotion analysis doesn't benefit from chain-of-thought; disable it on
+      // Zhipu GLM-5.x so `content` is generated directly (faster + cheaper).
+      // Other providers ignore this option.
+      enable_thinking: false,
       agent: "emotion",
     });
     const duration_ms = Math.round(performance.now() - t0);

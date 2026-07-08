@@ -70,6 +70,28 @@ describe("ZhipuProvider", () => {
     expect(body.response_format).toEqual({ type: "json_object" });
   });
 
+  it("forwards enable_thinking:false to disable GLM-5.x reasoning phase", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"ok":1}' } }] }),
+    });
+    const p = new ZhipuProvider({ apiKey: "x" });
+    await p.chat([{ role: "user", content: "hi" }], { enable_thinking: false });
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.enable_thinking).toBe(false);
+  });
+
+  it("omits enable_thinking when caller does not set it", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+    });
+    const p = new ZhipuProvider({ apiKey: "x" });
+    await p.chat([{ role: "user", content: "hi" }]);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect("enable_thinking" in body).toBe(false);
+  });
+
   it("omits response_format when caller does not set it", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,

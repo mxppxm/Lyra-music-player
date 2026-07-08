@@ -199,6 +199,7 @@ export class ReflectAgent {
       max_tokens: 4096,
       temperature: 0.5,
       response_format: { type: "json_object" },
+      enable_thinking: false,
       agent: "reflect",
     });
     const obj = extractJson(res.content);
