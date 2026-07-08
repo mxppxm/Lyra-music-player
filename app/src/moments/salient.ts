@@ -19,15 +19,17 @@ export function detectSalientMoment(ctx: SalientContext): SalientMoment | null {
 
   let match: RuleMatch | null = null;
 
-  // Rule 1: Silent full listen (priority 2)
-  // Conditions: silence_positive + completed + listen_duration_ms >= 0.9 * song.duration_ms
+  // Rule 1: Full listen (priority 2)
+  // Loosened: was silence_positive + completed + >=0.9 duration.
+  // Now: completed + >=0.7 duration. Silence adds a richer narrative.
   if (
-    silence_positive &&
     behavioral.completed &&
     song.duration_ms &&
-    behavioral.listen_duration_ms >= 0.9 * song.duration_ms
+    behavioral.listen_duration_ms >= 0.7 * song.duration_ms
   ) {
-    const narrative = `《${song.title}》完整听完，沉默正向。`;
+    const narrative = silence_positive
+      ? `《${song.title}》完整听完，沉默正向。`
+      : `《${song.title}》你完整听完了。`;
     match = { priority: 2, narrative };
   }
 
@@ -40,7 +42,8 @@ export function detectSalientMoment(ctx: SalientContext): SalientMoment | null {
   }
 
   // Rule 3: Repeated listen (priority 3 — highest)
-  if (behavioral.repeated >= 2) {
+  // Loosened: was repeated >= 2. Now any replay counts.
+  if (behavioral.repeated >= 1) {
     const narrative = `《${song.title}》你重听了 ${behavioral.repeated + 1} 次。`;
     if (!match || 3 > match.priority) {
       match = { priority: 3, narrative };
@@ -52,6 +55,23 @@ export function detectSalientMoment(ctx: SalientContext): SalientMoment | null {
     const narrative = `《${song.title}》被你拒绝：${verbal.content}`;
     if (!match || 0 > match.priority) {
       match = { priority: 0, narrative };
+    }
+  }
+
+  // Rule 5: Long attentive listen (priority 1)
+  // >= 60s AND >= 50% of song, no skip, no completion.
+  // Priority-1 tie with Rule 2 (explicit positive verbal): Rule 2 wins by
+  // declaration order — explicit words beat inferred attention.
+  if (
+    !behavioral.completed &&
+    !behavioral.skipped &&
+    song.duration_ms &&
+    behavioral.listen_duration_ms >= 60_000 &&
+    behavioral.listen_duration_ms >= 0.5 * song.duration_ms
+  ) {
+    const narrative = `《${song.title}》你安静地听了一大半。`;
+    if (!match || 1 > match.priority) {
+      match = { priority: 1, narrative };
     }
   }
 
