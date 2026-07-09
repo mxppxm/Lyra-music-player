@@ -22,11 +22,17 @@ pub fn path_exists_impl(path: String) -> Result<bool, String> {
     Ok(Path::new(&path).exists())
 }
 
+pub fn read_weekly_html_impl(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn write_weekly_html(path: String, content: String) -> Result<(), String> {
     write_weekly_html_impl(path, content)
 }
 
+/// Kept for future use (system-browser open). Current /week flow renders
+/// HTML in-app via an iframe modal instead.
 #[tauri::command]
 pub async fn open_weekly_html(app: AppHandle, path: String) -> Result<(), String> {
     app.opener().open_path(&path, None::<&str>).map_err(|e| e.to_string())
@@ -35,4 +41,9 @@ pub async fn open_weekly_html(app: AppHandle, path: String) -> Result<(), String
 #[tauri::command]
 pub async fn path_exists(path: String) -> Result<bool, String> {
     path_exists_impl(path)
+}
+
+#[tauri::command]
+pub async fn read_weekly_html(path: String) -> Result<String, String> {
+    read_weekly_html_impl(path)
 }

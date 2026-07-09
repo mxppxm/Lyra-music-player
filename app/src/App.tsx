@@ -29,6 +29,7 @@ import { loadSoulState } from "./db/repo/soulRepo";
 import { RoadmapBoard } from "./ui/RoadmapBoard";
 import { DataExplorer } from "./ui/DataExplorer";
 import { HelpOverlay } from "./home/HelpOverlay";
+import { WeeklyReader } from "./home/WeeklyReader";
 
 async function bootMemory(): Promise<void> {
   try {
@@ -44,6 +45,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [roadmapOpen, setRoadmapOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [weeklyHtml, setWeeklyHtml] = useState<string | null>(null);
   const [dataExplorerOpen, setDataExplorerOpen] = useState(false);
   const [dataExplorerInitialTab, setDataExplorerInitialTab] = useState<
     import("./ui/DataExplorer").DataExplorerProps["initialTab"]
@@ -317,7 +319,10 @@ function App() {
         }}
         onOpenHelp={() => setHelpOpen(true)}
         orchestrator={orchestrator}
-        onWeek={onDemandWeeklyOpen}
+        onWeek={async () => {
+          const html = await onDemandWeeklyOpen();
+          if (html) setWeeklyHtml(html);
+        }}
       />
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} onSchedulerUpdate={handleSchedulerUpdate} />
       <RoadmapBoard open={roadmapOpen} onClose={() => setRoadmapOpen(false)} />
@@ -327,6 +332,7 @@ function App() {
         initialTab={dataExplorerInitialTab}
       />
       <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <WeeklyReader html={weeklyHtml} onClose={() => setWeeklyHtml(null)} />
     </>
   );
 }

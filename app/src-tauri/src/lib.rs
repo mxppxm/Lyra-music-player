@@ -186,6 +186,7 @@ pub fn run() {
             weekly::write_weekly_html,
             weekly::open_weekly_html,
             weekly::path_exists,
+            weekly::read_weekly_html,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

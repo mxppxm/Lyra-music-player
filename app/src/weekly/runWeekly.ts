@@ -26,7 +26,7 @@ export type RunWeeklyDeps = {
 
 export type RunWeeklyResult =
   | { skipped: true; reason: "sparse_week" | "auto_disabled" }
-  | { skipped: false; html_path: string; fallback: boolean };
+  | { skipped: false; html_path: string; fallback: boolean; html: string };
 
 export async function runWeekly(opts: {
   now: Date;
@@ -92,5 +92,5 @@ export async function runWeekly(opts: {
     fallback: fallback ? 1 : 0,
   });
 
-  return { skipped: false, html_path, fallback };
+  return { skipped: false, html_path, fallback, html };
 }
