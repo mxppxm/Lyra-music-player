@@ -105,6 +105,14 @@ describe("render (fallback)", () => {
     const stops = (html.match(/<stop\b/g) ?? []).length;
     expect(stops).toBe(3);
   });
+
+  it("skips portrait section even when letter.portrait_change non-empty", () => {
+    // Fallback branch drops the portrait paragraph regardless of what
+    // the letter carries — the "quiet apology" mode shouldn't ship an
+    // observation about growth. Guards the !opts.fallback && ... check.
+    expect(html).not.toContain('class="portrait"');
+    expect(html).not.toContain("肯坐下听");
+  });
 });
 
 describe("XSS escape", () => {
