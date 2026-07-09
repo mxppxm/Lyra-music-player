@@ -24,7 +24,10 @@ function reloadNoteText(p: ReloadProgress): string {
     case "starting": return "我正在准备重新加载曲库…";
     case "clearing": return "我把旧曲目记录清了…";
     case "scanning": return "我在扫描曲库,请稍等…";
-    case "done": return `曲库重新加载完成:${p.imported} 首`;
+    case "done": {
+      const pruneTail = p.pruned > 0 ? ` · 清 ${p.pruned} 行` : "";
+      return `曲库重新加载完成:${p.imported} 首${pruneTail}`;
+    }
     case "no-root": return "还没设置曲库路径 — /settings 里填一下";
     case "failed": return `重新加载失败:${p.message}`;
   }
@@ -39,6 +42,7 @@ type HomeViewProps = {
   onOpenSettings: () => void;
   onOpenDataExplorer: (tab?: DataExplorerTabId) => void;
   onOpenHelp: () => void;
+  onWeek?: () => Promise<void>;
   orchestrator: Orchestrator | null;
 };
 
@@ -50,11 +54,13 @@ function LiveHomeView({
   onOpenSettings,
   onOpenDataExplorer,
   onOpenHelp,
+  onWeek,
   orchestrator,
 }: {
   onOpenSettings: () => void;
   onOpenDataExplorer: (tab?: DataExplorerTabId) => void;
   onOpenHelp: () => void;
+  onWeek?: () => Promise<void>;
   orchestrator: Orchestrator;
 }) {
   const { state, submit: rawSubmit } = useTurn(orchestrator);
@@ -72,6 +78,7 @@ function LiveHomeView({
     else if (cmd.kind === "explorer") onOpenDataExplorer();
     else if (cmd.kind === "help") onOpenHelp();
     else if (cmd.kind === "reload-musics") void handleReload();
+    else if (cmd.kind === "week") void onWeek?.();
     return Promise.resolve();
   };
 

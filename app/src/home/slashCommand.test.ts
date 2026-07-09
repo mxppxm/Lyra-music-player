@@ -44,4 +44,20 @@ describe("parseSlashCommand", () => {
     expect(parseSlashCommand("")).toBeNull();
     expect(parseSlashCommand("   ")).toBeNull();
   });
+
+  it("recognizes /week", () => {
+    expect(parseSlashCommand("/week")).toEqual({ kind: "week" });
+  });
+
+  it("recognizes /week with surrounding whitespace", () => {
+    expect(parseSlashCommand("  /week  ")).toEqual({ kind: "week" });
+  });
+
+  it("rejects /week with trailing content", () => {
+    expect(parseSlashCommand("/week now")).toBeNull();
+  });
+
+  it("rejects /weeks (extra char)", () => {
+    expect(parseSlashCommand("/weeks")).toBeNull();
+  });
 });
