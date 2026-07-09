@@ -70,20 +70,28 @@ export async function autoWeeklyTrigger(): Promise<void> {
 /** On-demand entry (from /week slash). Idempotent per window — reuses the
  *  file on disk if it exists and is readable. */
 export async function onDemandWeeklyOpen(): Promise<void> {
+  console.info("[weekly] /week fired");
   try {
     const deps = await makeWeeklyDeps();
     const win = (await import("./weeklyPaths")).rolling7dWindow(new Date());
+    console.info("[weekly] window", win);
     const existing = await deps.weeklyRepo.findByWindow(win.start, win.end);
     if (existing) {
       const exists = await invoke<boolean>("path_exists", { path: existing.html_path });
+      console.info("[weekly] existing snapshot found, file on disk:", exists);
       if (exists) {
         await invoke("open_weekly_html", { path: existing.html_path });
         return;
       }
       await deps.weeklyRepo.deleteByWindow(win.start, win.end);
     }
+    console.info("[weekly] generating fresh letter (onDemand)…");
     const out = await runWeekly({ now: new Date(), onDemand: true, deps });
-    if (out.skipped) return;
+    if (out.skipped) {
+      console.warn("[weekly] runWeekly skipped:", out);
+      return;
+    }
+    console.info("[weekly] wrote", out.html_path, "fallback:", out.fallback);
     await invoke("open_weekly_html", { path: out.html_path });
   } catch (e) {
     console.error("[weekly] onDemandWeeklyOpen error:", e);
