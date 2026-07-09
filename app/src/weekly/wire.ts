@@ -72,22 +72,41 @@ export async function autoWeeklyTrigger(): Promise<void> {
  *  — reuses the file on disk if it exists (reads it back rather than
  *  invoking Claude again). Returns null on failure or true-skip. */
 export async function onDemandWeeklyOpen(): Promise<string | null> {
+  console.info("[weekly] onDemandWeeklyOpen: START");
   try {
+    console.info("[weekly] step 1: makeWeeklyDeps");
     const deps = await makeWeeklyDeps();
+    console.info("[weekly] step 1 done. settings=%o", deps.settings);
+
+    console.info("[weekly] step 2: compute window");
     const win = (await import("./weeklyPaths")).rolling7dWindow(new Date());
+    console.info("[weekly] step 2 done. window=%o", win);
+
+    console.info("[weekly] step 3: weeklyRepo.findByWindow");
     const existing = await deps.weeklyRepo.findByWindow(win.start, win.end);
+    console.info("[weekly] step 3 done. existing=%o", existing);
+
     if (existing) {
+      console.info("[weekly] step 4a: invoke path_exists", existing.html_path);
       const exists = await invoke<boolean>("path_exists", { path: existing.html_path });
+      console.info("[weekly] step 4a done. exists=%o", exists);
       if (exists) {
-        return await invoke<string>("read_weekly_html", { path: existing.html_path });
+        console.info("[weekly] step 4b: read_weekly_html", existing.html_path);
+        const html = await invoke<string>("read_weekly_html", { path: existing.html_path });
+        console.info("[weekly] step 4b done. html length=%o", html.length);
+        return html;
       }
+      console.info("[weekly] step 4c: deleteByWindow (stale row)");
       await deps.weeklyRepo.deleteByWindow(win.start, win.end);
     }
+
+    console.info("[weekly] step 5: runWeekly onDemand");
     const out = await runWeekly({ now: new Date(), onDemand: true, deps });
+    console.info("[weekly] step 5 done. out=%o", out);
     if (out.skipped) return null;
     return out.html;
   } catch (e) {
-    console.error("[weekly] onDemandWeeklyOpen error:", e);
+    console.error("[weekly] onDemandWeeklyOpen ERROR:", e);
     return null;
   }
 }

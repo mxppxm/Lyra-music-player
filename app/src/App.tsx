@@ -320,7 +320,9 @@ function App() {
         onOpenHelp={() => setHelpOpen(true)}
         orchestrator={orchestrator}
         onWeek={async () => {
+          console.info("[App] onWeek wrapper entered");
           const html = await onDemandWeeklyOpen();
+          console.info("[App] onDemandWeeklyOpen resolved; html length=%o", html?.length ?? null);
           if (html) setWeeklyHtml(html);
         }}
       />

@@ -72,13 +72,17 @@ function LiveHomeView({
   // flows to Lyra.
   const submit = (text: string): Promise<void> => {
     const cmd = parseSlashCommand(text);
+    console.info("[HomeView] submit text=%o cmd=%o onWeekType=%o", text, cmd, typeof onWeek);
     if (cmd === null) return rawSubmit(text);
     if (cmd.kind === "settings") onOpenSettings();
     else if (cmd.kind === "stats") onOpenDataExplorer("llm_usage");
     else if (cmd.kind === "explorer") onOpenDataExplorer();
     else if (cmd.kind === "help") onOpenHelp();
     else if (cmd.kind === "reload-musics") void handleReload();
-    else if (cmd.kind === "week") void onWeek?.();
+    else if (cmd.kind === "week") {
+      console.info("[HomeView] dispatching /week; calling onWeek");
+      void onWeek?.();
+    }
     return Promise.resolve();
   };
 

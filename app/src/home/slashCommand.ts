@@ -15,6 +15,7 @@ export type SlashCommand =
  *  "/settings please" or " /settings ". Strictness keeps intent unambiguous. */
 export function parseSlashCommand(raw: string): SlashCommand | null {
   const t = raw.trim();
+  console.info("[slash] parse raw=%o trimmed=%o codepoints=%o", raw, t, [...t].map(c => c.charCodeAt(0)));
   if (t === "/settings") return { kind: "settings" };
   if (t === "/stats") return { kind: "stats" };
   if (t === "/explorer") return { kind: "explorer" };
