@@ -12,6 +12,7 @@ import { parseMemoryMd, EMPTY_MEMORY } from "./memory/parser";
 import { setMemoryContext } from "./memory/context";
 import { onSongComplete } from "./audio/player";
 import { DreamScheduler } from "./schedule/dreamScheduler";
+import { autoWeeklyTrigger, onDemandWeeklyOpen } from "./weekly/wire";
 import { SECRET_KEYS, getSecret } from "./settings/secrets";
 import { ProactiveEngine } from "./proactive/engine";
 import { createSulkStore } from "./proactive/sulkStore";
@@ -91,6 +92,7 @@ function App() {
           dailyTimeHHMM,
           idleMinutes,
           runReflect: () => reflectNow().then(() => undefined),
+          runWeekly: autoWeeklyTrigger,
         });
         schedulerRef.current = sched;
         sched.start();
@@ -119,6 +121,7 @@ function App() {
       dailyTimeHHMM: dailyTime,
       idleMinutes,
       runReflect: () => reflectNow().then(() => undefined),
+      runWeekly: autoWeeklyTrigger,
     });
     schedulerRef.current = sched;
     sched.start();
@@ -314,6 +317,7 @@ function App() {
         }}
         onOpenHelp={() => setHelpOpen(true)}
         orchestrator={orchestrator}
+        onWeek={onDemandWeeklyOpen}
       />
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} onSchedulerUpdate={handleSchedulerUpdate} />
       <RoadmapBoard open={roadmapOpen} onClose={() => setRoadmapOpen(false)} />
