@@ -4,6 +4,7 @@ pub mod library_scan;
 pub mod lyrics;
 pub mod secrets;
 pub mod tray;
+pub mod weekly;
 
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
@@ -182,6 +183,9 @@ pub fn run() {
             tray::tray_set_breathing,
             audio_features::audio_extract_features,
             lyrics::lyrics_extract,
+            weekly::write_weekly_html,
+            weekly::open_weekly_html,
+            weekly::path_exists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
