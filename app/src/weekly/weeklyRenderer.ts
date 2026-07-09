@@ -13,9 +13,9 @@ export type WeeklyLetterJson = {
 // PAD → HSL. Hue from P (blue-cool for low, warm for high). Saturation
 // scales with |A|. Lightness stays high so the band reads muted, not loud.
 export function padToHsl(pad: PAD): string {
-  const h = Math.round(210 - 210 * clamp(pad.P, -1, 1)); // -1 → 210 (blue), +1 → 0 (red)
-  const s = Math.round(20 + 40 * Math.abs(clamp(pad.A, -1, 1)));
-  const l = Math.round(70 + 10 * clamp(pad.D, -1, 1));
+  const h = Math.round(210 - 210 * clamp(pad.p, -1, 1)); // -1 → 210 (blue), +1 → 0 (red)
+  const s = Math.round(20 + 40 * Math.abs(clamp(pad.a, -1, 1)));
+  const l = Math.round(70 + 10 * clamp(pad.d, -1, 1));
   return `hsl(${h}, ${s}%, ${l}%)`;
 }
 

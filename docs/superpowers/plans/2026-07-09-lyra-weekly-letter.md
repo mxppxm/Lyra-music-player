@@ -770,7 +770,7 @@ const win = {
   iso_week: "2026-W28",
 };
 
-function mkTurn(id: string, tsIso: string, pad = { P: 0, A: 0, D: 0 }, songId = "s1"): DialogueTurn {
+function mkTurn(id: string, tsIso: string, pad = { p: 0, a: 0, d: 0 }, songId = "s1"): DialogueTurn {
   return {
     id, timestamp: new Date(tsIso).getTime(),
     user_utterance: { role: "user", content: "hi" },
@@ -781,9 +781,9 @@ function mkTurn(id: string, tsIso: string, pad = { P: 0, A: 0, D: 0 }, songId = 
 }
 
 const inWindow = [
-  mkTurn("t1", "2026-07-03T01:00:00Z", { P: 0.1, A: 0.2, D: 0 }, "s1"),
-  mkTurn("t2", "2026-07-04T02:00:00Z", { P: -0.2, A: -0.1, D: 0 }, "s2"),
-  mkTurn("t3", "2026-07-05T03:00:00Z", { P: 0.3, A: 0.1, D: 0 }, "s1"),
+  mkTurn("t1", "2026-07-03T01:00:00Z", { p: 0.1, a: 0.2, d: 0 }, "s1"),
+  mkTurn("t2", "2026-07-04T02:00:00Z", { p: -0.2, a: -0.1, d: 0 }, "s2"),
+  mkTurn("t3", "2026-07-05T03:00:00Z", { p: 0.3, a: 0.1, d: 0 }, "s1"),
 ];
 const outOfWindow = [
   mkTurn("t0", "2026-06-30T00:00:00Z"),
@@ -818,8 +818,8 @@ describe("collectWindow", () => {
       turnRepo, sharedMemoryRepo, libraryRepo,
     });
     expect(data.pad_series).toHaveLength(3);
-    expect(data.pad_series[0].pad).toEqual({ P: 0.1, A: 0.2, D: 0 });
-    expect(data.pad_series[2].pad).toEqual({ P: 0.3, A: 0.1, D: 0 });
+    expect(data.pad_series[0].pad).toEqual({ p: 0.1, a: 0.2, d: 0 });
+    expect(data.pad_series[2].pad).toEqual({ p: 0.3, a: 0.1, d: 0 });
   });
 
   it("salient only includes moments inside window", async () => {
@@ -1075,9 +1075,9 @@ const raw: WeeklyRawData = {
   window: win,
   turns: [],
   pad_series: [
-    { ts: 1, pad: { P: 0.2, A: 0.1, D: 0 } },
-    { ts: 2, pad: { P: -0.4, A: 0.3, D: 0 } },
-    { ts: 3, pad: { P: 0.5, A: -0.2, D: 0 } },
+    { ts: 1, pad: { p: 0.2, a: 0.1, d: 0 } },
+    { ts: 2, pad: { p: -0.4, a: 0.3, d: 0 } },
+    { ts: 3, pad: { p: 0.5, a: -0.2, d: 0 } },
   ],
   salient: [{ moment_id: "m1", text: "沉默听完 s1", kind: "silence_positive", ts: 2 }],
   songs_played: [
@@ -1102,7 +1102,7 @@ const letter: WeeklyLetterJson = {
 
 describe("padToHsl", () => {
   it("returns hsl(...) string", () => {
-    expect(padToHsl({ P: 0, A: 0, D: 0 })).toMatch(/^hsl\(\d+(\.\d+)?,\s*\d+%,\s*\d+%\)$/);
+    expect(padToHsl({ p: 0, a: 0, d: 0 })).toMatch(/^hsl\(\d+(\.\d+)?,\s*\d+%,\s*\d+%\)$/);
   });
 });
 
@@ -1219,9 +1219,9 @@ export type WeeklyLetterJson = {
 // PAD → HSL. Hue from P (blue-cool for low, warm for high). Saturation
 // scales with |A|. Lightness stays high so the band reads muted, not loud.
 export function padToHsl(pad: PAD): string {
-  const h = Math.round(210 - 210 * clamp(pad.P, -1, 1)); // -1 → 210 (blue), +1 → 0 (red)
-  const s = Math.round(20 + 40 * Math.abs(clamp(pad.A, -1, 1)));
-  const l = Math.round(70 + 10 * clamp(pad.D, -1, 1));
+  const h = Math.round(210 - 210 * clamp(pad.p, -1, 1)); // -1 → 210 (blue), +1 → 0 (red)
+  const s = Math.round(20 + 40 * Math.abs(clamp(pad.a, -1, 1)));
+  const l = Math.round(70 + 10 * clamp(pad.d, -1, 1));
   return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
@@ -1364,7 +1364,7 @@ import type { WeeklyRawData } from "./dataGather";
 const raw: WeeklyRawData = {
   window: { start: "2026-07-02T00:00:00.000Z", end: "2026-07-09T00:00:00.000Z", iso_week: "2026-W28" },
   turns: [] as unknown as WeeklyRawData["turns"],
-  pad_series: [{ ts: 1, pad: { P: 0.1, A: 0, D: 0 } }],
+  pad_series: [{ ts: 1, pad: { p: 0.1, a: 0, d: 0 } }],
   salient: [{ moment_id: "m1", text: "silence 4min", kind: "silence_positive", ts: 1 }],
   songs_played: [{ song_id: "s1", title: "夜色温柔", artist: "陈粒", small_note: "", count: 2 }],
   living_portrait_now: "现在的画像",
@@ -1839,7 +1839,7 @@ function mkTurn(id: string, ts: number, songId: string): DialogueTurn {
   return {
     id, timestamp: ts,
     user_utterance: { role: "user", content: "hi" },
-    current_emotion: { pad: { P: 0, A: 0, D: 0 }, labels: [], confidence: 0.5, source: "llm" },
+    current_emotion: { pad: { p: 0, a: 0, d: 0 }, labels: [], confidence: 0.5, source: "llm" },
     agent_response: { song_id: songId, target_profile: {}, rationale: "note", needed_shift: "陪着" },
     user_reaction: { behavioral: { completed: true, skipped: false, listen_progress: 1 } },
   } as unknown as DialogueTurn;

@@ -12,9 +12,9 @@ const raw: WeeklyRawData = {
   window: win,
   turns: [],
   pad_series: [
-    { ts: 1, pad: { P: 0.2, A: 0.1, D: 0 } },
-    { ts: 2, pad: { P: -0.4, A: 0.3, D: 0 } },
-    { ts: 3, pad: { P: 0.5, A: -0.2, D: 0 } },
+    { ts: 1, pad: { p: 0.2, a: 0.1, d: 0 } },
+    { ts: 2, pad: { p: -0.4, a: 0.3, d: 0 } },
+    { ts: 3, pad: { p: 0.5, a: -0.2, d: 0 } },
   ],
   salient: [{ moment_id: "m1", text: "沉默听完 s1", kind: "silence_positive", ts: 2 }],
   songs_played: [
@@ -39,7 +39,7 @@ const letter: WeeklyLetterJson = {
 
 describe("padToHsl", () => {
   it("returns hsl(...) string", () => {
-    expect(padToHsl({ P: 0, A: 0, D: 0 })).toMatch(/^hsl\(\d+(\.\d+)?,\s*\d+%,\s*\d+%\)$/);
+    expect(padToHsl({ p: 0, a: 0, d: 0 })).toMatch(/^hsl\(\d+(\.\d+)?,\s*\d+%,\s*\d+%\)$/);
   });
 });
 
