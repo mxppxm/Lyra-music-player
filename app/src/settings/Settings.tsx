@@ -24,6 +24,8 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [embeddingChoice, setEmbeddingChoice] = useState<EmbeddingChoice>("");
   const [zhipuEmbeddingKey, setZhipuEmbeddingKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
+  const [weeklyDir, setWeeklyDir] = useState("");
+  const [weeklyAuto, setWeeklyAuto] = useState(true);
   const [embeddingDirty, setEmbeddingDirty] = useState(false);
   const [refilling, setRefilling] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -34,7 +36,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d, z, lib, dt, dim, pe, pm, ep, zek, ok] = await Promise.all([
+      const [a, d, z, lib, dt, dim, pe, pm, ep, zek, ok, wd, wa] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
         getSecret(SECRET_KEYS.zhipuApiKey),
@@ -46,6 +48,8 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         getSecret(SECRET_KEYS.embeddingProvider),
         getSecret(SECRET_KEYS.zhipuEmbeddingApiKey),
         getSecret(SECRET_KEYS.openaiApiKey),
+        getSecret(SECRET_KEYS.weeklyDirOverride),
+        getSecret(SECRET_KEYS.weeklyAutoEnabled),
       ]);
       if (cancelled) return;
       setAnthropic(a ?? "");
@@ -60,6 +64,8 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       setEmbeddingChoice(ep === "zhipu" || ep === "openai" ? ep : "");
       setZhipuEmbeddingKey(zek ?? "");
       setOpenaiKey(ok ?? "");
+      setWeeklyDir(wd ?? "");
+      setWeeklyAuto(wa !== "false");
       setEmbeddingDirty(false);
       setLoaded(true);
     })();
@@ -84,12 +90,18 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.embeddingProvider, embeddingChoice);
       await setSecret(SECRET_KEYS.zhipuEmbeddingApiKey, zhipuEmbeddingKey);
       await setSecret(SECRET_KEYS.openaiApiKey, openaiKey);
+      await setSecret(SECRET_KEYS.weeklyDirOverride, weeklyDir);
+      await setSecret(SECRET_KEYS.weeklyAutoEnabled, weeklyAuto ? "true" : "false");
       setEmbeddingDirty(false);
       if (libraryPath) {
         setScanStatus("Scanning…");
         try {
-          const n = await importLibrary(libraryPath);
-          setScanStatus(`Imported ${n} new track${n === 1 ? "" : "s"}.`);
+          const { imported, pruned } = await importLibrary(libraryPath);
+          const impMsg = `Imported ${imported} new track${imported === 1 ? "" : "s"}.`;
+          const pruneMsg = pruned > 0
+            ? ` Pruned ${pruned} stale row${pruned === 1 ? "" : "s"}.`
+            : "";
+          setScanStatus(`${impMsg}${pruneMsg}`);
         } catch (err) {
           setScanStatus(`Scan failed: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -257,6 +269,26 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           />
         </label>
       )}
+      <fieldset className="settings-weekly">
+        <legend>周报</legend>
+        <label>
+          保存目录(留空则默认 <code>&lt;appData&gt;/weeklies</code>)
+          <input
+            type="text"
+            value={weeklyDir}
+            onChange={(e) => setWeeklyDir(e.target.value)}
+            placeholder=""
+          />
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={weeklyAuto}
+            onChange={(e) => setWeeklyAuto(e.target.checked)}
+          />
+          周日 03:14 自动生成
+        </label>
+      </fieldset>
       <div className="settings-actions">
         <button
           onClick={onRefill}

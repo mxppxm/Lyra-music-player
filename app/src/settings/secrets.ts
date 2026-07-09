@@ -12,6 +12,8 @@ export const SECRET_KEYS = {
   embeddingProvider: "embedding.provider",
   zhipuEmbeddingApiKey: "embedding.zhipu.apiKey",
   openaiApiKey: "embedding.openai.apiKey",
+  weeklyDirOverride: "weekly.dirOverride",
+  weeklyAutoEnabled: "weekly.autoEnabled",
 } as const;
 
 export async function setSecret(key: string, value: string): Promise<void> {
