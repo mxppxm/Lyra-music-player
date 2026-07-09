@@ -125,6 +125,27 @@ describe("WeeklyAgent", () => {
     expect(out.fallback).toBe(false);
   });
 
+  it("throws no_first_person when letter has no 我 and no 她 → retry + fallback", async () => {
+    // Distinct from the 她 branch: guards against hollow letters that
+    // pattern-match the schema but drop first-person tokens entirely.
+    const hollowJson = JSON.stringify({
+      greeting: "好",
+      body: "这周平静",
+      songs: [{ song_id: "s1", one_liner: "x" }],
+      moments: [{ moment_id: "m1", whisper: "y" }],
+      portrait_change: "",
+      closing: "好",
+    });
+    const provider = mkProvider([
+      { ok: true, content: hollowJson },
+      { ok: true, content: hollowJson },
+    ]);
+    const agent = new WeeklyAgent({ provider: provider as any });
+    const out = await agent.run({ raw });
+    expect(out.fallback).toBe(true);
+    expect(provider.chat).toHaveBeenCalledTimes(2);
+  });
+
   it("passes response_format json_object + agent 'weekly' to provider", async () => {
     const provider = mkProvider([{ ok: true, content: okJson }]);
     const agent = new WeeklyAgent({ provider: provider as any });

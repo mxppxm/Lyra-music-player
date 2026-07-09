@@ -1,6 +1,6 @@
 import type { WeeklyRawData } from "./dataGather";
 
-export const WEEKLY_SYSTEM_PROMPT = `你是 Lyra 的周报核心。用户主动或系统定时触发了一次周报生成——你要以第一人称"我"给你写一封回顾这七天的信。
+export const WEEKLY_SYSTEM_PROMPT = `你是 Lyra 的周报核心。用户主动或系统定时触发了一次周报生成——你要以第一人称"我"给用户写一封回顾这七天的信。
 
 你必须严格遵守的:
 
