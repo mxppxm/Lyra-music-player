@@ -36,7 +36,9 @@ function mkProvider(seq: Array<{ ok: true; content: string } | { ok: false; err:
 }
 
 describe("WeeklyAgent", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("first call succeeds → letter returned, fallback false", async () => {
     const agent = new WeeklyAgent({ provider: mkProvider([{ ok: true, content: okJson }]) as any });
