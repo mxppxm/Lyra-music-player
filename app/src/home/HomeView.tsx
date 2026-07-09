@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AmbientBackground } from "./AmbientBackground";
-import { AlbumCover } from "./AlbumCover";
+import { BackgroundPhoto } from "./BackgroundPhoto";
+import { ShanShuiCanvas } from "./ShanShuiCanvas";
 import { EmotionLightBand } from "./EmotionLightBand";
 import { SongInfo } from "./SongInfo";
 import { SmallNote } from "./SmallNote";
@@ -94,6 +95,19 @@ function LiveHomeView({
   };
   const [traceItems, setTraceItems] = useState<TraceStripItem[]>([]);
   const [historicalPads, setHistoricalPads] = useState<PAD[]>([]);
+  const [songInfoVisible, setSongInfoVisible] = useState(false);
+
+  // 每首新歌开头亮 3s 交代"我在听什么",随后淡出。哲学:听音乐和心情,不是看具体歌曲。
+  const playingSongId = state.kind === "playing" ? state.song.id : null;
+  useEffect(() => {
+    if (playingSongId === null) {
+      setSongInfoVisible(false);
+      return;
+    }
+    setSongInfoVisible(true);
+    const t = setTimeout(() => setSongInfoVisible(false), 3000);
+    return () => clearTimeout(t);
+  }, [playingSongId]);
 
   // Refresh trace + emotion history whenever state transitions to playing
   useEffect(() => {
@@ -133,9 +147,6 @@ function LiveHomeView({
       ? historicalPads
       : [];
 
-  const coverUrl: string | null =
-    state.kind === "playing" ? null : null; // coverUrl reserved for Sprint 2
-
   const title: string =
     state.kind === "playing" ? songDisplayTitle(state.song) : "";
 
@@ -165,6 +176,8 @@ function LiveHomeView({
   if (isSparseIdle) {
     return (
       <AmbientBackground pad={pad}>
+        <BackgroundPhoto />
+        <ShanShuiCanvas pad={pad} playing={false} />
         <div
           style={{
             flex: 1,
@@ -174,6 +187,8 @@ function LiveHomeView({
             justifyContent: "center",
             padding: "var(--lyra-viewport-padding)",
             gap: 0,
+            position: "relative",
+            zIndex: 1,
           }}
         >
           <div
@@ -198,6 +213,8 @@ function LiveHomeView({
 
   return (
     <AmbientBackground pad={pad}>
+      <BackgroundPhoto />
+      <ShanShuiCanvas pad={pad} playing={state.kind === "playing"} />
       <div
         style={{
           flex: 1,
@@ -206,19 +223,24 @@ function LiveHomeView({
           alignItems: "center",
           padding: "var(--lyra-viewport-padding)",
           gap: 0,
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <div style={{ flex: 1 }} />
-        <AlbumCover
-          coverUrl={coverUrl}
-          alt={title ? `${title} cover` : "album cover"}
-          titleHint={title || undefined}
-        />
-        <div style={{ height: "var(--lyra-space-cover-to-band)" }} />
         <EmotionLightBand samples={padSamples} />
         <div style={{ height: "var(--lyra-space-band-to-song)" }} />
         {state.kind === "playing" ? (
-          <SongInfo title={title} artist={artist} />
+          <div
+            data-testid="song-info-fade"
+            style={{
+              opacity: songInfoVisible ? 1 : 0,
+              transition: "opacity 1.4s ease-out",
+              pointerEvents: songInfoVisible ? "auto" : "none",
+            }}
+          >
+            <SongInfo title={title} artist={artist} />
+          </div>
         ) : (
           <SongInfo title="" artist="" />
         )}
@@ -312,6 +334,7 @@ export function HomeView({
   onOpenSettings,
   onOpenDataExplorer,
   onOpenHelp,
+  onWeek,
   orchestrator,
 }: HomeViewProps) {
   if (orchestrator === null) {
@@ -322,6 +345,7 @@ export function HomeView({
       onOpenSettings={onOpenSettings}
       onOpenDataExplorer={onOpenDataExplorer}
       onOpenHelp={onOpenHelp}
+      onWeek={onWeek}
       orchestrator={orchestrator}
     />
   );
