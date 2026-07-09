@@ -14,6 +14,9 @@ export type DreamSchedulerConfig = {
   /** Minutes of inactivity before idle trigger fires; 0 = disabled */
   idleMinutes: number;
   runReflect: () => Promise<void>;
+  /** Sprint weekly: fires on Sunday daily-tick after reflect. Independent
+   *  error boundary — a runWeekly throw does not affect reflect state. */
+  runWeekly?: () => Promise<void>;
   /** Injectable clock for tests; defaults to `() => new Date()` */
   clock?: () => Date;
   /**
@@ -67,6 +70,8 @@ export class DreamScheduler {
 
   /** ISO date string of the last daily run (e.g. "2026-07-07") */
   private _lastDailyRunISO = "";
+  /** ISO date string of the last Sunday we ran runWeekly (e.g. "2026-07-05") */
+  private _lastWeeklyRunISO = "";
   /** Timestamp ms of last idle-triggered run */
   private _lastIdleRunAt = 0;
   /** Timestamp ms of the last detected user activity */
@@ -131,11 +136,32 @@ export class DreamScheduler {
     if (now.getHours() !== h || now.getMinutes() !== m) return;
 
     const todayISO = now.toISOString().slice(0, 10);
-    if (this._lastDailyRunISO === todayISO) return;
+    if (this._lastDailyRunISO === todayISO) {
+      // reflect already ran today; still allow weekly check because weekly
+      // has its own per-Sunday guard.
+      await this._maybeRunWeekly(now, todayISO);
+      return;
+    }
 
     await this._runReflect(() => {
       this._lastDailyRunISO = todayISO;
     });
+    await this._maybeRunWeekly(now, todayISO);
+  }
+
+  private async _maybeRunWeekly(now: Date, todayISO: string): Promise<void> {
+    const runWeekly = this._config.runWeekly;
+    if (!runWeekly) return;
+    if (now.getDay() !== 0) return;             // 0 = Sunday
+    if (this._lastWeeklyRunISO === todayISO) return;
+    try {
+      await runWeekly();
+      this._lastWeeklyRunISO = todayISO;
+    } catch (err) {
+      console.warn("[DreamScheduler] runWeekly threw:", err);
+      // Do NOT set _lastWeeklyRunISO on failure — allow retry next tick
+      // within the same day. Per-Sunday guard resets next Sunday.
+    }
   }
 
   private async _checkIdle(now: Date): Promise<void> {

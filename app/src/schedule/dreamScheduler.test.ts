@@ -393,3 +393,84 @@ describe("DreamScheduler – lifecycle", () => {
     expect(runReflect).not.toHaveBeenCalled();
   });
 });
+
+describe("DreamScheduler weekly hook", () => {
+  it("fires runWeekly on Sunday at daily time, only once per Sunday", async () => {
+    let sunday = new Date("2026-07-05T03:14:00");  // 2026-07-05 is Sunday
+    const runReflect = vi.fn(async () => {});
+    const runWeekly = vi.fn(async () => {});
+    const s = new DreamScheduler({
+      dailyTimeHHMM: "03:14",
+      idleMinutes: 0,
+      runReflect,
+      runWeekly,
+      clock: () => sunday,
+      onActivityListen: () => () => {},
+    });
+    s.start();
+    await new Promise((r) => setTimeout(r, 5));
+    // manually trigger the tick to avoid waiting 60s
+    await (s as any)._tick();
+    expect(runWeekly).toHaveBeenCalledTimes(1);
+    // second tick same day → not called again
+    await (s as any)._tick();
+    expect(runWeekly).toHaveBeenCalledTimes(1);
+    s.stop();
+  });
+
+  it("does not fire runWeekly on non-Sunday", async () => {
+    const monday = new Date("2026-07-06T03:14:00");
+    const runReflect = vi.fn(async () => {});
+    const runWeekly = vi.fn(async () => {});
+    const s = new DreamScheduler({
+      dailyTimeHHMM: "03:14",
+      idleMinutes: 0,
+      runReflect,
+      runWeekly,
+      clock: () => monday,
+      onActivityListen: () => () => {},
+    });
+    s.start();
+    await (s as any)._tick();
+    expect(runReflect).toHaveBeenCalledTimes(1);
+    expect(runWeekly).not.toHaveBeenCalled();
+    s.stop();
+  });
+
+  it("runWeekly throw does not affect reflect success bookkeeping", async () => {
+    const sunday = new Date("2026-07-05T03:14:00");
+    const runReflect = vi.fn(async () => {});
+    const runWeekly = vi.fn(async () => { throw new Error("boom"); });
+    const s = new DreamScheduler({
+      dailyTimeHHMM: "03:14",
+      idleMinutes: 0,
+      runReflect,
+      runWeekly,
+      clock: () => sunday,
+      onActivityListen: () => () => {},
+    });
+    s.start();
+    await (s as any)._tick();
+    expect(runReflect).toHaveBeenCalledTimes(1);
+    // second tick should not re-run reflect (daily lock intact)
+    await (s as any)._tick();
+    expect(runReflect).toHaveBeenCalledTimes(1);
+    s.stop();
+  });
+
+  it("no runWeekly configured → non-Sunday and Sunday both work without error", async () => {
+    const sunday = new Date("2026-07-05T03:14:00");
+    const runReflect = vi.fn(async () => {});
+    const s = new DreamScheduler({
+      dailyTimeHHMM: "03:14",
+      idleMinutes: 0,
+      runReflect,
+      clock: () => sunday,
+      onActivityListen: () => () => {},
+    });
+    s.start();
+    await expect((s as any)._tick()).resolves.toBeUndefined();
+    expect(runReflect).toHaveBeenCalledTimes(1);
+    s.stop();
+  });
+});
