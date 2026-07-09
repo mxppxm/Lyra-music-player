@@ -19,11 +19,12 @@ async fn audio_play(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
     path: String,
+    duration_ms: Option<u64>,
 ) -> Result<u64, String> {
     let app_for_emit = app.clone();
     state
         .audio
-        .play_file(std::path::Path::new(&path), move |id| {
+        .play_file(std::path::Path::new(&path), duration_ms, move |id| {
             // Emit to the frontend so the Orchestrator can advance to the
             // next turn. If the app is shutting down and the emit fails,
             // there's nothing meaningful to do — just drop it.
@@ -145,6 +146,12 @@ pub fn run() {
                             version: 6,
                             description: "reasoning traces + latency columns",
                             sql: include_str!("../migrations/006_reasoning_traces.sql"),
+                            kind: MigrationKind::Up,
+                        },
+                        Migration {
+                            version: 7,
+                            description: "weekly_snapshots table",
+                            sql: include_str!("../migrations/007_weekly_snapshots.sql"),
                             kind: MigrationKind::Up,
                         },
                     ],

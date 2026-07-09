@@ -12,7 +12,8 @@ export type AgentKind =
   | "emotion_rule"
   | "reflect"
   | "perception"
-  | "engineer";
+  | "engineer"
+  | "weekly";
 
 export type ReasoningTrace = {
   id: string;
