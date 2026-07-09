@@ -46,6 +46,21 @@ export function parseHHMM(s: string): ParsedHHMM | null {
 }
 
 const TICK_MS = 60_000; // 1 minute
+
+/**
+ * Format a Date as a local-calendar ISO date string ("YYYY-MM-DD") using
+ * local getFullYear/getMonth/getDate rather than UTC-based toISOString().
+ * This ensures the daily-run guard uses the same calendar day as
+ * getDay() / getHours() / getMinutes() — all of which are local-time.
+ * (Review finding C1: UTC toISOString().slice(0,10) disagrees with local
+ * weekday on non-UTC systems, causing duplicate or missed Sunday runs.)
+ */
+function localISO(d: Date): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${dd}`;
+}
 const IDLE_COOLDOWN_MS = 6 * 60 * 60 * 1000; // 6 hours
 const SLEEP_START_H = 22;
 const SLEEP_END_H = 6; // exclusive upper bound for morning
@@ -135,7 +150,7 @@ export class DreamScheduler {
     const { h, m } = parsed;
     if (now.getHours() !== h || now.getMinutes() !== m) return;
 
-    const todayISO = now.toISOString().slice(0, 10);
+    const todayISO = localISO(now);
     if (this._lastDailyRunISO === todayISO) {
       // reflect already ran today; still allow weekly check because weekly
       // has its own per-Sunday guard.

@@ -25,8 +25,8 @@ export async function makeWeeklyDeps(): Promise<RunWeeklyDeps> {
         // SalientMoment doesn't carry a stable DB id; timestampISO uniquely
         // orders salient moments in practice, and dataGather only needs a
         // key for de-dupe + LLM prompt reference. Kind derived from first tag.
-        return moments.map((m) => ({
-          id: m.timestampISO,
+        return moments.map((m, idx) => ({
+          id: `${m.timestampISO}#${idx}`,
           ts: new Date(m.timestampISO).getTime(),
           kind: m.tags[0] ?? "salient",
           text: m.narrative,

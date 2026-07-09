@@ -83,20 +83,36 @@ function validateLetter(obj: unknown): WeeklyLetterJson {
       return mapper(x as Record<string, unknown>);
     });
   };
-  return {
-    greeting: s("greeting"),
-    body: s("body"),
-    songs: arr("songs", (x) => ({
-      song_id: String(x.song_id ?? ""),
-      one_liner: String(x.one_liner ?? ""),
-    })),
-    moments: arr("moments", (x) => ({
-      moment_id: String(x.moment_id ?? ""),
-      whisper: String(x.whisper ?? ""),
-    })),
-    portrait_change: typeof o.portrait_change === "string" ? o.portrait_change : "",
-    closing: s("closing"),
-  };
+  const greeting = s("greeting");
+  const body = s("body");
+  const closing = s("closing");
+  const portrait_change = typeof o.portrait_change === "string" ? o.portrait_change : "";
+  const songs = arr("songs", (x) => ({
+    song_id: String(x.song_id ?? ""),
+    one_liner: String(x.one_liner ?? ""),
+  }));
+  const moments = arr("moments", (x) => ({
+    moment_id: String(x.moment_id ?? ""),
+    whisper: String(x.whisper ?? ""),
+  }));
+
+  // Content enforcement (review finding I2): the LLM must write in first
+  // person. Any 她 in the output or absence of 我 triggers a retry via the
+  // throw — the retry loop in run() swallows it and falls through to
+  // synthesizeFallback + renderer's fallback branch after two attempts.
+  const outText = [
+    greeting, body, closing, portrait_change,
+    ...songs.map((s) => s.one_liner),
+    ...moments.map((m) => m.whisper),
+  ].join("\n");
+  if (outText.includes("她")) {
+    throw new Error("third_person_violation");
+  }
+  if (!outText.includes("我")) {
+    throw new Error("no_first_person");
+  }
+
+  return { greeting, body, songs, moments, portrait_change, closing };
 }
 
 function synthesizeFallback(raw: WeeklyRawData): WeeklyLetterJson {

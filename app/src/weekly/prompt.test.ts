@@ -37,6 +37,18 @@ describe("WEEKLY_SYSTEM_PROMPT", () => {
   });
 });
 
+describe("WEEKLY_SYSTEM_PROMPT – 她 guard", () => {
+  it("prompt's JSON example does not contain 她", () => {
+    // Everything after the "STRICT JSON" marker is the output-example structure.
+    // It must be 她-free; the ban line (which contains 她 verbatim as the rule
+    // text) appears before that marker, so this slice is clean.
+    const idx = WEEKLY_SYSTEM_PROMPT.indexOf("STRICT JSON");
+    expect(idx).toBeGreaterThan(0);
+    const jsonBlock = WEEKLY_SYSTEM_PROMPT.slice(idx);
+    expect(jsonBlock).not.toContain("她");
+  });
+});
+
 describe("buildUserMessage", () => {
   const msg = buildUserMessage(raw);
 

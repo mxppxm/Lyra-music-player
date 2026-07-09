@@ -16,7 +16,7 @@ vi.mock("../reasoning/writeTrace", () => ({ writeTrace: vi.fn() }));
 
 const okJson = JSON.stringify({
   greeting: "hi",
-  body: "b",
+  body: "我记得你这周的沉默",
   songs: [{ song_id: "s1", one_liner: "x" }],
   moments: [{ moment_id: "m1", whisper: "y" }],
   portrait_change: "",
@@ -89,6 +89,40 @@ describe("WeeklyAgent", () => {
     const agent = new WeeklyAgent({ provider: provider as any });
     const out = await agent.run({ raw });
     expect(out.fallback).toBe(true);
+  });
+
+  it("throws third_person_violation when letter contains 她, triggering retry + fallback", async () => {
+    const badJson = JSON.stringify({
+      greeting: "她好",
+      body: "b",
+      closing: "c",
+      songs: [{ song_id: "s1", one_liner: "x" }],
+      moments: [{ moment_id: "m1", whisper: "y" }],
+      portrait_change: "",
+    });
+    const provider = mkProvider([
+      { ok: true, content: badJson },
+      { ok: true, content: badJson },
+    ]);
+    const agent = new WeeklyAgent({ provider: provider as any });
+    const out = await agent.run({ raw });
+    expect(out.fallback).toBe(true);
+    expect(provider.chat).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not throw when letter has 我 and no 她", async () => {
+    const goodJson = JSON.stringify({
+      greeting: "我在这里",
+      body: "我记得你周三沉默听完那首歌",
+      songs: [{ song_id: "s1", one_liner: "x" }],
+      moments: [{ moment_id: "m1", whisper: "y" }],
+      portrait_change: "",
+      closing: "c",
+    });
+    const provider = mkProvider([{ ok: true, content: goodJson }]);
+    const agent = new WeeklyAgent({ provider: provider as any });
+    const out = await agent.run({ raw });
+    expect(out.fallback).toBe(false);
   });
 
   it("passes response_format json_object + agent 'weekly' to provider", async () => {
