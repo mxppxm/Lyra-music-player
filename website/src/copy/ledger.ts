@@ -68,6 +68,16 @@ export const SILENCE = {
   ],
 } as const;
 
+export const CONFIDE = {
+  title: '倾诉是一种力量',
+  body: [
+    '把心里最沉的那一句，说给我',
+    '我不劝，也不评判',
+    '我给你音乐的力量——',
+    '替你，击碎眼前的沮丧',
+  ],
+} as const;
+
 export const GROWTH = {
   title: '我也在慢慢长大',
   body: [

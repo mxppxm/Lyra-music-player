@@ -6,6 +6,7 @@ export const TIME_BASE_COLORS = {
   evening: 'hsl(28, 25%, 88%)',
   midnight: 'hsl(230, 25%, 22%)',
   predawn: 'hsl(235, 30%, 18%)',
+  dawn: 'hsl(20, 30%, 86%)',
 } as const;
 
 export const SECTION_COLORS = [
@@ -15,6 +16,7 @@ export const SECTION_COLORS = [
   TIME_BASE_COLORS.dusk,
   TIME_BASE_COLORS.midnight,
   TIME_BASE_COLORS.predawn,
+  TIME_BASE_COLORS.dawn,
   TIME_BASE_COLORS.morning,
   TIME_BASE_COLORS.forenoon,
   TIME_BASE_COLORS.morning,
