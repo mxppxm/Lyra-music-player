@@ -8,6 +8,9 @@
 # OMC (oh-my-claudecode) local state
 .omc/
 
+# Superpowers planning artifacts (local-only)
+docs/superpowers/
+
 # Node
 node_modules/
 
