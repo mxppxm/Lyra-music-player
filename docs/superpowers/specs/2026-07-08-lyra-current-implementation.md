@@ -103,10 +103,11 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 
 ### 4.4 曲库 · Library 层
 
-**L1 · 索引**：`libraryScan.ts` + Rust `library_scan.rs`（walkdir + lofty）
+**L1 · 索引**：`libraryScan.ts` + Rust `library_scan.rs`（walkdir + lofty）。**Self-heal**(本会话加):`importLibrary` 返回 `{ imported, pruned }` — 每次 Settings 保存/触发扫描时,老行 path 若还落在 rootPath 之下但已不在本次 scan 里,`deleteTrackCascade` 悄悄清掉(顺带 lyrics_embeddings + features)。三条安全护栏:scan 至少 1 首、path 以 rootPath 前缀严格匹配(带 trailing slash 防 `/A` 匹到 `/Apple`)、path 不在 scan 集合中。/reload-musics 依然是全清全扫的显式选项。
 **L2 · 关键词**：`LibraryAgent.tokenize + keywordScore`
-**L3 · 特征匹配**（Sprint 9/12）：`libraryFeaturesRepo` 存 RMS energy + 谱重心 valence + BPM，Rust `audio_features.rs` 用 rustfft 提取。BPM 走 spectral-flux + autocorrelation，[60, 200] 范围,120 BPM click track ±5 内命中,无节拍返 0 → NULL。已入 Data Explorer 曲库 tab,**尚未** 进入 LibraryAgent 打分公式（等 PAD→target BPM 的推断设计）
-**L3.5 · 语义**（Sprint 10 加）：`lyricsEmbeddingsRepo` 存 Zhipu/OpenAI embedding，`LibraryAgent` 加 sem 分量。三分加权公式 `sem 0.5 / pad 0.3 / kw 0.2`，缺分量自动归一化（老 Sprint 9 公式 0.4/0.6 是等价降级路径）
+**L3 · 特征匹配**（Sprint 9/12）：`libraryFeaturesRepo` 存 RMS energy + 谱重心 valence + BPM，Rust `audio_features.rs` 用 rustfft 提取。BPM 走 spectral-flux + autocorrelation，[60, 200] 范围,120 BPM click track ±5 内命中,无节拍返 0 → NULL。已入 Data Explorer 曲库 tab。
+**L3.5 · 语义**（Sprint 10 加）：`lyricsEmbeddingsRepo` 存 Zhipu/OpenAI embedding，`LibraryAgent` 加 sem 分量。
+**L3.6 · BPM 参与打分**（本会话加,Sprint 12 follow-up）：`src/agents/padToBpm.ts` 把 PAD 映射成 `{ targetBpm, tolerance }` — arousal 是主轴(线性斜率 45,极值 55/145bpm),dominance 微调 ±5,输出 clamp [50, 180],tolerance 固定 22bpm。`LibraryAgent.prefilter` 现按四维加权 `sem 0.4 / pad 0.25 / bpm 0.2 / kw 0.15`,缺一维自动重新归一化。曲目 bpm=null 时该维不参与打分,老库无 BPM 时行为等价于 Sprint 10 (kw+pad+sem)。测试新增高唤起→140bpm 排在 60bpm 之前 / 低唤起→反过来 / 全 null bpm 时降级路径 三条。
 
 ### 4.5 记忆 · Reflect 层
 
@@ -146,6 +147,7 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 
 - Rust `audio.rs`：rodio + symphonia，`AtomicU64 current_id` 区分自然完成 / 手动停止 / 被下一首取代
 - Watcher thread emit `audio-complete` 只在自然完成
+- **duration-hint 兜底**（本会话加）：`play_file` 接受 `duration_hint_ms: Option<u64>`。除了原有的 `Sink::empty()` 300ms 轮询,再启一条 timer 线程 `sleep(duration + 750ms)` 后 fire `on_complete`。两路共享 `Arc<Mutex<Option<Box<dyn FnOnce>>>>`,`Option::take()` 保证只 fire 一次。修 rodio 0.19 + symphonia 部分 MP3 尾帧 `sound_count` 不减到零→原轮询永远等待→自动接歌不 fire 的 bug。Orchestrator 从 `song.duration_ms` 直接透传
 - **autoAdvance**：完整无 guard 循环——朋友不会突然沉默然后等你重新开话头
 
 ### 4.10 观察性（Sprint 11）
@@ -185,6 +187,7 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - `/stats` → 打开 Data Explorer 的 LLM 用量 tab
 - `/explorer` → 打开 Data Explorer 默认 tab
 - `/help` → 打开 HelpOverlay（第一人称文案:命令表 · 五字理念 · 怎么和我说话 · 数据在哪里)。Esc / 背景点击 / 「好」按钮均可关闭
+- `/reload-musics`（本会话加）→ 清 `library_tracks` / `library_features` / `library_lyrics_embeddings`,从 `libraryRootPath` 重扫 + 特征提取 + 歌词 embedding。**日常场景 Settings 保存已具备 self-heal 能力**(见 §4.4 L1);这条命令保留作为**全清全扫**的显式选项,比如换歌词 embedding provider 后强制刷新所有 embedding。进度写入 SmallNote,`done` 变体同时报 `imported / pruned`;走 `src/library/reloadLibrary.ts`,先 `stopPlayback` 避免 sink 抓着即将删除的行
 - 严格匹配前缀 trim 后完全等于命令，其他一律 falls through 进 Orchestrator 走正常对话
 
 ### 4.13 LLM 输出加固（本会话）
@@ -278,7 +281,6 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 **技术 defer（等时机）：**
 - **网络多源曲库解析**（网易云 / QQ / YouTube）—— 灰区，需要用户拍板
 - **豆包 Seed-Music** 音乐生成兜底（候选歌都不合适时她自作一首）
-- **BPM 参与打分**（BPM 已入库+展示,尚未进 LibraryAgent 三分加权——需 PAD→target BPM 的推断设计）
 - **工程师 agent 真代码写入通道**（v0.3-α 只 propose）
 - **Yellow zone diff preview + Discuss with agent 聊天面板**
 - **季度演化 + evolution log**（数据不够）
@@ -287,11 +289,11 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 - **多用户/云同步**——反范围（spec §6.5），永远不做
 - **MCP/Skill 插件形态**（进入其他 IDE 上下文）——需要重新与 5 字哲学对齐
 
-**Sprint 10 review 遗留（MINOR）：**
-- `computeLyricsEmbedding` dim mismatch 加 `console.warn`
-- `lyricsRefill` cursor++ 加 "JS event loop safe" 注释
-- Rust `lyrics.rs` 加 "returns Some for valid USLT" 正向 unit test
-- `lyricsEmbeddingsRepo` 加 encode → decode round-trip 集成 test
+**Sprint 10 review 遗留(MINOR)—— 本会话已清:**
+- ✅ `computeLyricsEmbedding` dim mismatch 现在 `console.warn` 一行 + 测试锁 (含 provider modelId / 期望 dim / 实际长度)
+- ✅ `lyricsRefill` cursor++ 头顶补一段 JS 单线程 event loop 原子性注释
+- ⚠️ Rust `lyrics.rs` 正向 USLT test 已落 `returns_some_for_valid_uslt_frame`,但 lofty 0.22 拒绝解析裸 ID3v2.3 tag(无 MPEG audio frame),test 走显式 `eprintln!` skip 分支。构造带真 MP3 frame 的最小 fixture 是 lofty 侧的独立问题,不阻塞本条正向断言的"要么绿要么显式 skip"合同
+- ✅ `lyricsEmbeddingsRepo` 加 Float32Array → SQLite blob → Float32Array round-trip test,含负值 / 0 / 分数三种边界,Object.is 逐位比对
 
 ---
 
@@ -302,13 +304,14 @@ onSongComplete → finalisePreviousTurn(silence_positive:true)
 | v0.1 | 本地曲库 + 对话 + 记忆 | ✅ 完成 |
 | v0.2-α | Perception Agent v1（规则式）| ✅ 完成（Sprint 4） |
 | v0.2 | Perception LLM + 自调参数 + 音频特征 + 歌词 embedding + 观察性 + BPM + 情感预测通道 | ✅ 完成（Sprint 7/8/9/10/11/12） |
-| v0.2.x | 剩余功能:网络多源、豆包 Seed-Music、BPM 参与打分 | 待做 |
+| v0.2.x | 剩余功能:网络多源、豆包 Seed-Music | 待做 |
+| v0.2.x-hotfix | BPM 参与打分 · /reload-musics · duration-hint 兜底 auto-advance · Sprint 10 review MINOR 收尾 · 曲库 self-heal 剪枝 | ✅ 完成(本会话) |
 | v0.2.y | 平台加固:LLM 输出容错(parseLooseJson) + JSON mode 透传 + 竖屏窗口 | ✅ 完成 |
 | v0.2.z | 感知广谱事件(scroll/hover_dwell/input_dwell/focus_no_interaction + 5 维 + 3 rule + 隐私粗化层) | ✅ 完成（Sprint 13） |
 | v0.3-α | 工程师 agent propose-only | ✅ 完成（Sprint 5） |
 | v0.3 | 工程师真代码通道 + 季度演化 + Perception LLM 默认化 | 待做 |
 | v0.4+ | 身体连接（戒指等） | 待评估是否符合哲学 |
 
-**代码基线**：674 vitest / 33 cargo / typecheck 0 / build 321 KB / 89 test files。
+**代码基线**：690 vitest / 35 cargo / typecheck 0 / 89 test files(本会话累计新增 padToBpm 7 · LibraryAgent BPM 3 · reloadLibrary 5 · slashCommand 1 · player 1 · audio duration-hint 1 · computeLyricsEmbedding warn 1 · lyricsEmbeddingsRepo round-trip 1 · lyrics.rs 正向 USLT 1 · libraryScan prune 3;build 未重跑)。
 
 **Lyra 不完美，但她是活的。**

@@ -268,7 +268,7 @@ Lyra 的**灵动**不能靠动画多,要靠**"以静写动"**:一根几乎不动
 **时间线**:
 
 ```
-0.0s  封面 A + 小注 "*给你的早。*" fade in (600ms cubic-bezier)
+0.0s  封面 A + 小注 "*给你的早安。*" fade in (600ms cubic-bezier)
 1.5s  EmotionLightBand 首次呼吸 (hardcoded PAD = (0.3, -0.1, 0.2))
 3.0s  封面 A fade out (600ms)
 3.5s  封面 B fade in + 小注变 "*我猜你今天想要慢一点。*"
@@ -288,7 +288,7 @@ Lyra 的**灵动**不能靠动画多,要靠**"以静写动"**:一根几乎不动
 import { EmotionLightBand } from '../../../app/src/components/EmotionLightBand';
 
 const TIMELINE = [
-  { at: 0.0, coverIdx: 0, caption: '给你的早。' },
+  { at: 0.0, coverIdx: 0, caption: '给你的早安。' },
   { at: 3.5, coverIdx: 1, caption: '我猜你今天想要慢一点。' },
 ];
 

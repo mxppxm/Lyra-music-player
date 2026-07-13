@@ -345,7 +345,7 @@ export const HERO = {
   inputHint: '她还没能出门,但你可以留一句话给她。',
   bottleReplyMain: '「她这里听不到你。但她会记得——等你打开她那天。」',
   bottleReplyAside: '你说的那句话,已经存在你的浏览器里了。',
-  demoCaptionA: '给你的早。',
+  demoCaptionA: '给你的早安。',
   demoCaptionB: '我猜你今天想要慢一点。',
 } as const;
 
@@ -1409,7 +1409,7 @@ if (i === 0) {
 ```
 
 Run: `pnpm --filter @lyra/website dev`
-Expected: Hero 中间 400×400 水彩封面 A + `给你的早。` 显示 ~3s → 全部淡出 → 淡入水彩 B + `我猜你今天想要慢一点。` → 循环。
+Expected: Hero 中间 400×400 水彩封面 A + `给你的早安。` 显示 ~3s → 全部淡出 → 淡入水彩 B + `我猜你今天想要慢一点。` → 循环。
 reduce-motion 时:静态卡在 A,不循环。
 
 - [ ] **Step 4: Commit**

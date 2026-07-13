@@ -7,7 +7,7 @@
 ## How to observe
 
 ```bash
-cd /Users/daoyu/Documents/my-github/idea/音乐播放器/app
+cd /Users/daoyu/Documents/my-github/Lyra-music-player/app
 pnpm tauri dev
 ```
 

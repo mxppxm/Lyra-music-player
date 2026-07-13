@@ -50,7 +50,7 @@ Lyra is a desktop music agent built with **Tauri 2** + **React 19** + **TypeScri
 
 1. Clone and navigate to the app directory:
    ```bash
-   cd /Users/daoyu/Documents/my-github/idea/音乐播放器/app
+   cd /Users/daoyu/Documents/my-github/Lyra-music-player/app
    ```
 
 2. Install dependencies:
