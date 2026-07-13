@@ -66,7 +66,7 @@ Lyra-music-player/
 
 ```bash
 # 克隆
-git clone <repo-url>
+git clone git@github.com:daoyuly/Lyra-music-player.git
 cd Lyra-music-player
 
 # 安装应用依赖

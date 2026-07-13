@@ -25,7 +25,7 @@
 
 ## File Structure
 
-**新建**(TypeScript 侧,`音乐播放器/app/src/weekly/`):
+**新建**(TypeScript 侧,`app/src/weekly/`):
 - `WeeklyAgent.ts` — agent class,LLM 调用 + retry + fallback + writeTrace
 - `WeeklyAgent.test.ts`
 - `prompt.ts` — `WEEKLY_SYSTEM_PROMPT` + `buildUserMessage(raw)`
@@ -38,35 +38,35 @@
 - `weeklyPaths.test.ts`
 - `weekly.integration.test.ts` — 真 in-memory sqlite + 全 migrations + fixture
 
-**新建**(TypeScript 侧,`音乐播放器/app/src/db/repo/`):
+**新建**(TypeScript 侧,`app/src/db/repo/`):
 - `weeklyRepo.ts`
 - `weeklyRepo.test.ts`
 
-**新建**(Rust 侧,`音乐播放器/app/src-tauri/`):
+**新建**(Rust 侧,`app/src-tauri/`):
 - `src/weekly.rs` — `write_weekly_html` + `open_weekly_html` + `path_exists`
 - `tests/weekly_test.rs`
 - `migrations/007_weekly_snapshots.sql`
 
 **修改**:
-- `音乐播放器/app/src-tauri/src/lib.rs` — 声明 `pub mod weekly;`,注册 migration 007,invoke_handler 追加 3 命令
-- `音乐播放器/app/src/db/repo/reasoningTracesRepo.ts` — `AgentKind` union 加 `"weekly"`
-- `音乐播放器/app/src/settings/secrets.ts` — `SECRET_KEYS` 加 2 字段
-- `音乐播放器/app/src/settings/Settings.tsx` — 追加 weekly 配置区块
-- `音乐播放器/app/src/home/slashCommand.ts` — `SlashCommand` union 加 `{ kind: "week" }`,`parseSlashCommand` 匹配 `/week`
-- `音乐播放器/app/src/home/slashCommand.test.ts` — 追加 `/week` 用例
-- `音乐播放器/app/src/home/HomeView.tsx` — 新 prop `onWeek?: () => Promise<void>`,`submit` 里分发
-- `音乐播放器/app/src/schedule/dreamScheduler.ts` — config 加 `runWeekly?`,daily tick 里周日 branch
-- `音乐播放器/app/src/schedule/dreamScheduler.test.ts` — 追加 weekly 触发用例
-- `音乐播放器/app/src/App.tsx`(或应用装配位) — 装配 WeeklyAgent 实例 + `/week` handler 连线
+- `app/src-tauri/src/lib.rs` — 声明 `pub mod weekly;`,注册 migration 007,invoke_handler 追加 3 命令
+- `app/src/db/repo/reasoningTracesRepo.ts` — `AgentKind` union 加 `"weekly"`
+- `app/src/settings/secrets.ts` — `SECRET_KEYS` 加 2 字段
+- `app/src/settings/Settings.tsx` — 追加 weekly 配置区块
+- `app/src/home/slashCommand.ts` — `SlashCommand` union 加 `{ kind: "week" }`,`parseSlashCommand` 匹配 `/week`
+- `app/src/home/slashCommand.test.ts` — 追加 `/week` 用例
+- `app/src/home/HomeView.tsx` — 新 prop `onWeek?: () => Promise<void>`,`submit` 里分发
+- `app/src/schedule/dreamScheduler.ts` — config 加 `runWeekly?`,daily tick 里周日 branch
+- `app/src/schedule/dreamScheduler.test.ts` — 追加 weekly 触发用例
+- `app/src/App.tsx`(或应用装配位) — 装配 WeeklyAgent 实例 + `/week` handler 连线
 
 ---
 
 ## Task 1: Migration 007 + AgentKind 扩展
 
 **Files:**
-- Create: `音乐播放器/app/src-tauri/migrations/007_weekly_snapshots.sql`
-- Modify: `音乐播放器/app/src-tauri/src/lib.rs:112-160`(向 `add_migrations` vec 追加 v7)
-- Modify: `音乐播放器/app/src/db/repo/reasoningTracesRepo.ts:9-15`(AgentKind 加 `"weekly"`)
+- Create: `app/src-tauri/migrations/007_weekly_snapshots.sql`
+- Modify: `app/src-tauri/src/lib.rs:112-160`(向 `add_migrations` vec 追加 v7)
+- Modify: `app/src/db/repo/reasoningTracesRepo.ts:9-15`(AgentKind 加 `"weekly"`)
 
 **Interfaces:**
 - Consumes: 既有 `Migration { version, description, sql, kind }` 模式
@@ -74,7 +74,7 @@
 
 - [ ] **Step 1: 建 migration SQL**
 
-Create `音乐播放器/app/src-tauri/migrations/007_weekly_snapshots.sql`:
+Create `app/src-tauri/migrations/007_weekly_snapshots.sql`:
 
 ```sql
 -- Sprint · 周报(一封信)
@@ -100,7 +100,7 @@ CREATE INDEX idx_weekly_created ON weekly_snapshots(created_at DESC);
 
 - [ ] **Step 2: 在 `lib.rs` 的 `add_migrations` vec 追加 v7 条目**
 
-Modify `音乐播放器/app/src-tauri/src/lib.rs:145-150`(紧跟 v6 之后):
+Modify `app/src-tauri/src/lib.rs:145-150`(紧跟 v6 之后):
 
 ```rust
                         Migration {
@@ -119,7 +119,7 @@ Modify `音乐播放器/app/src-tauri/src/lib.rs:145-150`(紧跟 v6 之后):
 
 - [ ] **Step 3: `AgentKind` 加 `"weekly"`**
 
-Modify `音乐播放器/app/src/db/repo/reasoningTracesRepo.ts:9-15`:
+Modify `app/src/db/repo/reasoningTracesRepo.ts:9-15`:
 
 ```ts
 export type AgentKind =
@@ -134,20 +134,20 @@ export type AgentKind =
 
 - [ ] **Step 4: 跑 cargo build 验证 migration 编译**
 
-Run: `cd 音乐播放器/app/src-tauri && cargo check`
+Run: `cd app/src-tauri && cargo check`
 Expected: no errors(migration `include_str!` 路径解析成功)
 
 - [ ] **Step 5: 跑 vitest 验证 AgentKind 类型改动无 downstream 断链**
 
-Run: `cd 音乐播放器/app && pnpm test -- reasoningTraces`
+Run: `cd app && pnpm test -- reasoningTraces`
 Expected: existing repo tests pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add 音乐播放器/app/src-tauri/migrations/007_weekly_snapshots.sql \
-        音乐播放器/app/src-tauri/src/lib.rs \
-        音乐播放器/app/src/db/repo/reasoningTracesRepo.ts
+git add app/src-tauri/migrations/007_weekly_snapshots.sql \
+        app/src-tauri/src/lib.rs \
+        app/src/db/repo/reasoningTracesRepo.ts
 git commit -m "feat(lyra): migration 007 weekly_snapshots + AgentKind 'weekly'"
 ```
 
@@ -156,8 +156,8 @@ git commit -m "feat(lyra): migration 007 weekly_snapshots + AgentKind 'weekly'"
 ## Task 2: `weeklyRepo` CRUD + tests
 
 **Files:**
-- Create: `音乐播放器/app/src/db/repo/weeklyRepo.ts`
-- Create: `音乐播放器/app/src/db/repo/weeklyRepo.test.ts`
+- Create: `app/src/db/repo/weeklyRepo.ts`
+- Create: `app/src/db/repo/weeklyRepo.test.ts`
 
 **Interfaces:**
 - Consumes: `getDb()` from `../client`
@@ -168,7 +168,7 @@ git commit -m "feat(lyra): migration 007 weekly_snapshots + AgentKind 'weekly'"
   - `findByWindow(start: string, end: string): Promise<WeeklySnapshotRow | null>`
   - `deleteByWindow(start: string, end: string): Promise<void>`
 
-- [ ] **Step 1: 写失败测试** — `音乐播放器/app/src/db/repo/weeklyRepo.test.ts`
+- [ ] **Step 1: 写失败测试** — `app/src/db/repo/weeklyRepo.test.ts`
 
 Fixture 结构参照 `reasoningTracesRepo.test.ts`(mock `getDb` 返 `{ execute, select }` 假实现):
 
@@ -296,12 +296,12 @@ describe("weeklyRepo", () => {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app && pnpm test -- weeklyRepo`
+Run: `cd app && pnpm test -- weeklyRepo`
 Expected: FAIL(`Cannot find module './weeklyRepo'`)
 
 - [ ] **Step 3: 实现 `weeklyRepo.ts`**
 
-Create `音乐播放器/app/src/db/repo/weeklyRepo.ts`:
+Create `app/src/db/repo/weeklyRepo.ts`:
 
 ```ts
 import { getDb } from "../client";
@@ -375,13 +375,13 @@ export async function deleteByWindow(
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- weeklyRepo`
+Run: `cd app && pnpm test -- weeklyRepo`
 Expected: 6 passed
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/db/repo/weeklyRepo.ts 音乐播放器/app/src/db/repo/weeklyRepo.test.ts
+git add app/src/db/repo/weeklyRepo.ts app/src/db/repo/weeklyRepo.test.ts
 git commit -m "feat(lyra): weeklyRepo CRUD + UNIQUE-per-window guard"
 ```
 
@@ -390,10 +390,10 @@ git commit -m "feat(lyra): weeklyRepo CRUD + UNIQUE-per-window guard"
 ## Task 3: Rust `weekly.rs` 命令 + cargo tests
 
 **Files:**
-- Create: `音乐播放器/app/src-tauri/src/weekly.rs`
-- Create: `音乐播放器/app/src-tauri/tests/weekly_test.rs`
-- Modify: `音乐播放器/app/src-tauri/src/lib.rs:1-6`(声明 `pub mod weekly;`)
-- Modify: `音乐播放器/app/src-tauri/src/lib.rs:164-179`(invoke_handler 追加 3 命令)
+- Create: `app/src-tauri/src/weekly.rs`
+- Create: `app/src-tauri/tests/weekly_test.rs`
+- Modify: `app/src-tauri/src/lib.rs:1-6`(声明 `pub mod weekly;`)
+- Modify: `app/src-tauri/src/lib.rs:164-179`(invoke_handler 追加 3 命令)
 
 **Interfaces:**
 - Consumes: `std::fs` / `std::path` / `tauri_plugin_opener::OpenerExt`
@@ -402,7 +402,7 @@ git commit -m "feat(lyra): weeklyRepo CRUD + UNIQUE-per-window guard"
   - `open_weekly_html(app: AppHandle, path: String) -> Result<(), String>` — 用 opener plugin 拉起系统默认浏览器
   - `path_exists(path: String) -> Result<bool, String>`
 
-- [ ] **Step 1: 写 cargo 测试** — `音乐播放器/app/src-tauri/tests/weekly_test.rs`
+- [ ] **Step 1: 写 cargo 测试** — `app/src-tauri/tests/weekly_test.rs`
 
 ```rust
 use std::fs;
@@ -458,12 +458,12 @@ Note: 命令函数直接绑 `#[tauri::command]` 时不便测,所以在 `weekly.r
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app/src-tauri && cargo test weekly_test`
+Run: `cd app/src-tauri && cargo test weekly_test`
 Expected: FAIL(module `weekly` not found)
 
 - [ ] **Step 3: 实现 `weekly.rs`**
 
-Create `音乐播放器/app/src-tauri/src/weekly.rs`:
+Create `app/src-tauri/src/weekly.rs`:
 
 ```rust
 // Weekly letter file I/O commands.
@@ -508,7 +508,7 @@ pub async fn path_exists(path: String) -> Result<bool, String> {
 
 - [ ] **Step 4: 在 `lib.rs` 声明模块 + 注册命令**
 
-Modify `音乐播放器/app/src-tauri/src/lib.rs:1-6`:
+Modify `app/src-tauri/src/lib.rs:1-6`:
 
 ```rust
 pub mod audio;
@@ -520,7 +520,7 @@ pub mod tray;
 pub mod weekly;
 ```
 
-Modify `音乐播放器/app/src-tauri/src/lib.rs:164-179`(invoke_handler 追加 3 项):
+Modify `app/src-tauri/src/lib.rs:164-179`(invoke_handler 追加 3 项):
 
 ```rust
         .invoke_handler(tauri::generate_handler![
@@ -546,9 +546,9 @@ Modify `音乐播放器/app/src-tauri/src/lib.rs:164-179`(invoke_handler 追加 
 
 - [ ] **Step 5: 若 `Cargo.toml` 里 `dev-dependencies` 缺 `tempfile`,追加**
 
-Check `音乐播放器/app/src-tauri/Cargo.toml`,若 `[dev-dependencies]` 里没有 `tempfile`,追加一行 `tempfile = "3"`。
+Check `app/src-tauri/Cargo.toml`,若 `[dev-dependencies]` 里没有 `tempfile`,追加一行 `tempfile = "3"`。
 
-Run: `cd 音乐播放器/app/src-tauri && grep -q "^tempfile" Cargo.toml || echo NEEDS_ADD`
+Run: `cd app/src-tauri && grep -q "^tempfile" Cargo.toml || echo NEEDS_ADD`
 
 If NEEDS_ADD,edit `Cargo.toml` under `[dev-dependencies]`:
 
@@ -558,21 +558,21 @@ tempfile = "3"
 
 - [ ] **Step 6: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app/src-tauri && cargo test weekly_test`
+Run: `cd app/src-tauri && cargo test weekly_test`
 Expected: 5 passed
 
 - [ ] **Step 7: cargo build 全量确认没打坏 Tauri 主 crate**
 
-Run: `cd 音乐播放器/app/src-tauri && cargo build`
+Run: `cd app/src-tauri && cargo build`
 Expected: no errors
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add 音乐播放器/app/src-tauri/src/weekly.rs \
-        音乐播放器/app/src-tauri/tests/weekly_test.rs \
-        音乐播放器/app/src-tauri/src/lib.rs \
-        音乐播放器/app/src-tauri/Cargo.toml
+git add app/src-tauri/src/weekly.rs \
+        app/src-tauri/tests/weekly_test.rs \
+        app/src-tauri/src/lib.rs \
+        app/src-tauri/Cargo.toml
 git commit -m "feat(lyra): rust weekly.rs — atomic HTML write + opener + path_exists"
 ```
 
@@ -581,8 +581,8 @@ git commit -m "feat(lyra): rust weekly.rs — atomic HTML write + opener + path_
 ## Task 4: `weeklyPaths.ts` — 目录/文件名/窗口纯函数
 
 **Files:**
-- Create: `音乐播放器/app/src/weekly/weeklyPaths.ts`
-- Create: `音乐播放器/app/src/weekly/weeklyPaths.test.ts`
+- Create: `app/src/weekly/weeklyPaths.ts`
+- Create: `app/src/weekly/weeklyPaths.test.ts`
 
 **Interfaces:**
 - Consumes: `@tauri-apps/api/path` 的 `appDataDir` / `join`(仅 `resolveWeeklyDir` 的默认分支需要;测试里注入替代)
@@ -592,7 +592,7 @@ git commit -m "feat(lyra): rust weekly.rs — atomic HTML write + opener + path_
   - `filenameFor(window: WeekWindow): string` — `YYYY-MM-DD_to_YYYY-MM-DD.html`(只取日期部分)
   - `resolveWeeklyDir(dirOverride: string | null, joiner: (a: string, b: string) => Promise<string>, appDataDir: () => Promise<string>): Promise<string>` — override 非空返 override;否则 `joiner(await appDataDir(), "weeklies")`
 
-- [ ] **Step 1: 写测试** — `音乐播放器/app/src/weekly/weeklyPaths.test.ts`
+- [ ] **Step 1: 写测试** — `app/src/weekly/weeklyPaths.test.ts`
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -654,12 +654,12 @@ describe("resolveWeeklyDir", () => {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app && pnpm test -- weeklyPaths`
+Run: `cd app && pnpm test -- weeklyPaths`
 Expected: FAIL(module 不存在)
 
 - [ ] **Step 3: 实现 `weeklyPaths.ts`**
 
-Create `音乐播放器/app/src/weekly/weeklyPaths.ts`:
+Create `app/src/weekly/weeklyPaths.ts`:
 
 ```ts
 export type WeekWindow = {
@@ -723,13 +723,13 @@ export async function resolveWeeklyDir(
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- weeklyPaths`
+Run: `cd app && pnpm test -- weeklyPaths`
 Expected: 6 passed
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/weekly/weeklyPaths.ts 音乐播放器/app/src/weekly/weeklyPaths.test.ts
+git add app/src/weekly/weeklyPaths.ts app/src/weekly/weeklyPaths.test.ts
 git commit -m "feat(lyra): weeklyPaths — rolling 7d window + filename + dir resolve"
 ```
 
@@ -738,8 +738,8 @@ git commit -m "feat(lyra): weeklyPaths — rolling 7d window + filename + dir re
 ## Task 5: `dataGather.ts` — 7 天窗口数据抽取
 
 **Files:**
-- Create: `音乐播放器/app/src/weekly/dataGather.ts`
-- Create: `音乐播放器/app/src/weekly/dataGather.test.ts`
+- Create: `app/src/weekly/dataGather.ts`
+- Create: `app/src/weekly/dataGather.test.ts`
 
 **Interfaces:**
 - Consumes:
@@ -757,7 +757,7 @@ git commit -m "feat(lyra): weeklyPaths — rolling 7d window + filename + dir re
 
 Note:实际实现 collectWindow 里的 repo 通过 deps 注入(不直 import),便于测试;真运行时装配代码在 Task 9 里连接实模块。
 
-- [ ] **Step 1: 写测试** — `音乐播放器/app/src/weekly/dataGather.test.ts`
+- [ ] **Step 1: 写测试** — `app/src/weekly/dataGather.test.ts`
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -897,12 +897,12 @@ describe("collectWindow", () => {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app && pnpm test -- weekly/dataGather`
+Run: `cd app && pnpm test -- weekly/dataGather`
 Expected: FAIL
 
 - [ ] **Step 3: 实现 `dataGather.ts`**
 
-Create `音乐播放器/app/src/weekly/dataGather.ts`:
+Create `app/src/weekly/dataGather.ts`:
 
 ```ts
 import type { DialogueTurn, PAD } from "../types";
@@ -1033,13 +1033,13 @@ function parseLivingPortrait(md: string): string {
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- weekly/dataGather`
+Run: `cd app && pnpm test -- weekly/dataGather`
 Expected: 8 passed
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/weekly/dataGather.ts 音乐播放器/app/src/weekly/dataGather.test.ts
+git add app/src/weekly/dataGather.ts app/src/weekly/dataGather.test.ts
 git commit -m "feat(lyra): weekly dataGather — 7d window / pad series / songs / portrait parse"
 ```
 
@@ -1048,8 +1048,8 @@ git commit -m "feat(lyra): weekly dataGather — 7d window / pad series / songs 
 ## Task 6: `weeklyRenderer.ts` — letter + 数据 → HTML
 
 **Files:**
-- Create: `音乐播放器/app/src/weekly/weeklyRenderer.ts`
-- Create: `音乐播放器/app/src/weekly/weeklyRenderer.test.ts`
+- Create: `app/src/weekly/weeklyRenderer.ts`
+- Create: `app/src/weekly/weeklyRenderer.test.ts`
 
 **Interfaces:**
 - Consumes: `WeeklyRawData` from `./dataGather`
@@ -1058,7 +1058,7 @@ git commit -m "feat(lyra): weekly dataGather — 7d window / pad series / songs 
   - `render(letter: WeeklyLetterJson, raw: WeeklyRawData, opts: { fallback: boolean }): string` — HTML 字符串
   - `padToHsl(pad: PAD): string` — pure
 
-- [ ] **Step 1: 写测试** — `音乐播放器/app/src/weekly/weeklyRenderer.test.ts`
+- [ ] **Step 1: 写测试** — `app/src/weekly/weeklyRenderer.test.ts`
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -1196,12 +1196,12 @@ describe("XSS escape", () => {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app && pnpm test -- weeklyRenderer`
+Run: `cd app && pnpm test -- weeklyRenderer`
 Expected: FAIL
 
 - [ ] **Step 3: 实现 `weeklyRenderer.ts`**
 
-Create `音乐播放器/app/src/weekly/weeklyRenderer.ts`:
+Create `app/src/weekly/weeklyRenderer.ts`:
 
 ```ts
 import type { PAD } from "../types";
@@ -1330,13 +1330,13 @@ const STYLE = `
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- weeklyRenderer`
+Run: `cd app && pnpm test -- weeklyRenderer`
 Expected: all passed
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/weekly/weeklyRenderer.ts 音乐播放器/app/src/weekly/weeklyRenderer.test.ts
+git add app/src/weekly/weeklyRenderer.ts app/src/weekly/weeklyRenderer.test.ts
 git commit -m "feat(lyra): weeklyRenderer — HTML with inline CSS/SVG, XSS-escape, fallback branch"
 ```
 
@@ -1345,8 +1345,8 @@ git commit -m "feat(lyra): weeklyRenderer — HTML with inline CSS/SVG, XSS-esca
 ## Task 7: `prompt.ts` — WEEKLY_SYSTEM_PROMPT + buildUserMessage
 
 **Files:**
-- Create: `音乐播放器/app/src/weekly/prompt.ts`
-- Create: `音乐播放器/app/src/weekly/prompt.test.ts`
+- Create: `app/src/weekly/prompt.ts`
+- Create: `app/src/weekly/prompt.test.ts`
 
 **Interfaces:**
 - Consumes: `WeeklyRawData` from `./dataGather`
@@ -1354,7 +1354,7 @@ git commit -m "feat(lyra): weeklyRenderer — HTML with inline CSS/SVG, XSS-esca
   - `WEEKLY_SYSTEM_PROMPT: string`
   - `buildUserMessage(raw: WeeklyRawData): string`
 
-- [ ] **Step 1: 写测试** — `音乐播放器/app/src/weekly/prompt.test.ts`
+- [ ] **Step 1: 写测试** — `app/src/weekly/prompt.test.ts`
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -1427,12 +1427,12 @@ describe("buildUserMessage", () => {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app && pnpm test -- weekly/prompt`
+Run: `cd app && pnpm test -- weekly/prompt`
 Expected: FAIL
 
 - [ ] **Step 3: 实现 `prompt.ts`**
 
-Create `音乐播放器/app/src/weekly/prompt.ts`:
+Create `app/src/weekly/prompt.ts`:
 
 ```ts
 import type { WeeklyRawData } from "./dataGather";
@@ -1528,13 +1528,13 @@ export function buildUserMessage(raw: WeeklyRawData): string {
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- weekly/prompt`
+Run: `cd app && pnpm test -- weekly/prompt`
 Expected: all passed
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/weekly/prompt.ts 音乐播放器/app/src/weekly/prompt.test.ts
+git add app/src/weekly/prompt.ts app/src/weekly/prompt.test.ts
 git commit -m "feat(lyra): weekly prompt — 第一人称 letter with JSON schema constraints"
 ```
 
@@ -1543,8 +1543,8 @@ git commit -m "feat(lyra): weekly prompt — 第一人称 letter with JSON schem
 ## Task 8: `WeeklyAgent.ts` — LLM 调用 + retry + fallback
 
 **Files:**
-- Create: `音乐播放器/app/src/weekly/WeeklyAgent.ts`
-- Create: `音乐播放器/app/src/weekly/WeeklyAgent.test.ts`
+- Create: `app/src/weekly/WeeklyAgent.ts`
+- Create: `app/src/weekly/WeeklyAgent.test.ts`
 
 **Interfaces:**
 - Consumes:
@@ -1561,7 +1561,7 @@ git commit -m "feat(lyra): weekly prompt — 第一人称 letter with JSON schem
 
 Sparse-week guard 不放在 agent 里(agent 只跑 LLM);guard 在装配层判断(见 Task 9)。
 
-- [ ] **Step 1: 写测试** — `音乐播放器/app/src/weekly/WeeklyAgent.test.ts`
+- [ ] **Step 1: 写测试** — `app/src/weekly/WeeklyAgent.test.ts`
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -1672,12 +1672,12 @@ describe("WeeklyAgent", () => {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app && pnpm test -- WeeklyAgent`
+Run: `cd app && pnpm test -- WeeklyAgent`
 Expected: FAIL
 
 - [ ] **Step 3: 实现 `WeeklyAgent.ts`**
 
-Create `音乐播放器/app/src/weekly/WeeklyAgent.ts`:
+Create `app/src/weekly/WeeklyAgent.ts`:
 
 ```ts
 import type { ModelProvider, ChatMessage } from "../types";
@@ -1804,13 +1804,13 @@ function synthesizeFallback(raw: WeeklyRawData): WeeklyLetterJson {
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- WeeklyAgent`
+Run: `cd app && pnpm test -- WeeklyAgent`
 Expected: 6 passed
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/weekly/WeeklyAgent.ts 音乐播放器/app/src/weekly/WeeklyAgent.test.ts
+git add app/src/weekly/WeeklyAgent.ts app/src/weekly/WeeklyAgent.test.ts
 git commit -m "feat(lyra): WeeklyAgent — retry once, synthesize fallback letter on failure"
 ```
 
@@ -1819,8 +1819,8 @@ git commit -m "feat(lyra): WeeklyAgent — retry once, synthesize fallback lette
 ## Task 9: 装配层 — sparse guard + write + repo insert + integration test
 
 **Files:**
-- Create: `音乐播放器/app/src/weekly/runWeekly.ts`
-- Create: `音乐播放器/app/src/weekly/weekly.integration.test.ts`
+- Create: `app/src/weekly/runWeekly.ts`
+- Create: `app/src/weekly/weekly.integration.test.ts`
 
 **Interfaces:**
 - Consumes: 前 8 个 task 所有 Produces
@@ -1828,7 +1828,7 @@ git commit -m "feat(lyra): WeeklyAgent — retry once, synthesize fallback lette
   - `runWeekly(opts: { now: Date; onDemand?: boolean; deps: RunWeeklyDeps }): Promise<{ skipped: true; reason: string } | { skipped: false; html_path: string; fallback: boolean }>`
   - `type RunWeeklyDeps` (依赖注入所有 SQL/Rust/settings 出口)
 
-- [ ] **Step 1: 写测试** — `音乐播放器/app/src/weekly/weekly.integration.test.ts`
+- [ ] **Step 1: 写测试** — `app/src/weekly/weekly.integration.test.ts`
 
 ```ts
 import { describe, it, expect, vi } from "vitest";
@@ -1969,12 +1969,12 @@ describe("runWeekly (integration)", () => {
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app && pnpm test -- weekly/weekly.integration`
+Run: `cd app && pnpm test -- weekly/weekly.integration`
 Expected: FAIL
 
 - [ ] **Step 3: 实现 `runWeekly.ts`**
 
-Create `音乐播放器/app/src/weekly/runWeekly.ts`:
+Create `app/src/weekly/runWeekly.ts`:
 
 ```ts
 import { rolling7dWindow, filenameFor, resolveWeeklyDir } from "./weeklyPaths";
@@ -2077,13 +2077,13 @@ export async function runWeekly(opts: {
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- weekly/weekly.integration`
+Run: `cd app && pnpm test -- weekly/weekly.integration`
 Expected: 7 passed
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/weekly/runWeekly.ts 音乐播放器/app/src/weekly/weekly.integration.test.ts
+git add app/src/weekly/runWeekly.ts app/src/weekly/weekly.integration.test.ts
 git commit -m "feat(lyra): runWeekly — sparse guard + write + snapshot insert + integration"
 ```
 
@@ -2092,8 +2092,8 @@ git commit -m "feat(lyra): runWeekly — sparse guard + write + snapshot insert 
 ## Task 10: `dreamScheduler` 挂钩 + weekly 触发 test
 
 **Files:**
-- Modify: `音乐播放器/app/src/schedule/dreamScheduler.ts`(config 加 `runWeekly?`,daily branch 里周日 fire)
-- Modify: `音乐播放器/app/src/schedule/dreamScheduler.test.ts`(追加 Sunday tick 用例)
+- Modify: `app/src/schedule/dreamScheduler.ts`(config 加 `runWeekly?`,daily branch 里周日 fire)
+- Modify: `app/src/schedule/dreamScheduler.test.ts`(追加 Sunday tick 用例)
 
 **Interfaces:**
 - Consumes: 既有 `DreamSchedulerConfig`
@@ -2186,12 +2186,12 @@ describe("DreamScheduler weekly hook", () => {
 
 - [ ] **Step 2: 跑测试确认失败(config 上无 runWeekly)**
 
-Run: `cd 音乐播放器/app && pnpm test -- dreamScheduler`
+Run: `cd app && pnpm test -- dreamScheduler`
 Expected: FAIL(TS error on runWeekly key,或 runtime 不 invoke)
 
 - [ ] **Step 3: 改 `dreamScheduler.ts`**
 
-Modify `音乐播放器/app/src/schedule/dreamScheduler.ts` — 3 处改动:
+Modify `app/src/schedule/dreamScheduler.ts` — 3 处改动:
 
 改 config 类型(在 `DreamSchedulerConfig` 里加):
 
@@ -2257,13 +2257,13 @@ export type DreamSchedulerConfig = {
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- dreamScheduler`
+Run: `cd app && pnpm test -- dreamScheduler`
 Expected: all pre-existing + 4 new all passed
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/schedule/dreamScheduler.ts 音乐播放器/app/src/schedule/dreamScheduler.test.ts
+git add app/src/schedule/dreamScheduler.ts app/src/schedule/dreamScheduler.test.ts
 git commit -m "feat(lyra): dreamScheduler — Sunday runWeekly hook, isolated error boundary"
 ```
 
@@ -2272,9 +2272,9 @@ git commit -m "feat(lyra): dreamScheduler — Sunday runWeekly hook, isolated er
 ## Task 11: `/week` slash command + HomeView 装配
 
 **Files:**
-- Modify: `音乐播放器/app/src/home/slashCommand.ts`
-- Modify: `音乐播放器/app/src/home/slashCommand.test.ts`
-- Modify: `音乐播放器/app/src/home/HomeView.tsx`(约 60-80 行区块)
+- Modify: `app/src/home/slashCommand.ts`
+- Modify: `app/src/home/slashCommand.test.ts`
+- Modify: `app/src/home/HomeView.tsx`(约 60-80 行区块)
 
 **Interfaces:**
 - Consumes: nothing new
@@ -2285,7 +2285,7 @@ git commit -m "feat(lyra): dreamScheduler — Sunday runWeekly hook, isolated er
 
 - [ ] **Step 1: slashCommand test 追加**
 
-Modify `音乐播放器/app/src/home/slashCommand.test.ts` — 追加 4 个用例:
+Modify `app/src/home/slashCommand.test.ts` — 追加 4 个用例:
 
 ```ts
   it("recognizes /week", () => {
@@ -2304,12 +2304,12 @@ Modify `音乐播放器/app/src/home/slashCommand.test.ts` — 追加 4 个用�
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `cd 音乐播放器/app && pnpm test -- slashCommand`
+Run: `cd app && pnpm test -- slashCommand`
 Expected: FAIL(2 new fail)
 
 - [ ] **Step 3: 改 `slashCommand.ts`**
 
-Modify `音乐播放器/app/src/home/slashCommand.ts`:
+Modify `app/src/home/slashCommand.ts`:
 
 ```ts
 export type SlashCommand =
@@ -2334,12 +2334,12 @@ export function parseSlashCommand(raw: string): SlashCommand | null {
 
 - [ ] **Step 4: 跑测试确认全绿**
 
-Run: `cd 音乐播放器/app && pnpm test -- slashCommand`
+Run: `cd app && pnpm test -- slashCommand`
 Expected: all passed
 
 - [ ] **Step 5: 改 `HomeView.tsx` 加 `onWeek` prop + 分发**
 
-Modify `音乐播放器/app/src/home/HomeView.tsx:60-80`(props 定义 + submit 分发):
+Modify `app/src/home/HomeView.tsx:60-80`(props 定义 + submit 分发):
 
 在 props 类型追加 `onWeek?: () => Promise<void>`:
 
@@ -2368,15 +2368,15 @@ export function HomeView({
 
 - [ ] **Step 6: typecheck**
 
-Run: `cd 音乐播放器/app && pnpm typecheck`
+Run: `cd app && pnpm typecheck`
 Expected: no errors
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add 音乐播放器/app/src/home/slashCommand.ts \
-        音乐播放器/app/src/home/slashCommand.test.ts \
-        音乐播放器/app/src/home/HomeView.tsx
+git add app/src/home/slashCommand.ts \
+        app/src/home/slashCommand.test.ts \
+        app/src/home/HomeView.tsx
 git commit -m "feat(lyra): /week slash + HomeView onWeek prop"
 ```
 
@@ -2385,8 +2385,8 @@ git commit -m "feat(lyra): /week slash + HomeView onWeek prop"
 ## Task 12: Settings — weekly.dirOverride + weekly.autoEnabled + secrets keys
 
 **Files:**
-- Modify: `音乐播放器/app/src/settings/secrets.ts:2-16`(SECRET_KEYS 加 2 字段)
-- Modify: `音乐播放器/app/src/settings/Settings.tsx`(state + load + save + UI)
+- Modify: `app/src/settings/secrets.ts:2-16`(SECRET_KEYS 加 2 字段)
+- Modify: `app/src/settings/Settings.tsx`(state + load + save + UI)
 
 **Interfaces:**
 - Consumes: `SECRET_KEYS`
@@ -2397,7 +2397,7 @@ git commit -m "feat(lyra): /week slash + HomeView onWeek prop"
 
 - [ ] **Step 1: 加 SECRET_KEYS**
 
-Modify `音乐播放器/app/src/settings/secrets.ts`:
+Modify `app/src/settings/secrets.ts`:
 
 ```ts
 export const SECRET_KEYS = {
@@ -2419,7 +2419,7 @@ export const SECRET_KEYS = {
 
 - [ ] **Step 2: 改 `Settings.tsx` — state + load**
 
-Modify `音乐播放器/app/src/settings/Settings.tsx` state 块(约行 16-30 后追加):
+Modify `app/src/settings/Settings.tsx` state 块(约行 16-30 后追加):
 
 ```tsx
   const [weeklyDir, setWeeklyDir] = useState("");
@@ -2487,19 +2487,19 @@ Modify `音乐播放器/app/src/settings/Settings.tsx` state 块(约行 16-30 �
 
 - [ ] **Step 3: typecheck + build**
 
-Run: `cd 音乐播放器/app && pnpm typecheck && pnpm build`
+Run: `cd app && pnpm typecheck && pnpm build`
 Expected: no errors,build 成功
 
 - [ ] **Step 4: 跑全量 vitest,确认 Settings 相关既有 test 不 regression**
 
-Run: `cd 音乐播放器/app && pnpm test`
+Run: `cd app && pnpm test`
 Expected: all green(725+/-)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 音乐播放器/app/src/settings/secrets.ts \
-        音乐播放器/app/src/settings/Settings.tsx
+git add app/src/settings/secrets.ts \
+        app/src/settings/Settings.tsx
 git commit -m "feat(lyra): Settings — weekly dir override + auto enable toggle"
 ```
 
@@ -2508,7 +2508,7 @@ git commit -m "feat(lyra): Settings — weekly dir override + auto enable toggle
 ## Task 13: App-level wiring — WeeklyAgent + runWeekly + scheduler 连线
 
 **Files:**
-- Modify: `音乐播放器/app/src/App.tsx`(或应用主入口/scheduler 装配处 — 若不在 App.tsx,则在 scheduler 实例化处)
+- Modify: `app/src/App.tsx`(或应用主入口/scheduler 装配处 — 若不在 App.tsx,则在 scheduler 实例化处)
 
 **Interfaces:**
 - Consumes: 前面所有 Produces
@@ -2516,16 +2516,16 @@ git commit -m "feat(lyra): Settings — weekly dir override + auto enable toggle
 
 - [ ] **Step 1: 找到装配处**
 
-Run: `cd 音乐播放器/app && grep -n "new DreamScheduler\|DreamScheduler(" src/App.tsx src/index.tsx src/main.tsx 2>/dev/null | head`
+Run: `cd app && grep -n "new DreamScheduler\|DreamScheduler(" src/App.tsx src/index.tsx src/main.tsx 2>/dev/null | head`
 Expected: 定位到某个文件的一行
 
 若 App.tsx 没有,搜:
-Run: `grep -rn "new DreamScheduler" 音乐播放器/app/src`
+Run: `grep -rn "new DreamScheduler" app/src`
 Expected: 定位到实际装配位置。以下 Step 假设是 `App.tsx`,依实际路径调整。
 
 - [ ] **Step 2: 建 `weekly` 装配 helper** — 让 App.tsx 只做一次装配
 
-Create `音乐播放器/app/src/weekly/wire.ts`:
+Create `app/src/weekly/wire.ts`:
 
 ```ts
 import { invoke } from "@tauri-apps/api/core";
@@ -2616,23 +2616,23 @@ import { autoWeeklyTrigger, onDemandWeeklyOpen } from "./weekly/wire";
 
 - [ ] **Step 4: typecheck + build**
 
-Run: `cd 音乐播放器/app && pnpm typecheck && pnpm build`
+Run: `cd app && pnpm typecheck && pnpm build`
 Expected: no errors
 
 - [ ] **Step 5: 跑全量 test**
 
-Run: `cd 音乐播放器/app && pnpm test`
+Run: `cd app && pnpm test`
 Expected: all green
 
 - [ ] **Step 6: cargo test 全量**
 
-Run: `cd 音乐播放器/app/src-tauri && cargo test`
+Run: `cd app/src-tauri && cargo test`
 Expected: all green
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add 音乐播放器/app/src/weekly/wire.ts 音乐播放器/app/src/App.tsx
+git add app/src/weekly/wire.ts app/src/App.tsx
 git commit -m "feat(lyra): app wiring — weekly auto trigger + /week on-demand open"
 ```
 
@@ -2646,7 +2646,7 @@ git commit -m "feat(lyra): app wiring — weekly auto trigger + /week on-demand 
 
 - [ ] **Step 1: 启动 dev app**
 
-Run: `cd 音乐播放器/app && pnpm tauri dev`
+Run: `cd app && pnpm tauri dev`
 Expected: app 起来,能对话
 
 - [ ] **Step 2: `/week` 冷启动测**

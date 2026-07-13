@@ -218,7 +218,7 @@ describe.runIf(RUN)("EmotionAgent regression eval", () => { … });
 
 ## 7. 文件清单(改动 / 新增 全景)
 
-### 7.1 音乐播放器/app/
+### 7.1 app/
 
 | 文件 | 类型 | 说明 |
 |---|---|---|

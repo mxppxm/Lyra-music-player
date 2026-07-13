@@ -258,7 +258,7 @@ git commit -m "chore(website): pnpm workspace scaffold — vite+react+ts (Task 1
 
 - [ ] **Step 1: 检查 app 是否已有可复用的 fonts.css**
 
-Run: `ls 音乐播放器/app/src/theme/fonts.css 2>/dev/null || ls 音乐播放器/app/src/styles/fonts.css 2>/dev/null || echo "APP_HAS_NO_FONTS_FILE"`
+Run: `ls app/src/theme/fonts.css 2>/dev/null || ls app/src/styles/fonts.css 2>/dev/null || echo "APP_HAS_NO_FONTS_FILE"`
 - 若 app 有,后续 Step 2 内容改为 `@import '<相对路径到 app 的 fonts.css>';`
 - 若 `APP_HAS_NO_FONTS_FILE`,按下方 Step 2 写入独立版本
 
@@ -487,7 +487,7 @@ git commit -m "feat(website): fonts, globals, copy ledger, hero smoke test (Task
 
 - [ ] **Step 1: 探查 app 是否已有 ambient.ts**
 
-Run: `find 音乐播放器/app/src -name 'ambient.ts' -type f 2>/dev/null | head -1`
+Run: `find app/src -name 'ambient.ts' -type f 2>/dev/null | head -1`
 - 若有:后续 Step 2 改为 `export * from '<相对路径>';` + 追加 website 侧新增的 `SECTION_COLORS`
 - 若无:按下方独立版本
 

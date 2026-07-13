@@ -66,7 +66,7 @@ The full app-level developer guide lives in [`app/README.md`](./app/README.md).
 
 ```bash
 # Clone
-git clone <repo-url>
+git clone git@github.com:daoyuly/Lyra-music-player.git
 cd Lyra-music-player
 
 # Install app dependencies

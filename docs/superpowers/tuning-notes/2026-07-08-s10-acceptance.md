@@ -90,8 +90,8 @@
 
 Run:
 ```bash
-cd 音乐播放器/app && pnpm test && pnpm typecheck && pnpm build
-cd 音乐播放器/app/src-tauri && cargo test
+cd app && pnpm test && pnpm typecheck && pnpm build
+cd app/src-tauri && cargo test
 ```
 
 **Expected:**

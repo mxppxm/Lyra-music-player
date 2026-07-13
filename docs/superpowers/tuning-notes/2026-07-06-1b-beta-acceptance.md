@@ -7,7 +7,7 @@
 
 ## Setup
 
-1. `pnpm tauri dev` in `音乐播放器/app/`
+1. `pnpm tauri dev` in `app/`
 2. Open Settings (Cmd+,) → enter at least one API key (Anthropic / DeepSeek / Zhipu)
 3. Import ≥ 10 local music files via Settings → Library
 4. Close Settings — app transitions from cold-boot to idle state ("Lyra 在等你说一句话")

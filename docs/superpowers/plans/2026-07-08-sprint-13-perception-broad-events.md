@@ -15,7 +15,7 @@
 - **Test floor after sprint:** 639 vitest passing / 33 cargo passing / typecheck 0 errors.
 - **Network privacy:** RulePerceptionAgent gets full numeric BehavioralFeatures. LLMPerceptionAgent gets `{ features: <old 10 numeric dims>, signals: <4 coarse levels> }`. The 5 new numeric dims MUST NOT leave the local process as raw numbers.
 - **Non-goals:** playback control events, selection/copy events, hover target distribution, scroll direction distribution, network sync.
-- **Test files paths use POSIX** and always the app subdirectory: `音乐播放器/app/src/perception/*` etc.
+- **Test files paths use POSIX** and always the app subdirectory: `app/src/perception/*` etc.
 - **Commit prefix:** `feat(lyra):` for behavior changes, `test(lyra):` for pure test additions, `refactor(lyra):` for internal moves. Trailer must include `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 - **Every task commit must leave the tree with all tests green.** No red-tree commits.
 
@@ -53,8 +53,8 @@
 ### Task 1: Extend `LyraEvent` union with 4 new event kinds
 
 **Files:**
-- Modify: `音乐播放器/app/src/perception/events.ts`
-- Test: `音乐播放器/app/src/perception/events.test.ts`
+- Modify: `app/src/perception/events.ts`
+- Test: `app/src/perception/events.test.ts`
 
 **Interfaces:**
 - Consumes: existing `EventBus`, `LyraEvent`
@@ -62,7 +62,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `音乐播放器/app/src/perception/events.test.ts`:
+Append to `app/src/perception/events.test.ts`:
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -89,12 +89,12 @@ describe("EventBus new event kinds (Sprint 13)", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/events.test.ts`
+Run: `cd app && pnpm test src/perception/events.test.ts`
 Expected: TypeScript compile error (new kinds not in `LyraEvent` union) — vitest reports a transform failure.
 
 - [ ] **Step 3: Extend the `LyraEvent` union**
 
-Replace the `LyraEvent` type in `音乐播放器/app/src/perception/events.ts` with:
+Replace the `LyraEvent` type in `app/src/perception/events.ts` with:
 
 ```ts
 export type LyraEvent =
@@ -115,15 +115,15 @@ export type LyraEvent =
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/events.test.ts && pnpm typecheck`
+Run: `cd app && pnpm test src/perception/events.test.ts && pnpm typecheck`
 Expected: all events tests pass; typecheck 0 errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/perception/events.ts" \
-  "音乐播放器/app/src/perception/events.test.ts"
+  "app/src/perception/events.ts" \
+  "app/src/perception/events.test.ts"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): extend LyraEvent union with 4 new perception kinds
 
@@ -141,8 +141,8 @@ EOF
 ### Task 2: Extend `BehavioralFeatures` + compute 5 new dims
 
 **Files:**
-- Modify: `音乐播放器/app/src/perception/aggregator.ts`
-- Test: `音乐播放器/app/src/perception/aggregator.test.ts`
+- Modify: `app/src/perception/aggregator.ts`
+- Test: `app/src/perception/aggregator.test.ts`
 
 **Interfaces:**
 - Consumes: `LyraEvent` (4 new kinds from Task 1), `EventBus.recent()`
@@ -150,7 +150,7 @@ EOF
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `音乐播放器/app/src/perception/aggregator.test.ts`:
+Append to `app/src/perception/aggregator.test.ts`:
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -208,12 +208,12 @@ describe("aggregator new dims (Sprint 13)", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/aggregator.test.ts`
+Run: `cd app && pnpm test src/perception/aggregator.test.ts`
 Expected: 4 new dim tests fail (properties are `undefined`); regression test passes.
 
 - [ ] **Step 3: Extend `BehavioralFeatures` type and `aggregate()`**
 
-In `音乐播放器/app/src/perception/aggregator.ts`, add these fields to `BehavioralFeatures` (just before the closing `}`):
+In `app/src/perception/aggregator.ts`, add these fields to `BehavioralFeatures` (just before the closing `}`):
 
 ```ts
   /** Sprint 13: window内 scroll 事件总数(所有 container 合计) */
@@ -262,15 +262,15 @@ Add these 5 keys to the returned object literal (append to the existing `return 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/aggregator.test.ts && pnpm typecheck`
+Run: `cd app && pnpm test src/perception/aggregator.test.ts && pnpm typecheck`
 Expected: 5 new tests pass; typecheck 0 errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/perception/aggregator.ts" \
-  "音乐播放器/app/src/perception/aggregator.test.ts"
+  "app/src/perception/aggregator.ts" \
+  "app/src/perception/aggregator.test.ts"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): extend BehavioralFeatures with 5 Sprint 13 dims
 
@@ -289,8 +289,8 @@ EOF
 ### Task 3: Add 4 tuning thresholds with defaults + ±50% clamp
 
 **Files:**
-- Modify: `音乐播放器/app/src/perception/tuning.ts`
-- Test: `音乐播放器/app/src/perception/tuning.test.ts`
+- Modify: `app/src/perception/tuning.ts`
+- Test: `app/src/perception/tuning.test.ts`
 
 **Interfaces:**
 - Consumes: existing `PerceptionTuning` type and `resolveThresholds()`
@@ -298,11 +298,11 @@ EOF
 
 - [ ] **Step 1: Read the existing tuning module**
 
-Read `音乐播放器/app/src/perception/tuning.ts` end-to-end so you know the exact shape of `PerceptionTuning`, `clampTuning` (or equivalent), and `resolveThresholds`. Also read `音乐播放器/app/src/perception/tuning.test.ts` to see the existing test conventions.
+Read `app/src/perception/tuning.ts` end-to-end so you know the exact shape of `PerceptionTuning`, `clampTuning` (or equivalent), and `resolveThresholds`. Also read `app/src/perception/tuning.test.ts` to see the existing test conventions.
 
 - [ ] **Step 2: Write the failing test**
 
-Append to `音乐播放器/app/src/perception/tuning.test.ts`:
+Append to `app/src/perception/tuning.test.ts`:
 
 ```ts
 describe("Sprint 13 tuning keys", () => {
@@ -346,12 +346,12 @@ Import list at the top of the test file may need `resolveThresholds` — verify 
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/tuning.test.ts`
+Run: `cd app && pnpm test src/perception/tuning.test.ts`
 Expected: TypeScript error (4 new keys unknown on `PerceptionTuning`).
 
 - [ ] **Step 4: Add the 4 keys**
 
-Edit `PerceptionTuning` type in `音乐播放器/app/src/perception/tuning.ts` to include:
+Edit `PerceptionTuning` type in `app/src/perception/tuning.ts` to include:
 
 ```ts
   hoverDwellCountThreshold?: number;
@@ -373,15 +373,15 @@ Add the same 4 keys to the ±50% clamp map so `resolveThresholds` applies the cl
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/tuning.test.ts && pnpm typecheck`
+Run: `cd app && pnpm test src/perception/tuning.test.ts && pnpm typecheck`
 Expected: 2 new tests pass; existing tests still green; typecheck 0 errors.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/perception/tuning.ts" \
-  "音乐播放器/app/src/perception/tuning.test.ts"
+  "app/src/perception/tuning.ts" \
+  "app/src/perception/tuning.test.ts"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): 4 tuning thresholds for Sprint 13 rules
 
@@ -399,8 +399,8 @@ EOF
 ### Task 4: Add 3 new rules to `RulePerceptionAgent`
 
 **Files:**
-- Modify: `音乐播放器/app/src/perception/RulePerceptionAgent.ts`
-- Test: `音乐播放器/app/src/perception/RulePerceptionAgent.test.ts`
+- Modify: `app/src/perception/RulePerceptionAgent.ts`
+- Test: `app/src/perception/RulePerceptionAgent.test.ts`
 
 **Interfaces:**
 - Consumes: `BehavioralFeatures` (with 5 new dims from Task 2), `PerceptionTuning` (with 4 new thresholds from Task 3), existing `Rule`, `PerceptionBias`
@@ -408,7 +408,7 @@ EOF
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `音乐播放器/app/src/perception/RulePerceptionAgent.test.ts`. Use whatever `makeFeatures()` helper or literal object the existing tests use to construct a `BehavioralFeatures`; add explicit values for the 5 new dims:
+Append to `app/src/perception/RulePerceptionAgent.test.ts`. Use whatever `makeFeatures()` helper or literal object the existing tests use to construct a `BehavioralFeatures`; add explicit values for the 5 new dims:
 
 ```ts
 describe("Sprint 13 rules", () => {
@@ -496,12 +496,12 @@ describe("Sprint 13 rules", () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/RulePerceptionAgent.test.ts`
+Run: `cd app && pnpm test src/perception/RulePerceptionAgent.test.ts`
 Expected: 5 new tests fail (`reason` is `"no signal"` because no rule matches yet).
 
 - [ ] **Step 3: Add the 3 new rules**
 
-In `音乐播放器/app/src/perception/RulePerceptionAgent.ts`, inside `buildRules(t)`, append three entries to the returned array (in order shown below, keeping the existing 5 first):
+In `app/src/perception/RulePerceptionAgent.ts`, inside `buildRules(t)`, append three entries to the returned array (in order shown below, keeping the existing 5 first):
 
 ```ts
     {
@@ -536,15 +536,15 @@ Note the `?? 0` guards handle any `BehavioralFeatures` snapshot loaded from `per
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/ && pnpm typecheck`
+Run: `cd app && pnpm test src/perception/ && pnpm typecheck`
 Expected: all 5 new tests pass; old 5-rule tests still green; typecheck 0 errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/perception/RulePerceptionAgent.ts" \
-  "音乐播放器/app/src/perception/RulePerceptionAgent.test.ts"
+  "app/src/perception/RulePerceptionAgent.ts" \
+  "app/src/perception/RulePerceptionAgent.test.ts"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): 3 new perception rules for Sprint 13
 
@@ -563,8 +563,8 @@ EOF
 ### Task 5: Create `coarsening.ts` — pure level-string mapper
 
 **Files:**
-- Create: `音乐播放器/app/src/perception/coarsening.ts`
-- Test: `音乐播放器/app/src/perception/coarsening.test.ts`
+- Create: `app/src/perception/coarsening.ts`
+- Test: `app/src/perception/coarsening.test.ts`
 
 **Interfaces:**
 - Consumes: `BehavioralFeatures` from `./aggregator`
@@ -572,7 +572,7 @@ EOF
 
 - [ ] **Step 1: Write the failing test**
 
-Create `音乐播放器/app/src/perception/coarsening.test.ts`:
+Create `app/src/perception/coarsening.test.ts`:
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -636,12 +636,12 @@ describe("coarsen", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/coarsening.test.ts`
+Run: `cd app && pnpm test src/perception/coarsening.test.ts`
 Expected: import fails — module does not exist yet.
 
 - [ ] **Step 3: Create the coarsening module**
 
-Create `音乐播放器/app/src/perception/coarsening.ts`:
+Create `app/src/perception/coarsening.ts`:
 
 ```ts
 // perception/coarsening.ts — level-string mapper for LLMPerceptionAgent input.
@@ -689,15 +689,15 @@ export function coarsen(f: BehavioralFeatures): CoarseSignals {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/coarsening.test.ts && pnpm typecheck`
+Run: `cd app && pnpm test src/perception/coarsening.test.ts && pnpm typecheck`
 Expected: 5 tests pass; typecheck 0 errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/perception/coarsening.ts" \
-  "音乐播放器/app/src/perception/coarsening.test.ts"
+  "app/src/perception/coarsening.ts" \
+  "app/src/perception/coarsening.test.ts"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): coarsen() maps 4 new dims to level strings
 
@@ -717,9 +717,9 @@ EOF
 ### Task 6: Wire `coarsen()` into `LLMPerceptionAgent` prompt
 
 **Files:**
-- Modify: `音乐播放器/app/src/perception/LLMPerceptionAgent.ts`
-- Modify: `音乐播放器/app/src/perception/prompt.ts` (add doc comment describing the 4 signal keys)
-- Test: `音乐播放器/app/src/perception/LLMPerceptionAgent.test.ts`
+- Modify: `app/src/perception/LLMPerceptionAgent.ts`
+- Modify: `app/src/perception/prompt.ts` (add doc comment describing the 4 signal keys)
+- Test: `app/src/perception/LLMPerceptionAgent.test.ts`
 
 **Interfaces:**
 - Consumes: `BehavioralFeatures` (Task 2), `coarsen()` (Task 5), existing LLMPerceptionAgent chat provider mock in tests
@@ -727,14 +727,14 @@ EOF
 
 - [ ] **Step 1: Read the existing LLMPerceptionAgent**
 
-Read `音乐播放器/app/src/perception/LLMPerceptionAgent.ts` and `prompt.ts` to identify:
+Read `app/src/perception/LLMPerceptionAgent.ts` and `prompt.ts` to identify:
 1. Exactly where the payload JSON is built (likely `JSON.stringify` somewhere)
 2. Whether all 10 legacy numeric dims are inlined, or the whole `features` object is dumped
 3. The existing test mock pattern in `LLMPerceptionAgent.test.ts`
 
 - [ ] **Step 2: Write the failing test**
 
-Append to `音乐播放器/app/src/perception/LLMPerceptionAgent.test.ts` a case that captures the outgoing chat request and asserts the shape:
+Append to `app/src/perception/LLMPerceptionAgent.test.ts` a case that captures the outgoing chat request and asserts the shape:
 
 ```ts
 it("payload contains signals block with 4 coarse levels; new numeric dims NOT sent verbatim", async () => {
@@ -791,7 +791,7 @@ it("payload contains signals block with 4 coarse levels; new numeric dims NOT se
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/LLMPerceptionAgent.test.ts`
+Run: `cd app && pnpm test src/perception/LLMPerceptionAgent.test.ts`
 Expected: the new assertions fail (raw dims currently sent as-is via the whole `features` object; no `signals` block yet).
 
 - [ ] **Step 4: Modify the payload construction**
@@ -835,16 +835,16 @@ Add to the system prompt in `prompt.ts` — right after the section that documen
 
 - [ ] **Step 6: Run tests to verify pass**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/ && pnpm typecheck`
+Run: `cd app && pnpm test src/perception/ && pnpm typecheck`
 Expected: all perception tests green; typecheck 0 errors.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/perception/LLMPerceptionAgent.ts" \
-  "音乐播放器/app/src/perception/LLMPerceptionAgent.test.ts" \
-  "音乐播放器/app/src/perception/prompt.ts"
+  "app/src/perception/LLMPerceptionAgent.ts" \
+  "app/src/perception/LLMPerceptionAgent.test.ts" \
+  "app/src/perception/prompt.ts"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): LLMPerceptionAgent sends coarse signals, not raw new dims
 
@@ -863,8 +863,8 @@ EOF
 ### Task 7: Extend `install.ts` with scroll / hover_dwell / focus_no_interaction listeners
 
 **Files:**
-- Modify: `音乐播放器/app/src/perception/install.ts`
-- Test: `音乐播放器/app/src/perception/install.test.ts`
+- Modify: `app/src/perception/install.ts`
+- Test: `app/src/perception/install.test.ts`
 
 **Interfaces:**
 - Consumes: `EventBus` (with new kinds from Task 1)
@@ -896,7 +896,7 @@ Understand:
 
 - [ ] **Step 2: Write 3 failing tests**
 
-Append to `音乐播放器/app/src/perception/install.test.ts`. Use `vi.useFakeTimers()` and a fake `document` mock analogous to the existing `win` mock:
+Append to `app/src/perception/install.test.ts`. Use `vi.useFakeTimers()` and a fake `document` mock analogous to the existing `win` mock:
 
 ```ts
 describe("Sprint 13 install additions", () => {
@@ -978,12 +978,12 @@ describe("Sprint 13 install additions", () => {
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/install.test.ts`
+Run: `cd app && pnpm test src/perception/install.test.ts`
 Expected: 3 new tests fail; the module doesn't yet know about `deps.doc`, does not emit `scroll` / `hover_dwell` / `focus_no_interaction`.
 
 - [ ] **Step 4: Extend `installPerceptionListeners`**
 
-In `音乐播放器/app/src/perception/install.ts`, extend `InstallDeps`:
+In `app/src/perception/install.ts`, extend `InstallDeps`:
 
 ```ts
 type InstallDeps = {
@@ -1115,15 +1115,15 @@ Extend the returned uninstall function to also `removeEventListener` on `doc` an
 
 - [ ] **Step 5: Run tests to verify pass**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/install.test.ts && pnpm test src/perception/ && pnpm typecheck`
+Run: `cd app && pnpm test src/perception/install.test.ts && pnpm test src/perception/ && pnpm typecheck`
 Expected: 3 new tests pass; existing install tests still green; typecheck 0 errors.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/perception/install.ts" \
-  "音乐播放器/app/src/perception/install.test.ts"
+  "app/src/perception/install.ts" \
+  "app/src/perception/install.test.ts"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): install layer emits scroll / hover_dwell / focus_no_interaction
 
@@ -1143,10 +1143,10 @@ EOF
 ### Task 8: Create `useInputDwellBus` hook + wire into `InputBox`
 
 **Files:**
-- Create: `音乐播放器/app/src/perception/useInputDwellBus.ts`
-- Create: `音乐播放器/app/src/perception/useInputDwellBus.test.tsx`
-- Modify: `音乐播放器/app/src/home/InputBox.tsx`
-- Modify: `音乐播放器/app/src/home/InputBox.test.tsx`
+- Create: `app/src/perception/useInputDwellBus.ts`
+- Create: `app/src/perception/useInputDwellBus.test.tsx`
+- Modify: `app/src/home/InputBox.tsx`
+- Modify: `app/src/home/InputBox.test.tsx`
 
 **Interfaces:**
 - Consumes: `EventBus` (Task 1 kinds)
@@ -1154,7 +1154,7 @@ EOF
 
 - [ ] **Step 1: Write the failing hook test**
 
-Create `音乐播放器/app/src/perception/useInputDwellBus.test.tsx`:
+Create `app/src/perception/useInputDwellBus.test.tsx`:
 
 ```tsx
 import { describe, it, expect, vi } from "vitest";
@@ -1210,12 +1210,12 @@ describe("useInputDwellBus", () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/useInputDwellBus.test.tsx`
+Run: `cd app && pnpm test src/perception/useInputDwellBus.test.tsx`
 Expected: import fails — hook not defined.
 
 - [ ] **Step 3: Implement the hook**
 
-Create `音乐播放器/app/src/perception/useInputDwellBus.ts`:
+Create `app/src/perception/useInputDwellBus.ts`:
 
 ```ts
 // perception/useInputDwellBus.ts — state machine for "typed then abandoned".
@@ -1313,12 +1313,12 @@ export function useInputDwellBus(bus: EventBus, value: string) {
 
 - [ ] **Step 4: Run hook tests to verify they pass**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/useInputDwellBus.test.tsx`
+Run: `cd app && pnpm test src/perception/useInputDwellBus.test.tsx`
 Expected: 3 tests pass.
 
 - [ ] **Step 5: Wire into `InputBox`**
 
-Edit `音乐播放器/app/src/home/InputBox.tsx`. Add prop for the bus:
+Edit `app/src/home/InputBox.tsx`. Add prop for the bus:
 
 ```tsx
 import { useInputDwellBus } from "../perception/useInputDwellBus";
@@ -1341,7 +1341,7 @@ Inside the existing `handleKey` `if (!text) return;` guard, after `onSubmit(text
 
 - [ ] **Step 6: Write failing InputBox integration test**
 
-Append to `音乐播放器/app/src/home/InputBox.test.tsx`:
+Append to `app/src/home/InputBox.test.tsx`:
 
 ```tsx
 import { bus as perceptionBus } from "../perception/events";
@@ -1365,17 +1365,17 @@ Adjust `render` / import to match what `InputBox.test.tsx` already uses (likely 
 
 - [ ] **Step 7: Run full perception + InputBox tests**
 
-Run: `cd 音乐播放器/app && pnpm test src/perception/ src/home/InputBox && pnpm typecheck`
+Run: `cd app && pnpm test src/perception/ src/home/InputBox && pnpm typecheck`
 Expected: all green; typecheck 0 errors.
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/perception/useInputDwellBus.ts" \
-  "音乐播放器/app/src/perception/useInputDwellBus.test.tsx" \
-  "音乐播放器/app/src/home/InputBox.tsx" \
-  "音乐播放器/app/src/home/InputBox.test.tsx"
+  "app/src/perception/useInputDwellBus.ts" \
+  "app/src/perception/useInputDwellBus.test.tsx" \
+  "app/src/home/InputBox.tsx" \
+  "app/src/home/InputBox.test.tsx"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): useInputDwellBus hook + InputBox integration
 
@@ -1395,11 +1395,11 @@ EOF
 ### Task 9: Wire `data-lyra-*` attributes + full suite verification
 
 **Files:**
-- Modify: `音乐播放器/app/src/ui/DataExplorer.tsx`
-- Modify: `音乐播放器/app/src/ui/RoadmapBoard.tsx`
-- Modify: `音乐播放器/app/src/home/AlbumCover.tsx`
-- Modify: `音乐播放器/app/src/home/SmallNote.tsx`
-- Modify: `音乐播放器/app/src/home/TraceStrip.tsx`
+- Modify: `app/src/ui/DataExplorer.tsx`
+- Modify: `app/src/ui/RoadmapBoard.tsx`
+- Modify: `app/src/home/AlbumCover.tsx`
+- Modify: `app/src/home/SmallNote.tsx`
+- Modify: `app/src/home/TraceStrip.tsx`
 
 **Interfaces:**
 - Consumes: install.ts's `[data-lyra-scroll]` and `[data-lyra-hover]` selectors from Task 7
@@ -1407,21 +1407,21 @@ EOF
 
 - [ ] **Step 1: Add `data-lyra-scroll="data_explorer"` to DataExplorer root**
 
-Open `音乐播放器/app/src/ui/DataExplorer.tsx`. Locate the outermost `<div>` that owns the scroll area (the wrapper with `overflow: auto` or `overflowY: auto`). Add `data-lyra-scroll="data_explorer"` to it. If the scroll behavior lives on a nested div, put the attribute on that specific one.
+Open `app/src/ui/DataExplorer.tsx`. Locate the outermost `<div>` that owns the scroll area (the wrapper with `overflow: auto` or `overflowY: auto`). Add `data-lyra-scroll="data_explorer"` to it. If the scroll behavior lives on a nested div, put the attribute on that specific one.
 
 - [ ] **Step 2: Add `data-lyra-scroll="roadmap"` to RoadmapBoard root**
 
-Same pattern in `音乐播放器/app/src/ui/RoadmapBoard.tsx`.
+Same pattern in `app/src/ui/RoadmapBoard.tsx`.
 
 - [ ] **Step 3: Add `data-lyra-hover` on the 3 ambient components**
 
-- `音乐播放器/app/src/home/AlbumCover.tsx` — add `data-lyra-hover="album_cover"` to the root element.
-- `音乐播放器/app/src/home/SmallNote.tsx` — add `data-lyra-hover="small_note"` to the root element.
-- `音乐播放器/app/src/home/TraceStrip.tsx` — add `data-lyra-hover="trace_strip"` to the root element.
+- `app/src/home/AlbumCover.tsx` — add `data-lyra-hover="album_cover"` to the root element.
+- `app/src/home/SmallNote.tsx` — add `data-lyra-hover="small_note"` to the root element.
+- `app/src/home/TraceStrip.tsx` — add `data-lyra-hover="trace_strip"` to the root element.
 
 - [ ] **Step 4: Run the whole app-side suite for final green**
 
-Run: `cd 音乐播放器/app && pnpm test && pnpm typecheck && pnpm build`
+Run: `cd app && pnpm test && pnpm typecheck && pnpm build`
 Expected:
 - 639+ vitest passing (was 625 → +14 = 639)
 - typecheck 0 errors
@@ -1433,11 +1433,11 @@ Also confirm no visual regression — the 5 `data-lyra-*` attributes are unknown
 
 ```bash
 git -C /Users/daoyu/Documents/my-github/idea add \
-  "音乐播放器/app/src/ui/DataExplorer.tsx" \
-  "音乐播放器/app/src/ui/RoadmapBoard.tsx" \
-  "音乐播放器/app/src/home/AlbumCover.tsx" \
-  "音乐播放器/app/src/home/SmallNote.tsx" \
-  "音乐播放器/app/src/home/TraceStrip.tsx"
+  "app/src/ui/DataExplorer.tsx" \
+  "app/src/ui/RoadmapBoard.tsx" \
+  "app/src/home/AlbumCover.tsx" \
+  "app/src/home/SmallNote.tsx" \
+  "app/src/home/TraceStrip.tsx"
 git -C /Users/daoyu/Documents/my-github/idea commit -m "$(cat <<'EOF'
 feat(lyra): data-lyra-* attributes wire perception to 5 components
 
