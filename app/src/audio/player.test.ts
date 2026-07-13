@@ -19,11 +19,23 @@ beforeEach(() => {
 });
 
 describe("audio/player", () => {
-  it("playFile calls audio_play command with path and returns the playback id", async () => {
+  it("playFile calls audio_play command with path (no duration) and returns the playback id", async () => {
     invokeMock.mockResolvedValueOnce(42);
     const id = await playFile("/tmp/song.mp3");
-    expect(invokeMock).toHaveBeenCalledWith("audio_play", { path: "/tmp/song.mp3" });
+    expect(invokeMock).toHaveBeenCalledWith("audio_play", {
+      path: "/tmp/song.mp3",
+      durationMs: null,
+    });
     expect(id).toBe(42);
+  });
+
+  it("playFile forwards the duration hint to Rust when provided", async () => {
+    invokeMock.mockResolvedValueOnce(43);
+    await playFile("/tmp/song.mp3", 180_000);
+    expect(invokeMock).toHaveBeenCalledWith("audio_play", {
+      path: "/tmp/song.mp3",
+      durationMs: 180_000,
+    });
   });
 
   it("stopPlayback calls audio_stop", async () => {

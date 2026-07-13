@@ -7,6 +7,7 @@ import type { LyricsEmbedding } from "../db/repo/lyricsEmbeddingsRepo";
 import { createEmbeddingProvider } from "../providers/embeddingProvider";
 import type { EmbeddingProvider } from "../providers/embeddingProvider";
 import type { TargetProfile } from "./types";
+import { padToBpm } from "./padToBpm";
 
 export type LibraryRepoLike = { listAll(): Promise<LibraryTrack[]> };
 export type FeaturesRepoLike = {
@@ -19,11 +20,10 @@ export type ProviderFactory = () => Promise<EmbeddingProvider | null>;
 
 const DEFAULT_LIMIT = 30;
 
-/** Full weights when all three signals are present. Missing signals drop
- *  out and remaining weights are renormalized (see combineWeighted).
- *  Sprint 9 formula (kw 0.4 / pad 0.6) is preserved exactly when sem is
- *  absent, because 0.2/(0.2+0.3) = 0.4 and 0.3/(0.2+0.3) = 0.6. */
-const WEIGHTS = { kw: 0.2, pad: 0.3, sem: 0.5 } as const;
+/** Weights when all four signals are present. sem leads (lyrics-embedding
+ *  match is sharpest), pad + bpm mid, kw a small tie-breaker. Missing
+ *  signals drop out and remaining weights renormalize in combineWeighted. */
+const WEIGHTS = { kw: 0.15, pad: 0.25, sem: 0.4, bpm: 0.2 } as const;
 type SignalKey = keyof typeof WEIGHTS;
 
 function tokenize(target: string): string[] {
@@ -52,6 +52,25 @@ function padDistance(pad: PAD, f: LibraryFeatures): number {
   const targetA = (pad.a + 1) / 2;
   const targetP = (pad.p + 1) / 2;
   return (Math.abs(targetA - f.energy) + Math.abs(targetP - f.valence)) / 2;
+}
+
+/** BPM proximity in [0, 1]. Returns undefined for null bpm so
+ *  combineWeighted renormalizes over the remaining signals.
+ *
+ *  Cross-track fairness note: once any track in the candidate set has a
+ *  non-null bpm, the anyBpm gate opens and this signal enters scoring.
+ *  Tracks without bpm renormalise over 3 signals (kw/pad/sem) — effectively
+ *  neutral on the bpm axis. Tracks WITH bpm get scored and can drop below
+ *  a bpm-less rival if the tempo mismatch is large. This is intentional
+ *  (bpm is real information, absence is missing information), not a bug. */
+function bpmScore(
+  trackBpm: number | null | undefined,
+  targetBpm: number,
+  tolerance: number,
+): number | undefined {
+  if (trackBpm == null) return undefined;
+  const dist = Math.abs(trackBpm - targetBpm);
+  return 1 - Math.min(dist / tolerance, 1);
 }
 
 function cosineDistance(a: Float32Array, b: Float32Array): number {
@@ -111,9 +130,14 @@ export class LibraryAgent {
     target: TargetProfile,
     currentPAD: PAD,
     limit = DEFAULT_LIMIT,
+    excludeIds?: ReadonlySet<string>,
   ): Promise<LibraryTrack[]> {
     const tokens = tokenize(target);
-    const all = await this.repo.listAll();
+    const allRaw = await this.repo.listAll();
+    const all =
+      excludeIds && excludeIds.size > 0
+        ? allRaw.filter((t) => !excludeIds.has(t.id))
+        : allRaw;
     if (all.length === 0) return [];
     const ids = all.map((t) => t.id);
 
@@ -134,15 +158,16 @@ export class LibraryAgent {
     // scored path yields identical zeros for every track and JS stable sort
     // degrades to insertion order (deterministic same-N-forever).
     let anyFeatures = false;
+    let anyBpm = false;
     for (const f of featuresByTrack.values()) {
-      if (f.energy !== null || f.valence !== null) {
-        anyFeatures = true;
-        break;
-      }
+      if (f.energy !== null || f.valence !== null) anyFeatures = true;
+      if (f.bpm !== null && f.bpm !== undefined) anyBpm = true;
+      if (anyFeatures && anyBpm) break;
     }
     const anySem = targetVec !== null && lyricsByTrack.size > 0;
+    const bpmTarget = padToBpm(currentPAD);
 
-    if (!anyKeyword && !anyFeatures && !anySem) {
+    if (!anyKeyword && !anyFeatures && !anySem && !anyBpm) {
       return shuffle(all).slice(0, limit);
     }
 
@@ -152,6 +177,10 @@ export class LibraryAgent {
       const feats = featuresByTrack.get(t.id);
       if (feats && (feats.energy !== null || feats.valence !== null)) {
         scores.pad = 1 - padDistance(currentPAD, feats);
+      }
+      if (anyBpm) {
+        const s = bpmScore(feats?.bpm, bpmTarget.targetBpm, bpmTarget.tolerance);
+        if (s !== undefined) scores.bpm = s;
       }
       const lyrEmb = lyricsByTrack.get(t.id);
       if (

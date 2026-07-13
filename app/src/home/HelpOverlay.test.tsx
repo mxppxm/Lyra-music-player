@@ -17,13 +17,14 @@ describe("HelpOverlay", () => {
     expect(screen.getByText("数据在哪里")).toBeInTheDocument();
   });
 
-  it("lists the four slash commands", () => {
+  it("lists all five slash commands", () => {
     render(<HelpOverlay open={true} onClose={() => {}} />);
     const overlay = screen.getByTestId("help-overlay");
     expect(overlay.textContent).toContain("/help");
     expect(overlay.textContent).toContain("/settings");
     expect(overlay.textContent).toContain("/stats");
     expect(overlay.textContent).toContain("/explorer");
+    expect(overlay.textContent).toContain("/reload-musics");
   });
 
   it("uses first-person voice (「我」, not 「她」)", () => {

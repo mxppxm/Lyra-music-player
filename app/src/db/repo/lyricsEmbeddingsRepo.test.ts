@@ -132,6 +132,29 @@ describe("lyricsEmbeddingsRepo", () => {
     expect(out.get("b")?.embedding[1]).toBeCloseTo(0.9);
   });
 
+  it("Float32Array round-trips through encode → SQLite blob → decode", async () => {
+    // Guards against drift in encode/decode or the fake's blob shape
+    // (Uint8Array vs number[]) — both real cross-boundary hazards.
+    const original = Float32Array.from([1.5, -0.25, 0, 0.333_333, -12345.678]);
+    await repo.upsert({
+      trackId: "roundtrip",
+      lyricsHash: "h",
+      modelId: "test",
+      dim: original.length,
+      embedding: original,
+      updatedAt: 42,
+    });
+    const stored = await repo.getByTrackId("roundtrip");
+    expect(stored).not.toBeNull();
+    expect(stored!.dim).toBe(original.length);
+    expect(stored!.embedding.length).toBe(original.length);
+    for (let i = 0; i < original.length; i++) {
+      // Object.is preserves -0 / NaN semantics; strict === here works for
+      // finite normalized values from a Float32Array which stays bit-exact.
+      expect(Object.is(stored!.embedding[i], original[i])).toBe(true);
+    }
+  });
+
   it("countCoverage reports totals", async () => {
     rows = [
       {

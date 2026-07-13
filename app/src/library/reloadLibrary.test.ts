@@ -43,12 +43,12 @@ describe("reloadLibrary", () => {
     getSecretMock.mockResolvedValueOnce("/Users/x/Music");
     stopPlaybackMock.mockResolvedValueOnce(undefined);
     executeMock.mockResolvedValue(undefined);
-    importLibraryMock.mockResolvedValueOnce(7);
+    importLibraryMock.mockResolvedValueOnce({ imported: 7, pruned: 0 });
 
     const progress: string[] = [];
     const result = await reloadLibrary((p) => progress.push(p.kind));
 
-    expect(result).toEqual({ kind: "done", imported: 7 });
+    expect(result).toEqual({ kind: "done", imported: 7, pruned: 0 });
     expect(stopPlaybackMock).toHaveBeenCalledOnce();
     const deleteStatements = executeMock.mock.calls.map((c) => c[0]);
     expect(deleteStatements).toEqual([
@@ -58,6 +58,16 @@ describe("reloadLibrary", () => {
     ]);
     expect(importLibraryMock).toHaveBeenCalledWith("/Users/x/Music");
     expect(progress).toEqual(["starting", "clearing", "scanning", "done"]);
+  });
+
+  it("surfaces pruned count when importLibrary self-heals stale rows", async () => {
+    getSecretMock.mockResolvedValueOnce("/lib");
+    stopPlaybackMock.mockResolvedValueOnce(undefined);
+    executeMock.mockResolvedValue(undefined);
+    importLibraryMock.mockResolvedValueOnce({ imported: 3, pruned: 2 });
+
+    const result = await reloadLibrary();
+    expect(result).toEqual({ kind: "done", imported: 3, pruned: 2 });
   });
 
   it("returns failed with the error message when a step throws", async () => {
@@ -74,9 +84,9 @@ describe("reloadLibrary", () => {
     getSecretMock.mockResolvedValueOnce("/lib");
     stopPlaybackMock.mockRejectedValueOnce(new Error("no active sink"));
     executeMock.mockResolvedValue(undefined);
-    importLibraryMock.mockResolvedValueOnce(0);
+    importLibraryMock.mockResolvedValueOnce({ imported: 0, pruned: 0 });
 
     const result = await reloadLibrary();
-    expect(result).toEqual({ kind: "done", imported: 0 });
+    expect(result).toEqual({ kind: "done", imported: 0, pruned: 0 });
   });
 });

@@ -107,7 +107,7 @@ describe("Orchestrator.onUserInput happy path", () => {
     await orc.onUserInput("最近有点累");
     expect(deps.emotion.analyze).toHaveBeenCalledOnce();
     expect(deps.companion.choose).toHaveBeenCalledOnce();
-    expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3");
+    expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
   });
 
   it("inserts a DialogueTurn with all the right fields", async () => {
@@ -460,6 +460,53 @@ describe("Orchestrator T8: emotion prediction channel (auto-advance)", () => {
     // Default mock emotion pad
     expect(autoTurn.current_emotion.pad).toEqual({ p: -0.3, a: -0.2, d: 0 });
     expect(autoTurn.current_emotion.predicted_trajectory).toBeUndefined();
+  });
+
+  // Regression: without exclusion the same emotion + same pseudoTarget yields
+  // the same top-ranked song, and the LLM re-picks it every time. That produced
+  // "song ends → same song replays" instead of auto-advance.
+  it("auto-advance excludes the just-played song from prefilter candidates", async () => {
+    const t1: LibraryTrack = { id: "t1", path: "/a.mp3", origin: "local", added_at: 0, title: "T1" };
+    const t2: LibraryTrack = { id: "t2", path: "/b.mp3", origin: "local", added_at: 0, title: "T2" };
+    const prefilter = vi.fn(
+      async (
+        _target: unknown,
+        _pad: unknown,
+        _limit: unknown,
+        exclude?: ReadonlySet<string>,
+      ) => {
+        const all = [t1, t2];
+        return exclude ? all.filter((t) => !exclude.has(t.id)) : all;
+      },
+    );
+    const choose = vi.fn(async (input: { candidates: LibraryTrack[] }) => ({
+      song_id: input.candidates[0].id,
+      target_profile: "x",
+      rationale: "y",
+      needed_shift: "接住" as const,
+    }));
+    const deps = makeDeps({
+      library: { prefilter },
+      companion: { choose },
+    });
+    const orc = new Orchestrator(deps as any);
+
+    // First turn → t1 (first candidate)
+    await orc.onUserInput("start");
+    expect(deps.audio.playFile).toHaveBeenLastCalledWith("/a.mp3", null);
+
+    // Song completes → auto-advance must exclude t1 and pick t2
+    await orc.onSongComplete();
+
+    // 2nd prefilter call is auto-advance: 4th arg must exclude t1
+    const secondCall = prefilter.mock.calls[1] as unknown as [
+      unknown, unknown, unknown, ReadonlySet<string>,
+    ];
+    expect(secondCall[3]).toBeInstanceOf(Set);
+    expect(secondCall[3].has("t1")).toBe(true);
+
+    // And audio played the OTHER song
+    expect(deps.audio.playFile).toHaveBeenLastCalledWith("/b.mp3", null);
   });
 });
 

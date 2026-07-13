@@ -262,4 +262,67 @@ describe("LibraryAgent.prefilter", () => {
       expect(out[0].id).toBe("a");
     });
   });
+
+  describe("Sprint 12 follow-up: BPM signal", () => {
+    function makeTrack(id: string, title: string): LibraryTrack {
+      return { id, path: `/${id}.mp3`, origin: "local", added_at: 0, title };
+    }
+    const emptyLyrics = { getBatch: async () => new Map() };
+    const nullProvider = async () => null;
+
+    it("high-arousal target ranks a 140bpm track above a 60bpm track", async () => {
+      // Two otherwise-identical tracks (same title, no lyrics, matching pad
+      // signals) — only bpm distinguishes. High arousal ⇒ targetBpm ~145,
+      // so bpmScore(140) ~ 0.77 vs bpmScore(60) = 0 (well outside tolerance).
+      const tracks = [makeTrack("fast", "x"), makeTrack("slow", "x")];
+      const featuresMap = new Map([
+        ["fast", { track_id: "fast", bpm: 140, energy: 0.5, valence: 0.5 }],
+        ["slow", { track_id: "slow", bpm: 60, energy: 0.5, valence: 0.5 }],
+      ]);
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: { getBatch: async () => featuresMap },
+        lyrics: emptyLyrics,
+        makeProvider: nullProvider,
+      });
+      const excited: PAD = { p: 0, a: 1, d: 0 };
+      const out = await agent.prefilter("x", excited, 2);
+      expect(out[0].id).toBe("fast");
+    });
+
+    it("low-arousal target ranks a 60bpm track above a 140bpm track", async () => {
+      const tracks = [makeTrack("fast", "x"), makeTrack("slow", "x")];
+      const featuresMap = new Map([
+        ["fast", { track_id: "fast", bpm: 140, energy: 0.5, valence: 0.5 }],
+        ["slow", { track_id: "slow", bpm: 60, energy: 0.5, valence: 0.5 }],
+      ]);
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: { getBatch: async () => featuresMap },
+        lyrics: emptyLyrics,
+        makeProvider: nullProvider,
+      });
+      const calm: PAD = { p: 0, a: -1, d: 0 };
+      const out = await agent.prefilter("x", calm, 2);
+      expect(out[0].id).toBe("slow");
+    });
+
+    it("all-null bpm library ⇒ bpm signal absent, ordering matches pre-BPM behaviour", async () => {
+      // Same case as "matches Sprint 9 formula": kw=1 for 'a', pad favours
+      // 'b'. Without bpm engaged, 'b' should still win under kw+pad only.
+      const tracks = [makeTrack("a", "piano"), makeTrack("b", "silence")];
+      const featuresMap = new Map([
+        ["a", { track_id: "a", bpm: null, energy: 1, valence: 1 }],
+        ["b", { track_id: "b", bpm: null, energy: 0, valence: 0 }],
+      ]);
+      const agent = new LibraryAgent({
+        repo: { listAll: async () => tracks },
+        features: { getBatch: async () => featuresMap },
+        lyrics: emptyLyrics,
+        makeProvider: nullProvider,
+      });
+      const out = await agent.prefilter("piano", { p: -1, a: -1, d: 0 }, 10);
+      expect(out[0].id).toBe("b");
+    });
+  });
 });

@@ -78,4 +78,29 @@ describe("computeLyricsEmbedding", () => {
     const ok = await computeLyricsEmbedding("t1", "/song.mp3", fakeProvider);
     expect(ok).toBe(false);
   });
+
+  it("warns and returns false when provider vector length disagrees with dim", async () => {
+    lyricsExtractMock.mockResolvedValueOnce("dawn light");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const wrongDim: EmbeddingProvider = {
+      modelId: "test:offbrief",
+      dim: 3,
+      embed: vi.fn(async () => Float32Array.from([1, 2, 3, 4, 5])),
+    };
+    try {
+      const ok = await computeLyricsEmbedding("t1", "/song.mp3", wrongDim);
+      expect(ok).toBe(false);
+      expect(upsertMock).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      const args = warn.mock.calls[0];
+      expect(args[0]).toContain("dim mismatch");
+      expect(args[1]).toMatchObject({
+        modelId: "test:offbrief",
+        expected: 3,
+        actual: 5,
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

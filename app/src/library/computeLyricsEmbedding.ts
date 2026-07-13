@@ -27,7 +27,15 @@ export async function computeLyricsEmbedding(
   if (!lyrics) return false;
   try {
     const embedding = await p.embed(lyrics);
-    if (embedding.length !== p.dim) return false;
+    if (embedding.length !== p.dim) {
+      // Loud, not silent — so ops can correlate a coverage gap back to
+      // the misbehaving provider.
+      console.warn(
+        "[lyra] lyrics embedding dim mismatch",
+        { modelId: p.modelId, expected: p.dim, actual: embedding.length },
+      );
+      return false;
+    }
     await upsert({
       trackId,
       lyricsHash: await sha256Hex16(lyrics),

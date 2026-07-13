@@ -37,3 +37,17 @@ export async function findByPath(path: string): Promise<LibraryTrack | null> {
   );
   return rows.length === 0 ? null : fromRow(rows[0]);
 }
+
+/** Delete a track and every dependent row that references it. tauri-plugin-sql
+ *  leaves the SQLite `foreign_keys` pragma OFF, so ON DELETE CASCADE in the
+ *  schema doesn't fire — we wipe children first, parent last, in an order
+ *  that stays consistent whether or not cascades are eventually turned on. */
+export async function deleteTrackCascade(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "DELETE FROM library_lyrics_embeddings WHERE track_id = ?",
+    [id],
+  );
+  await db.execute("DELETE FROM library_features WHERE track_id = ?", [id]);
+  await db.execute("DELETE FROM library_tracks WHERE id = ?", [id]);
+}

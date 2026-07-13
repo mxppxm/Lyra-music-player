@@ -20,7 +20,7 @@ export type ReloadProgress =
   | { kind: "starting" }
   | { kind: "clearing" }
   | { kind: "scanning" }
-  | { kind: "done"; imported: number }
+  | { kind: "done"; imported: number; pruned: number }
   | { kind: "no-root" }
   | { kind: "failed"; message: string };
 
@@ -49,8 +49,8 @@ export async function reloadLibrary(
     await db.execute("DELETE FROM library_tracks");
 
     emit({ kind: "scanning" });
-    const imported = await importLibrary(root);
-    return emit({ kind: "done", imported });
+    const { imported, pruned } = await importLibrary(root);
+    return emit({ kind: "done", imported, pruned });
   } catch (err) {
     return emit({
       kind: "failed",

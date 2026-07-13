@@ -30,6 +30,9 @@ export async function lyricsRefill(
   let cursor = 0;
   async function worker(): Promise<void> {
     while (cursor < ids.length) {
+      // Bare `cursor++` is safe across the concurrent workers: JS is
+      // single-threaded, and each worker only awaits after capturing `i` —
+      // no other worker can preempt between the read and the increment.
       const i = cursor++;
       const id = ids[i];
       const track = await getTrack(id).catch(() => null);

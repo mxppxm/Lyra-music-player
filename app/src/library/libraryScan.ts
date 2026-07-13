@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { findByPath, insertTrack } from "../db/repo/libraryRepo";
+import {
+  deleteTrackCascade,
+  findByPath,
+  insertTrack,
+  listAll,
+} from "../db/repo/libraryRepo";
 import { upsert as upsertFeatures } from "../db/repo/libraryFeaturesRepo";
 import { extractFeatures } from "./extractFeatures";
 import type { LibraryTrack } from "../types";
@@ -79,10 +84,27 @@ export type ImportOptions = {
   awaitFeatures?: boolean;
 };
 
+export type ImportResult = {
+  imported: number;
+  pruned: number;
+};
+
+/** Normalise a directory path for prefix matching. Adds a trailing slash so
+ *  that "/A" doesn't accidentally match a track under "/Apple".
+ *
+ *  Scope: POSIX-shape paths only (macOS / Linux). The Rust scanner
+ *  canonicalizes to forward-slash form, so this matches how paths land in
+ *  the DB on those platforms. If Windows support is added later, both
+ *  the scan-side canonicalisation and this guard need path.normalize
+ *  treatment; the prune pass silently no-ops rather than misbehaving. */
+function withTrailingSlash(p: string): string {
+  return p.endsWith("/") ? p : `${p}/`;
+}
+
 export async function importLibrary(
   rootPath: string,
   opts: ImportOptions = {},
-): Promise<number> {
+): Promise<ImportResult> {
   const scanned = await scanLibrary(rootPath);
   const newTracks: LibraryTrack[] = [];
   const now = Date.now();
@@ -102,6 +124,29 @@ export async function importLibrary(
     await insertTrack(track);
     newTracks.push(track);
   }
+
+  // Self-heal dangling rows. Guarded so a bad scan can't nuke the library:
+  //   - empty scan usually means the folder is unreachable, not that
+  //     every file vanished — skip entirely
+  //   - only touch rows under this rootPath; the user may still revisit
+  //     tracks that came from a different root
+  let pruned = 0;
+  if (scanned.length > 0) {
+    const scannedPaths = new Set(scanned.map((s) => s.path));
+    const rootPrefix = withTrailingSlash(rootPath);
+    const allTracks = await listAll();
+    for (const t of allTracks) {
+      if (scannedPaths.has(t.path)) continue;
+      if (!t.path.startsWith(rootPrefix)) continue;
+      try {
+        await deleteTrackCascade(t.id);
+        pruned++;
+      } catch {
+        // best-effort; a single failing delete shouldn't stop the sweep
+      }
+    }
+  }
+
   // Sprint 9 + 10: feature extraction + lyrics embedding. Both fire-and-forget
   // so the "Imported N tracks" toast lands immediately; background loops
   // upsert as decodes / API calls finish. Each track is best-effort.
@@ -114,5 +159,5 @@ export async function importLibrary(
       void pl.catch(() => {});
     }
   }
-  return newTracks.length;
+  return { imported: newTracks.length, pruned };
 }

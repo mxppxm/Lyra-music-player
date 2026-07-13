@@ -7,6 +7,13 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+// Extra time we wait past the declared song duration before assuming the
+// primary Sink::empty() watcher will never fire. Covers decoder tail latency,
+// small metadata rounding, and the 400ms grace + 300ms poll of the watcher
+// itself. 750ms is enough for MP3/FLAC/AAC without noticeably delaying the
+// next song when the primary path is broken.
+const FALLBACK_SLACK_MS: u64 = 750;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AudioError {
     #[error("io: {0}")]
@@ -82,7 +89,23 @@ impl AudioPlayer {
     /// called on a background thread. If `stop()` or another `play_file()` is
     /// called first, the watcher exits silently — the caller only gets
     /// `on_complete` for natural completions.
-    pub fn play_file<F>(&self, path: &Path, on_complete: F) -> Result<u64, AudioError>
+    ///
+    /// `duration_hint_ms`: optional song length. When provided, a fallback
+    /// timer thread fires `on_complete` after `duration + FALLBACK_SLACK_MS`
+    /// if the primary Sink::empty() watcher hasn't already fired. This
+    /// guards against rodio 0.19 + symphonia edge cases where `sound_count`
+    /// never decrements to 0 after an MP3 decoder EOFs — without the
+    /// fallback the watcher polls forever and auto-advance never triggers.
+    ///
+    /// Exactly one of the two paths ever invokes the callback — whichever
+    /// takes the boxed FnOnce out of the shared slot first. Superseded
+    /// playbacks (id bumped) suppress both paths.
+    pub fn play_file<F>(
+        &self,
+        path: &Path,
+        duration_hint_ms: Option<u64>,
+        on_complete: F,
+    ) -> Result<u64, AudioError>
     where
         F: 'static + Send + FnOnce(u64),
     {
@@ -90,9 +113,11 @@ impl AudioPlayer {
         let reader = BufReader::new(file);
         let decoder = Decoder::new(reader).map_err(|e| AudioError::Decode(e.to_string()))?;
 
+        // Create the sink upfront so a failure here doesn't leave shared
+        // state half-mutated. The sink attaches to the OutputStreamHandle
+        // but contributes silence until we append.
         let new_sink = Sink::try_new(&self.handle)
             .map_err(|e| AudioError::Stream(e.to_string()))?;
-        new_sink.append(decoder);
 
         // Bump id BEFORE swapping the sink. The previous watcher thread (if
         // any) may still be sleeping between polls; when it next reads
@@ -104,17 +129,29 @@ impl AudioPlayer {
             if let Some(old) = guard.take() {
                 old.stop();
             }
+            // Append AFTER stopping the old sink — otherwise both sinks
+            // feed the shared handle for a lock-acquisition-window worth
+            // of samples, causing audible double-audio at each swap.
+            new_sink.append(decoder);
             *guard = Some(new_sink);
         }
 
-        // Spawn watcher — polls sink emptiness every 300ms.
+        // Shared FnOnce slot so both the empty-watcher and the duration
+        // fallback race for it; whoever wins take()s the boxed callback,
+        // the loser sees None and drops.
+        type Callback = Box<dyn FnOnce(u64) + Send>;
+        let on_complete: Arc<Mutex<Option<Callback>>> =
+            Arc::new(Mutex::new(Some(Box::new(on_complete))));
+
+        // Primary watcher — polls sink emptiness every 300ms.
         let sink_arc = Arc::clone(&self.sink);
-        let current_id = Arc::clone(&self.current_id);
+        let current_id_w = Arc::clone(&self.current_id);
+        let cb_w = Arc::clone(&on_complete);
         thread::spawn(move || {
             // Grace period so we don't observe "empty" before playback starts.
             thread::sleep(Duration::from_millis(400));
             loop {
-                if current_id.load(Ordering::SeqCst) != id {
+                if current_id_w.load(Ordering::SeqCst) != id {
                     return; // superseded
                 }
                 let done = {
@@ -122,17 +159,41 @@ impl AudioPlayer {
                     guard.as_ref().map_or(true, |s| s.empty())
                 };
                 if done {
-                    // Re-check after acquiring intent to fire, in case a
-                    // stop() or new play_file() sneaked in between the emptiness
-                    // check and here.
-                    if current_id.load(Ordering::SeqCst) == id {
-                        on_complete(id);
+                    // Take the callback slot FIRST — this guarantees that a
+                    // stop() or fallback race can't fire the same callback
+                    // twice. Then verify id inside; if it moved, we drop
+                    // the callback without invoking it (equivalent to stop's
+                    // "no natural-complete" contract).
+                    let taken = cb_w.lock().unwrap().take();
+                    if let Some(cb) = taken {
+                        if current_id_w.load(Ordering::SeqCst) == id {
+                            cb(id);
+                        }
                     }
                     return;
                 }
                 thread::sleep(Duration::from_millis(300));
             }
         });
+
+        // Fallback timer — only armed when the caller knows the song length.
+        // A hint of 0 means "duration unknown" (metadata read failed); firing
+        // the fallback then would truncate short songs at FALLBACK_SLACK_MS,
+        // so skip.
+        if let Some(dur_ms) = duration_hint_ms.filter(|d| *d > 0) {
+            let current_id_f = Arc::clone(&self.current_id);
+            let cb_f = Arc::clone(&on_complete);
+            let wait_ms = dur_ms.saturating_add(FALLBACK_SLACK_MS);
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(wait_ms));
+                let taken = cb_f.lock().unwrap().take();
+                if let Some(cb) = taken {
+                    if current_id_f.load(Ordering::SeqCst) == id {
+                        cb(id);
+                    }
+                }
+            });
+        }
 
         Ok(id)
     }

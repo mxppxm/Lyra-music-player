@@ -43,7 +43,10 @@ export type OrchestratorDeps = {
     // playFile may return the Rust playback id (a number) so the caller can
     // correlate the "audio-complete" event. Orchestrator itself doesn't use
     // the id; the correlation is done at the App/subscriber level.
-    playFile(path: string): Promise<number | void>;
+    // `durationMs` is a hint used by Rust to arm a duration-based safety
+    // net so auto-advance still fires on tracks where Sink::empty() never
+    // flips. Null/undefined skips it.
+    playFile(path: string, durationMs?: number | null): Promise<number | void>;
     stop(): Promise<void>;
   };
   /** Optional perception event bus — if provided, Orchestrator emits
@@ -184,6 +187,7 @@ export class Orchestrator {
     userUtterance: string,
     modality: "text" | "voice" | "proactive-open",
     pseudoTargetOverride?: string,
+    excludeIds?: ReadonlySet<string>,
   ): Promise<void> {
     const { companion, library, soulStore, turnRepo, audio } = this.deps;
     const clock = this.deps.clock ?? Date.now;
@@ -200,7 +204,18 @@ export class Orchestrator {
     const pseudoTarget =
       pseudoTargetOverride ??
       `${userUtterance} ${emotion.labels.join(" ")}`.trim();
-    const candidates = await library.prefilter(pseudoTarget, emotion.pad, 30);
+    let candidates = await library.prefilter(
+      pseudoTarget,
+      emotion.pad,
+      30,
+      excludeIds,
+    );
+    // Fallback: if excludeIds emptied the library (e.g., only one track exists
+    // and it's the one we just played), retry without the exclusion so we
+    // still play something rather than erroring.
+    if (candidates.length === 0 && excludeIds && excludeIds.size > 0) {
+      candidates = await library.prefilter(pseudoTarget, emotion.pad, 30);
+    }
     if (candidates.length === 0) {
       this.emit({
         kind: "error",
@@ -240,7 +255,7 @@ export class Orchestrator {
     };
 
     await turnRepo.insertTurn(turn);
-    await audio.playFile(song.path);
+    await audio.playFile(song.path, song.duration_ms ?? null);
 
     // Sprint 11: fire-and-forget latency write. The chained UPDATE isn't in
     // the critical path — user sees the song already; we just record the
@@ -392,6 +407,12 @@ export class Orchestrator {
   async onSongComplete(): Promise<void> {
     if (!this.currentTurn) return;
 
+    // Capture the ended song id BEFORE finalisePreviousTurn wipes currentSong,
+    // so auto-advance can exclude it from candidates and we don't loop on the
+    // same track (with same emotion + same pseudoTarget, prefilter otherwise
+    // ranks the just-played song first every time).
+    const endedSongId = this.currentSong?.id ?? null;
+
     // Emit perception complete event (best-effort, optional bus).
     try {
       const clockFn = this.deps.clock ?? Date.now;
@@ -446,6 +467,7 @@ export class Orchestrator {
         "proactive-open",
         // For pseudo-target we lean on the baseline emotion's labels + a hint
         `${baseEmotion.labels.join(" ")} 延续`.trim(),
+        endedSongId ? new Set([endedSongId]) : undefined,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
