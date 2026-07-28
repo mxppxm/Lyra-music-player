@@ -14,6 +14,9 @@ export const SECRET_KEYS = {
   openaiApiKey: "embedding.openai.apiKey",
   weeklyDirOverride: "weekly.dirOverride",
   weeklyAutoEnabled: "weekly.autoEnabled",
+  weatherEnabled: "perception.weatherEnabled",
+  weatherLat: "perception.weatherLat",
+  weatherLon: "perception.weatherLon",
 } as const;
 
 export async function setSecret(key: string, value: string): Promise<void> {

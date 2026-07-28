@@ -5,7 +5,7 @@ import type {
   ChatResponse,
 } from "../types";
 
-const DEFAULT_MODEL = "glm-5.1";
+const DEFAULT_MODEL = "glm-5.2";
 // Hard-coded to match the CSP connect-src allowlist in tauri.conf.json.
 // If this ever changes, update the CSP simultaneously.
 const ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions";

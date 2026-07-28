@@ -18,10 +18,12 @@ import { ProactiveEngine } from "./proactive/engine";
 import { createSulkStore } from "./proactive/sulkStore";
 import { readPersistedSulkUntil, persistSulkSnapshot } from "./proactive/sulkPersistence";
 import { morningRule, careRule, anniversaryRule, shareRule, rhythmRule } from "./proactive/rules";
-import type { PolitenessState } from "./proactive/types";
+import type { PolitenessState, RuleContext } from "./proactive/types";
+import { listRecent as listRecentSharedMemory } from "./db/repo/sharedMemoryRepo";
 import { bus as perceptionBus } from "./perception/events";
 import { installPerceptionListeners } from "./perception/install";
 import { aggregate as aggregatePerception } from "./perception/aggregator";
+import { ensureWeatherSnapshot } from "./perception/weather";
 import { createPerceptionAgent, type PerceptionMode } from "./perception/PerceptionAgent";
 import { routeProvider } from "./agents/route";
 import { insert as insertPerceptionAudit } from "./db/repo/perceptionAuditRepo";
@@ -135,6 +137,25 @@ function App() {
     [bootDone],
   );
 
+  const runProactiveEngineTick = useCallback(async (todayFirstOpen: boolean) => {
+    const engine = proactiveEngineRef.current;
+    if (!engine) return;
+    let sharedMemories: RuleContext["sharedMemories"] = [];
+    try {
+      sharedMemories = await listRecentSharedMemory(20);
+    } catch {
+      /* best-effort */
+    }
+    await engine.tick({
+      now: new Date(),
+      lastAppOpenAt: null,
+      todayFirstOpen,
+      sharedMemories,
+      dreamSeeds: [],
+      todayKindCount: { ...politenessStateRef.current.todayKindCount },
+    });
+  }, []);
+
   // Construct ProactiveEngine once orchestrator is ready
   useEffect(() => {
     if (!orchestrator) return;
@@ -144,45 +165,27 @@ function App() {
       politenessState: politenessStateRef.current,
       sulkStore: sulkStoreRef.current,
       fulfill: async (intent) => {
-        // v0.2: ask orchestrator to pick a song via its internal logic
-        // For now, emit proactive-pending with a placeholder — real
-        // LibraryAgent/CompanionAgent wiring is T3's job.
-        console.debug("[lyra] proactive fulfill intent:", intent);
-        // Minimal: just log for now; T3 will add full song selection.
+        await orchestrator.fulfillProactive(intent);
       },
     });
     proactiveEngineRef.current = engine;
 
     // Tick once after boot (in case app opened fresh this morning)
-    void engine.tick({
-      now: new Date(),
-      lastAppOpenAt: null,
-      todayFirstOpen: todayFirstOpenRef.current,
-      sharedMemories: [],
-      dreamSeeds: [],
-      todayKindCount: { ...politenessStateRef.current.todayKindCount },
+    void runProactiveEngineTick(todayFirstOpenRef.current).finally(() => {
+      todayFirstOpenRef.current = false;
     });
-    todayFirstOpenRef.current = false;
-  }, [orchestrator]);
+  }, [orchestrator, runProactiveEngineTick]);
 
   // Tick on window focus
   useEffect(() => {
     const handleFocus = () => {
-      const engine = proactiveEngineRef.current;
-      if (!engine) return;
-      void engine.tick({
-        now: new Date(),
-        lastAppOpenAt: null,
-        todayFirstOpen: todayFirstOpenRef.current,
-        sharedMemories: [],
-        dreamSeeds: [],
-        todayKindCount: { ...politenessStateRef.current.todayKindCount },
-      });
+      const firstOpen = todayFirstOpenRef.current;
       todayFirstOpenRef.current = false;
+      void runProactiveEngineTick(firstOpen);
     };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
-  }, []);
+  }, [runProactiveEngineTick]);
 
   const handleReflectNow = useCallback(() => {
     if (reflecting) return;
@@ -260,9 +263,27 @@ function App() {
       const agent = createPerceptionAgent({ mode, provider, tuning });
       console.debug("[lyra] perception agent mode:", mode, "tuning:", tuning ?? "(defaults)");
 
+      const weatherStored = await getSecret(SECRET_KEYS.weatherEnabled).catch(() => null);
+      const weatherEnabled = weatherStored !== "false";
+      const latRaw = await getSecret(SECRET_KEYS.weatherLat).catch(() => null);
+      const lonRaw = await getSecret(SECRET_KEYS.weatherLon).catch(() => null);
+      const parseCoord = (raw: string | null): number | null => {
+        if (raw == null || raw === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+      };
+      const manualLat = parseCoord(latRaw);
+      const manualLon = parseCoord(lonRaw);
+
       const tick = async () => {
         try {
           const features = aggregatePerception(perceptionBus);
+          const weather = await ensureWeatherSnapshot({
+            enabled: weatherEnabled,
+            manualLat,
+            manualLon,
+          });
+          if (weather) features.weatherCode = weather.weatherCode;
           const bias = await agent.infer(features);
           orchestrator.setPerceptionBias(bias.confidence > 0 ? bias : null);
           if (bias.confidence > 0) {

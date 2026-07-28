@@ -33,7 +33,7 @@ describe("ZhipuProvider", () => {
     expect(url).toBe("https://open.bigmodel.cn/api/paas/v4/chat/completions");
     expect((init as any).headers["authorization"]).toBe("Bearer sk-zp");
     const body = JSON.parse((init as any).body);
-    expect(body.model).toBe("glm-5.1");
+    expect(body.model).toBe("glm-5.2");
     expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
 
     expect(res.content).toBe("你好");

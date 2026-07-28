@@ -38,6 +38,17 @@ export type BehavioralFeatures = {
   abandonedInputs: number;
   /** Sprint 13: focus_no_interaction 事件累积的静默时长,ms */
   focusIdleMs: number;
+  /** Throttled key_active tick count in window */
+  keyActiveCount: number;
+  /** Throttled mouse_active tick count in window */
+  mouseActiveCount: number;
+  /** activeMs / windowMs in [0, 1] */
+  activityDensity: number;
+  /**
+   * WMO weather code from Open-Meteo, attached by the perception tick.
+   * Aggregator always leaves this null.
+   */
+  weatherCode: number | null;
 };
 
 const DEFAULT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
@@ -61,10 +72,12 @@ export function aggregate(
   // Count each distinct mouse_active / key_active event as 500ms of activity
   // (matches throttle in install.ts — one event per 500ms per kind).
   const ACTIVE_TICK_MS = 500;
-  const activeCount = events.filter(
-    (e) => e.kind === "mouse_active" || e.kind === "key_active",
-  ).length;
+  const keyActiveCount = events.filter((e) => e.kind === "key_active").length;
+  const mouseActiveCount = events.filter((e) => e.kind === "mouse_active").length;
+  const activeCount = keyActiveCount + mouseActiveCount;
   const activeMs = activeCount * ACTIVE_TICK_MS;
+  const activityDensity =
+    windowMs <= 0 ? 0 : Math.min(1, activeMs / windowMs);
 
   // ── Submits ───────────────────────────────────────────────────────────────
   const submitEvents = events.filter((e) => e.kind === "input_submit");
@@ -138,5 +151,9 @@ export function aggregate(
     totalHoverDwellMs,
     abandonedInputs,
     focusIdleMs,
+    keyActiveCount,
+    mouseActiveCount,
+    activityDensity,
+    weatherCode: null,
   };
 }

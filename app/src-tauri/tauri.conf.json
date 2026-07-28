@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://api.deepseek.com https://open.bigmodel.cn; img-src 'self' asset: http://asset.localhost"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.anthropic.com https://api.deepseek.com https://open.bigmodel.cn https://api.open-meteo.com; img-src 'self' asset: http://asset.localhost"
     }
   },
   "bundle": {

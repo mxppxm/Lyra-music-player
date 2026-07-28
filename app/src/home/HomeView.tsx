@@ -94,8 +94,14 @@ function LiveHomeView({
   const [songInfoVisible, setSongInfoVisible] = useState(false);
 
   // 每首新歌开头亮 3s 交代"我在听什么",随后淡出。哲学:听音乐和心情,不是看具体歌曲。
+  // proactive-pending 则持续展示邀约歌名，直到用户回应或状态离开。
   const playingSongId = state.kind === "playing" ? state.song.id : null;
+  const pendingSongId = state.kind === "proactive-pending" ? state.song.id : null;
   useEffect(() => {
+    if (pendingSongId !== null) {
+      setSongInfoVisible(true);
+      return;
+    }
     if (playingSongId === null) {
       setSongInfoVisible(false);
       return;
@@ -103,7 +109,7 @@ function LiveHomeView({
     setSongInfoVisible(true);
     const t = setTimeout(() => setSongInfoVisible(false), 3000);
     return () => clearTimeout(t);
-  }, [playingSongId]);
+  }, [playingSongId, pendingSongId]);
 
   // Refresh trace + emotion history whenever state transitions to playing
   useEffect(() => {
@@ -135,19 +141,25 @@ function LiveHomeView({
       ? state.turn.current_emotion.pad
       : ZERO_PAD;
 
-  // Emotion light band samples: use historical turn PADs when available,
-  // otherwise render as an empty array so EmotionLightBand shows the
-  // spec §3.3 "static silence" hairline midline instead of a single dot.
+  // Keep the band painted while thinking (song switch) so we don't flash the
+  // empty-state hairline. proactive-pending uses the same history if any.
   const padSamples: PAD[] =
-    state.kind === "playing" && historicalPads.length >= 2
+    (state.kind === "playing" ||
+      state.kind === "thinking" ||
+      state.kind === "proactive-pending") &&
+    historicalPads.length >= 1
       ? historicalPads
       : [];
 
   const title: string =
-    state.kind === "playing" ? songDisplayTitle(state.song) : "";
+    state.kind === "playing" || state.kind === "proactive-pending"
+      ? songDisplayTitle(state.song)
+      : "";
 
   const artist: string =
-    state.kind === "playing" ? songDisplayArtist(state.song) : "";
+    state.kind === "playing" || state.kind === "proactive-pending"
+      ? songDisplayArtist(state.song)
+      : "";
 
   const noteText: string =
     reloadStatus ??
@@ -157,9 +169,11 @@ function LiveHomeView({
         ? "…"
         : state.kind === "playing"
           ? state.turn.agent_response.rationale
-          : state.kind === "error"
-            ? state.message
-            : "");
+          : state.kind === "proactive-pending"
+            ? state.rationale
+            : state.kind === "error"
+              ? state.message
+              : "");
 
   const noteColor: string | undefined =
     state.kind === "error" && reloadStatus === null
@@ -226,7 +240,7 @@ function LiveHomeView({
         <div style={{ flex: 1 }} />
         <EmotionLightBand samples={padSamples} />
         <div style={{ height: "var(--lyra-space-band-to-song)" }} />
-        {state.kind === "playing" ? (
+        {state.kind === "playing" || state.kind === "proactive-pending" ? (
           <div
             data-testid="song-info-fade"
             style={{

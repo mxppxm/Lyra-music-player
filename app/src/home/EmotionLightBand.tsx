@@ -25,7 +25,7 @@ export function EmotionLightBand({ samples }: EmotionLightBandProps) {
       xmlns="http://www.w3.org/2000/svg"
     >
       {/* Subtle band-area backdrop so the element reads as "a place" even
-          when data is thin. Absent when empty samples fall back to hairline. */}
+          when data is thin. Omitted when empty (no bars, no hairline). */}
       {drawn.length > 0 && (
         <rect
           x={0}
@@ -36,44 +36,34 @@ export function EmotionLightBand({ samples }: EmotionLightBandProps) {
           rx={4}
         />
       )}
-      {drawn.length === 0 ? (
-        <line
-          data-testid="emotion-band-hairline"
-          x1={0}
-          y1={MID}
-          x2={WIDTH}
-          y2={MID}
-          stroke="rgba(0,0,0,0.2)"
-          strokeWidth={1.5}
-        />
-      ) : (
-        drawn.map((s, i) => {
-          const { h, s: sat, l } = padHSL(s);
-          // Lower lightness so the color is legible on the light ambient bg,
-          // boost saturation for punch. Retain 40-72% lightness range.
-          const displayL = Math.max(40, Math.min(72, l * 0.72));
-          const displaySat = Math.max(30, Math.min(100, sat + 30));
-          const color = `hsl(${h}, ${displaySat}%, ${displayL}%)`;
-          const halfBar = Math.max(6, Math.abs(s.p) * (HEIGHT / 2 - 2));
-          const y = s.p >= 0 ? MID - halfBar : MID;
-          const barH = halfBar;
-          // Wider bars for readability — fill ~70% of the column, then modulate
-          // by arousal.
-          const barW = Math.max(4, columnW * 0.7 + Math.abs(s.a) * 2);
-          return (
-            <rect
-              data-testid={`emotion-band-sample-${i}`}
-              key={i}
-              x={i * columnW + columnW / 2 - barW / 2}
-              y={y}
-              width={barW}
-              height={barH}
-              fill={color}
-              rx={1.5}
-            />
-          );
-        })
-      )}
+      {/* Empty samples: reserve layout space only — no hairline. A midline
+          flash during thinking→playing felt like a UI bug when switching songs. */}
+      {drawn.map((s, i) => {
+        const { h, s: sat, l } = padHSL(s);
+        // Lower lightness so the color is legible on the light ambient bg,
+        // boost saturation for punch. Retain 40-72% lightness range.
+        const displayL = Math.max(40, Math.min(72, l * 0.72));
+        const displaySat = Math.max(30, Math.min(100, sat + 30));
+        const color = `hsl(${h}, ${displaySat}%, ${displayL}%)`;
+        const halfBar = Math.max(6, Math.abs(s.p) * (HEIGHT / 2 - 2));
+        const y = s.p >= 0 ? MID - halfBar : MID;
+        const barH = halfBar;
+        // Wider bars for readability — fill ~70% of the column, then modulate
+        // by arousal.
+        const barW = Math.max(4, columnW * 0.7 + Math.abs(s.a) * 2);
+        return (
+          <rect
+            data-testid={`emotion-band-sample-${i}`}
+            key={i}
+            x={i * columnW + columnW / 2 - barW / 2}
+            y={y}
+            width={barW}
+            height={barH}
+            fill={color}
+            rx={1.5}
+          />
+        );
+      })}
     </svg>
   );
 }

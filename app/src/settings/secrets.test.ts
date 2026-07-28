@@ -48,6 +48,12 @@ describe("settings/secrets", () => {
     expect(SECRET_KEYS.perceptionEnabled).toBe("perception.enabled");
   });
 
+  it("exports weather perception keys", () => {
+    expect(SECRET_KEYS.weatherEnabled).toBe("perception.weatherEnabled");
+    expect(SECRET_KEYS.weatherLat).toBe("perception.weatherLat");
+    expect(SECRET_KEYS.weatherLon).toBe("perception.weatherLon");
+  });
+
   it("exports embedding secret keys", () => {
     expect(SECRET_KEYS.embeddingProvider).toBe("embedding.provider");
     expect(SECRET_KEYS.zhipuEmbeddingApiKey).toBe("embedding.zhipu.apiKey");

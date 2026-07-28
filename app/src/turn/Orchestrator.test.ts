@@ -249,6 +249,64 @@ describe("Orchestrator T7: reaction capture", () => {
   });
 });
 
+describe("Orchestrator.fulfillProactive", () => {
+  const morningIntent = (): import("../proactive/types").ProactiveIntent => ({
+    id: "i1",
+    createdAt: 1000,
+    validUntil: 1000 + 30 * 60_000,
+    kind: "morning",
+    urgency: 0.5,
+    hint: "早上第一次打开",
+  });
+
+  it("prefilters + chooses then emits proactive-pending without playing audio", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+
+    await orc.fulfillProactive(morningIntent());
+
+    expect(deps.library.prefilter).toHaveBeenCalledOnce();
+    expect(deps.companion.choose).toHaveBeenCalledOnce();
+    expect(deps.audio.playFile).not.toHaveBeenCalled();
+    expect(seen).toEqual(["proactive-pending"]);
+    const state = orc.getState();
+    expect(state.kind).toBe("proactive-pending");
+    if (state.kind === "proactive-pending") {
+      expect(state.song.id).toBe("t1");
+      expect(state.rationale).toBe("y");
+      expect(state.intent.kind).toBe("morning");
+    }
+  });
+
+  it("no-ops when library is empty", async () => {
+    const deps = makeDeps();
+    (deps.library as any).prefilter = vi.fn(async () => []);
+    const orc = new Orchestrator(deps as any);
+
+    await orc.fulfillProactive(morningIntent());
+
+    expect(deps.companion.choose).not.toHaveBeenCalled();
+    expect(orc.getState().kind).toBe("idle");
+  });
+
+  it("no-ops when already playing", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来首歌");
+    expect(orc.getState().kind).toBe("playing");
+    deps.library.prefilter.mockClear();
+    deps.companion.choose.mockClear();
+
+    await orc.fulfillProactive(morningIntent());
+
+    expect(deps.library.prefilter).not.toHaveBeenCalled();
+    expect(deps.companion.choose).not.toHaveBeenCalled();
+    expect(orc.getState().kind).toBe("playing");
+  });
+});
+
 describe("Orchestrator T2: proactive-pending state", () => {
   it("startProactiveIntent emits proactive-pending WITHOUT playing audio", () => {
     const deps = makeDeps();

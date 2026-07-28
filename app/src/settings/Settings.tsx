@@ -21,6 +21,9 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [dreamIdleMinutes, setDreamIdleMinutes] = useState("30");
   const [perceptionEnabled, setPerceptionEnabled] = useState(true);
   const [perceptionMode, setPerceptionMode] = useState<"rule" | "llm">("rule");
+  const [weatherEnabled, setWeatherEnabled] = useState(true);
+  const [weatherLat, setWeatherLat] = useState("");
+  const [weatherLon, setWeatherLon] = useState("");
   const [embeddingChoice, setEmbeddingChoice] = useState<EmbeddingChoice>("");
   const [zhipuEmbeddingKey, setZhipuEmbeddingKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
@@ -36,7 +39,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d, z, lib, dt, dim, pe, pm, ep, zek, ok, wd, wa] = await Promise.all([
+      const [a, d, z, lib, dt, dim, pe, pm, ep, zek, ok, wd, wa, we, wlat, wlon] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
         getSecret(SECRET_KEYS.zhipuApiKey),
@@ -50,6 +53,9 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         getSecret(SECRET_KEYS.openaiApiKey),
         getSecret(SECRET_KEYS.weeklyDirOverride),
         getSecret(SECRET_KEYS.weeklyAutoEnabled),
+        getSecret(SECRET_KEYS.weatherEnabled),
+        getSecret(SECRET_KEYS.weatherLat),
+        getSecret(SECRET_KEYS.weatherLon),
       ]);
       if (cancelled) return;
       setAnthropic(a ?? "");
@@ -61,6 +67,9 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       // Default to enabled; only disable when explicitly stored as "false"
       setPerceptionEnabled(pe !== "false");
       setPerceptionMode(pm === "llm" ? "llm" : "rule");
+      setWeatherEnabled(we !== "false");
+      setWeatherLat(wlat ?? "");
+      setWeatherLon(wlon ?? "");
       setEmbeddingChoice(ep === "zhipu" || ep === "openai" ? ep : "");
       setZhipuEmbeddingKey(zek ?? "");
       setOpenaiKey(ok ?? "");
@@ -79,6 +88,11 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const onSave = async () => {
     setSaving(true);
     try {
+      const validCoord = (raw: string): string => {
+        if (!raw || !raw.trim()) return "";
+        const n = Number(raw);
+        return Number.isFinite(n) ? raw.trim() : "";
+      };
       await setSecret(SECRET_KEYS.anthropicApiKey, anthropic);
       await setSecret(SECRET_KEYS.deepseekApiKey, deepseek);
       await setSecret(SECRET_KEYS.zhipuApiKey, zhipu);
@@ -87,6 +101,9 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.dreamIdleMinutes, dreamIdleMinutes);
       await setSecret(SECRET_KEYS.perceptionEnabled, perceptionEnabled ? "true" : "false");
       await setSecret(SECRET_KEYS.perceptionMode, perceptionMode);
+      await setSecret(SECRET_KEYS.weatherEnabled, weatherEnabled ? "true" : "false");
+      await setSecret(SECRET_KEYS.weatherLat, validCoord(weatherLat));
+      await setSecret(SECRET_KEYS.weatherLon, validCoord(weatherLon));
       await setSecret(SECRET_KEYS.embeddingProvider, embeddingChoice);
       await setSecret(SECRET_KEYS.zhipuEmbeddingApiKey, zhipuEmbeddingKey);
       await setSecret(SECRET_KEYS.openaiApiKey, openaiKey);
@@ -225,6 +242,38 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           <option value="rule">规则式（离线，免费）</option>
           <option value="llm">LLM 式（Zhipu/DeepSeek，每 60 秒一次调用）</option>
         </select>
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={weatherEnabled}
+          onChange={(e) => setWeatherEnabled(e.target.checked)}
+          disabled={!loaded || !perceptionEnabled}
+        />
+        Weather mood (Open-Meteo) — soft PAD bias from local weather
+      </label>
+      <p style={{ opacity: 0.7, fontSize: "0.85em", margin: "0 0 8px 0" }}>
+        ⓘ 未填写手动坐标时会请求系统定位权限
+      </p>
+      <label>
+        Weather lat (optional fallback)
+        <input
+          type="text"
+          value={weatherLat}
+          onChange={(e) => setWeatherLat(e.target.value)}
+          disabled={!loaded || !perceptionEnabled || !weatherEnabled}
+          placeholder="e.g. 31.23"
+        />
+      </label>
+      <label>
+        Weather lon (optional fallback)
+        <input
+          type="text"
+          value={weatherLon}
+          onChange={(e) => setWeatherLon(e.target.value)}
+          disabled={!loaded || !perceptionEnabled || !weatherEnabled}
+          placeholder="e.g. 121.47"
+        />
       </label>
       <label>
         Lyrics embedding provider

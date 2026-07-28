@@ -15,6 +15,7 @@ import type { BehavioralFeatures } from "./aggregator";
 import type { PerceptionAgent, PerceptionBias } from "./PerceptionAgent";
 import type { PerceptionTuning } from "./tuning";
 import { resolveThresholds } from "./tuning";
+import { biasFromWeatherCode } from "./weather";
 
 type Rule = {
   name: string;
@@ -22,6 +23,13 @@ type Rule = {
   pad_bias: PAD;
   confidence: number;
   reason: string;
+};
+
+type FiredBias = {
+  pad_bias: PAD;
+  confidence: number;
+  reason: string;
+  name?: string;
 };
 
 function buildRules(t: Required<PerceptionTuning>): Rule[] {
@@ -92,6 +100,16 @@ function buildRules(t: Required<PerceptionTuning>): Rule[] {
       confidence: 0.6,
       reason: "in the room, listening — quiet presence",
     },
+    {
+      name: "fatigue_high",
+      test: (f) =>
+        !f.isBlurred &&
+        f.activityDensity >= t.activityDensityThreshold &&
+        f.keyActiveCount >= t.keyActiveFatigueThreshold,
+      pad_bias: { p: -0.2, a: -0.15, d: -0.1 },
+      confidence: 0.45,
+      reason: "sustained keyboard/mouse activity suggests fatigue",
+    },
   ];
 }
 
@@ -109,7 +127,20 @@ export class RulePerceptionAgent implements PerceptionAgent {
   }
 
   async infer(features: BehavioralFeatures): Promise<PerceptionBias> {
-    const fired = this.rules.filter((r) => r.test(features));
+    const fired: FiredBias[] = this.rules
+      .filter((r) => r.test(features))
+      .map((r) => ({
+        pad_bias: r.pad_bias,
+        confidence: r.confidence,
+        reason: r.reason,
+        name: r.name,
+      }));
+
+    if (features.weatherCode != null && Number.isFinite(features.weatherCode)) {
+      const weather = biasFromWeatherCode(features.weatherCode);
+      if (weather.confidence > 0) fired.push({ ...weather, name: "weather" });
+    }
+
     if (fired.length === 0) return NULL_BIAS;
 
     // Confidence-weighted average of pad_bias values; sum confidences capped at 1.

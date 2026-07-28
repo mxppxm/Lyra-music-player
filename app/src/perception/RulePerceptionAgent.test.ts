@@ -21,6 +21,10 @@ function base(): BehavioralFeatures {
     totalHoverDwellMs: 0,
     abandonedInputs: 0,
     focusIdleMs: 0,
+    keyActiveCount: 0,
+    mouseActiveCount: 0,
+    activityDensity: 0,
+    weatherCode: null,
   };
 }
 
@@ -167,6 +171,30 @@ describe("RulePerceptionAgent.infer", () => {
     expect(bias.pad_bias.d).toBeCloseTo(0.05 / 1.1, 5);
   });
 
+  it("fatigue_high fires on dense keyboard activity", async () => {
+    const f: BehavioralFeatures = {
+      ...base(),
+      activityDensity: 0.5,
+      keyActiveCount: 30,
+      mouseActiveCount: 10,
+      isBlurred: false,
+    };
+    const bias = await agent.infer(f);
+    expect(bias.reason).toContain("fatigue");
+    expect(bias.pad_bias.p).toBeCloseTo(-0.2, 5);
+  });
+
+  it("weatherCode contributes a soft bias", async () => {
+    const f: BehavioralFeatures = {
+      ...base(),
+      weatherCode: 61, // rain
+    };
+    const bias = await agent.infer(f);
+    expect(bias.reason).toContain("rain");
+    expect(bias.pad_bias.p).toBeLessThan(0);
+    expect(bias.confidence).toBeGreaterThan(0);
+  });
+
   describe("Sprint 13 rules", () => {
     const baseF = {
       windowMs: 60_000,
@@ -184,6 +212,10 @@ describe("RulePerceptionAgent.infer", () => {
       totalHoverDwellMs: 0,
       abandonedInputs: 0,
       focusIdleMs: 0,
+      keyActiveCount: 0,
+      mouseActiveCount: 0,
+      activityDensity: 0,
+      weatherCode: null,
     };
 
     it("attentive_hover fires when hoverDwellCount >= threshold", async () => {
@@ -249,3 +281,4 @@ describe("RulePerceptionAgent.infer", () => {
     });
   });
 });
+

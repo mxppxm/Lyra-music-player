@@ -33,6 +33,8 @@ BehavioralFeatures 字段释义（作为你的推理线索）：
 - proactiveDismisses = 主动开口被驳回次数。>= 2 → 用户不想被打扰。
 - isBlurred = 窗口失焦。true + 低 activeMs → 完全离开电脑。
 - totalChars = 60s 内敲字量。高值说明专注但可能情绪激烈。
+- activityDensity / keyActiveCount = 键鼠活跃密度。高 → 可能劳累。
+- weatherCode = Open-Meteo WMO 天气代码。雨雪偏负向，晴天略正向。
 
 signals 是 4 个粗化维度（只发级别、不发数值，保护用户隐私）：
 - hover_attention: 用户在专辑封面/歌词轨迹等氛围元素上驻留的强度
@@ -60,6 +62,10 @@ export function buildPerceptionUserContent(features: BehavioralFeatures): string
     skipRatio: features.skipRatio,
     proactiveDismisses: features.proactiveDismisses,
     isBlurred: features.isBlurred,
+    keyActiveCount: features.keyActiveCount,
+    mouseActiveCount: features.mouseActiveCount,
+    activityDensity: features.activityDensity,
+    weatherCode: features.weatherCode,
   };
   return JSON.stringify({ features: payload, signals: coarsen(features) }, null, 2);
 }

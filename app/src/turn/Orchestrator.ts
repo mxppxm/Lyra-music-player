@@ -71,6 +71,8 @@ export class Orchestrator {
   private pendingEvents: ReactionEvent[] = [];
   /** Latest perception bias — blended into onUserInput emotion when set. */
   private perceptionBias: PerceptionBias | null = null;
+  /** Guard against concurrent fulfillProactive calls. */
+  private proactiveInFlight = false;
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
@@ -282,6 +284,68 @@ export class Orchestrator {
     rationale: string,
   ): void {
     this.emit({ kind: "proactive-pending", intent, song, rationale });
+  }
+
+  /**
+   * Select a song for a proactive intent and enter `proactive-pending`.
+   * Does NOT play audio. No-ops when busy, library empty, or selection fails.
+   */
+  async fulfillProactive(intent: ProactiveIntent): Promise<void> {
+    const kind = this.state.kind;
+    if (kind === "thinking" || kind === "playing" || kind === "proactive-pending" || this.proactiveInFlight) {
+      console.debug(
+        `[lyra] fulfillProactive skipped: busy state=${kind} inFlight=${this.proactiveInFlight} kind=${intent.kind}`,
+      );
+      return;
+    }
+
+    this.proactiveInFlight = true;
+    try {
+      const { companion, library, soulStore } = this.deps;
+
+      const soul = await soulStore.load();
+      const pad = soul.dynamic_mood.current_pad;
+      const pseudoTarget = [
+        intent.targetProfile,
+        intent.hint,
+        intent.seed?.songHint,
+      ]
+        .filter((s): s is string => Boolean(s && s.trim()))
+        .join(" ")
+        .trim();
+
+      const candidates = await library.prefilter(pseudoTarget || intent.hint, pad, 30);
+      if (candidates.length === 0) {
+        console.debug("[lyra] fulfillProactive skipped: empty library");
+        return;
+      }
+
+      const { livingPortrait, topFacts } = getMemoryContext();
+      const emotion: CurrentEmotion = {
+        pad,
+        labels: [],
+        confidence: 0.2,
+        source: "emotion-agent-inferred",
+      };
+      const chosen = await companion.choose({
+        userUtterance: "",
+        currentEmotion: emotion,
+        soul,
+        candidates,
+        livingPortrait,
+        topFacts,
+      });
+      const song = candidates.find((c) => c.id === chosen.song_id);
+      if (!song) {
+        console.warn(`[lyra] fulfillProactive: companion chose missing song_id=${chosen.song_id}`);
+        return;
+      }
+      this.startProactiveIntent(intent, song, chosen.rationale);
+    } catch (err) {
+      console.warn("[lyra] fulfillProactive failed:", err);
+    } finally {
+      this.proactiveInFlight = false;
+    }
   }
 
   async onUserInput(text: string): Promise<void> {

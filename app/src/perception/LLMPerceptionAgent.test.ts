@@ -23,6 +23,10 @@ function base(): BehavioralFeatures {
     totalHoverDwellMs: 0,
     abandonedInputs: 0,
     focusIdleMs: 0,
+    keyActiveCount: 0,
+    mouseActiveCount: 0,
+    activityDensity: 0,
+    weatherCode: null,
   };
 }
 

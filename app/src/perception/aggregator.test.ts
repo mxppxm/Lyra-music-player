@@ -151,4 +151,20 @@ describe("aggregator new dims (Sprint 13)", () => {
     expect(f.submits).toBe(1);
     expect(f.totalChars).toBe(10);
   });
+
+  it("splits key/mouse counts and computes activityDensity", () => {
+    const now = 100_000;
+    const b = makeBus(
+      { kind: "key_active", at: now - 1000 },
+      { kind: "key_active", at: now - 500 },
+      { kind: "mouse_active", at: now - 200 },
+    );
+    const f = aggregate(b, WIN, now);
+    expect(f.keyActiveCount).toBe(2);
+    expect(f.mouseActiveCount).toBe(1);
+    expect(f.activeMs).toBe(3 * 500);
+    expect(f.activityDensity).toBeCloseTo((3 * 500) / WIN, 5);
+    expect(f.weatherCode).toBeNull();
+  });
 });
+

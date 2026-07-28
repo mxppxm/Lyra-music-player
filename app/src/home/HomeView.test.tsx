@@ -132,6 +132,40 @@ describe("HomeView — playing state", () => {
   });
 });
 
+describe("HomeView — proactive-pending state", () => {
+  const pendingState: OrchestratorState = {
+    kind: "proactive-pending",
+    intent: {
+      id: "i1",
+      createdAt: 1000,
+      validUntil: 1000 + 30 * 60_000,
+      kind: "morning",
+      urgency: 0.5,
+      hint: "早上第一次打开",
+    },
+    song: {
+      id: "track-1",
+      path: "/music/test.flac",
+      title: "Nuvole Bianche",
+      artist: "Ludovico Einaudi",
+      album: undefined,
+      duration_ms: undefined,
+      added_at: Date.now(),
+      origin: "local",
+    },
+    rationale: "早安。我想先放这首给你。",
+  };
+
+  it("shows rationale and offered song", () => {
+    const orc = makeStubOrchestrator(pendingState);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
+    expect(screen.getByTestId("small-note")).toHaveTextContent("早安。我想先放这首给你。");
+    const songInfo = screen.getByTestId("song-info");
+    expect(songInfo.textContent).toContain("Nuvole Bianche");
+    expect(songInfo.textContent).toContain("Ludovico Einaudi");
+  });
+});
+
 describe("HomeView — error state", () => {
   it("shows error message in small note", () => {
     const orc = makeStubOrchestrator({

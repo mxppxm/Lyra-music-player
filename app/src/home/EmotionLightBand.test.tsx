@@ -9,10 +9,11 @@ describe("EmotionLightBand", () => {
     expect(svg.getAttribute("viewBox")).toBe("0 0 400 32");
   });
 
-  it("renders a static midline hairline when samples are empty", () => {
+  it("renders no hairline when samples are empty (layout placeholder only)", () => {
     render(<EmotionLightBand samples={[]} />);
-    expect(screen.getByTestId("emotion-band-hairline")).toBeInTheDocument();
+    expect(screen.queryByTestId("emotion-band-hairline")).toBeNull();
     expect(screen.queryByTestId("emotion-band-sample-0")).toBeNull();
+    expect(screen.getByTestId("emotion-light-band")).toBeInTheDocument();
   });
 
   it("renders one path/rect per sample, up to 20", () => {

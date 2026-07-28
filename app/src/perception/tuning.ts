@@ -26,6 +26,10 @@ export type PerceptionTuning = {
   abandonedInputsThreshold?: number;
   /** Sprint 13: quiet presence ratio threshold. Default 0.5. */
   quietPresenceRatioThreshold?: number;
+  /** Fatigue · activityDensity ≥ N. Default 0.45. */
+  activityDensityThreshold?: number;
+  /** Fatigue · key_active tick count ≥ N. Default 24. */
+  keyActiveFatigueThreshold?: number;
 };
 
 export const DEFAULT_TUNING: Required<PerceptionTuning> = {
@@ -38,6 +42,8 @@ export const DEFAULT_TUNING: Required<PerceptionTuning> = {
   hoverDwellRatioThreshold: 0.15,
   abandonedInputsThreshold: 2,
   quietPresenceRatioThreshold: 0.5,
+  activityDensityThreshold: 0.45,
+  keyActiveFatigueThreshold: 24,
 };
 
 /** Clamp each supplied override so it lands within ±50% of the default. Any
