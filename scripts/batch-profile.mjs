@@ -20,8 +20,46 @@ const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY ?? "";
 const DEEPSEEK_MODEL = "deepseek-chat"; // 'deepseek-flash' might not be available on v1 API
 const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 const BILI_MID = "3493093607213343"; // JLRS-LeoFM
-const DELAY_MS = 600; // between API calls (rate limit safety)
-const BATCH_SIZE = 10; // how many to process before printing progress
+const DELAY_MS = 600;
+const BATCH_SIZE = 10;
+const PROFILE_ANALYSIS_VERSION = 2;
+
+function stripNoise(s) {
+  return s
+    .replace(/【[^】]*】/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\([^)]*录音棚[^)]*\)/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseTrackIdentity(rawTitle, uploader) {
+  const raw = String(rawTitle ?? "").trim();
+  let working = stripNoise(raw).split("|")[0].trim();
+  const book = working.match(/《([^》]+)》/);
+  if (book) {
+    const songTitle = book[1].trim();
+    const artist = working.replace(/《[^》]+》/, " ").replace(/^[-—–·]\s*/, "").trim();
+    const isUploader = /^(jlrs|leofm|百万)/i.test(artist) || (uploader && artist.toLowerCase() === uploader.toLowerCase());
+    return { songTitle, artist: isUploader ? "" : artist, rawTitle: raw, isStudioCover: /百万豪装|JLRS|LeoFM/i.test(raw + (uploader ?? "")) };
+  }
+  const parts = working.split(/\s*[-—–\/\\|·•]\s*/u).map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return { songTitle: parts[0], artist: parts[1], rawTitle: raw, isStudioCover: /百万豪装|JLRS|LeoFM/i.test(raw + (uploader ?? "")) };
+  }
+  return { songTitle: working || raw, artist: "", rawTitle: raw, isStudioCover: /百万豪装|JLRS|LeoFM/i.test(raw + (uploader ?? "")) };
+}
+
+function formatProfileBrief(identity, uploader) {
+  const lines = [
+    `原曲歌名: ${identity.songTitle}`,
+    identity.artist ? `原曲艺人: ${identity.artist}` : "",
+    identity.rawTitle !== identity.songTitle ? `B站视频标题: ${identity.rawTitle}` : "",
+    uploader ? `B站上传者: ${uploader}` : "",
+    identity.isStudioCover ? "说明: 这是翻录/重制频道上的版本，请分析「原曲」本身，不是按标题字面猜环境音。" : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
 
 // ── Bilibili request headers (must match Rust bilibili_proxy) ───────────────
 const BILI_HEADERS = {
@@ -171,7 +209,18 @@ function insertMetadata(db, songs) {
         cover: s.cover,
         play_count: s.play_count,
       });
-      insert.run(id, `bili:__pending__:${s.bvid}`, "web", s.title, s.author, null, s.duration_ms, Date.now(), meta);
+      const identity = parseTrackIdentity(s.title, s.author);
+      insert.run(
+        id,
+        `bili:__pending__:${s.bvid}`,
+        "web",
+        identity.songTitle,
+        identity.artist || null,
+        null,
+        s.duration_ms,
+        Date.now(),
+        meta,
+      );
       count++;
     }
     return count;
@@ -198,31 +247,24 @@ function ensureProfileTable(db) {
 
 // ── DeepSeek: Music Profile ─────────────────────────────────────────────────
 
-const MUSIC_PROFILE_PROMPT = `你是专业的音乐分析师。我给你一首歌的标题和歌手，你需要输出这首歌的完整结构化画像。
+const MUSIC_PROFILE_PROMPT = `你是专业的音乐分析师。我会给你「原曲歌名 + 原曲艺人」（可能还有 B 站视频标题、上传者）。
 
-分析维度：
-- genre: 曲风流派（如 ["indie folk", "dream pop", "post-rock"]）
-- mood: 情绪标签（如 ["melancholic", "warm", "nostalgic", "平静", "孤独"]），3-6 个
-- energy_level: 能量级别 "very_low" | "low" | "medium" | "high" | "very_high"
-- tempo_feel: 节奏感受，用一句话中文描述（如 "缓慢、有呼吸感、像心跳"）
-- time_color: 这首歌的时间色彩（如 "凌晨三点"、"夏日午后"、"雨夜"）
-- space_color: 空间色彩（如 "小房间只开一盏台灯"、"空旷的海边公路"）
-- instrumentation: 主要乐器（如 ["acoustic guitar", "钢琴", "环境音"]）
-- vocal_style: 人声风格，用中文描述（如 "气声、近麦、咬字懒散"，无 vocal 写 "无人声"）
-- lyrical_themes: 歌词主题标签（如 ["孤独", "城市", "未完成的告别"]），2-4 个
-- emotional_curve: 整首歌的情绪弧线，用中文描述（如 "平缓下沉→中段微光→沉回去"）
-- best_for: 最适合听的场景（如 ["深夜独处", "下雨天", "开车兜风"]），2-4 个
-- pad_estimate: 你估计的 PAD 值 p(愉悦度) a(激动度) d(力量感)，各在 [-1, 1]
+首要任务：先识别这是不是一首你认识的具体原曲，再基于你对那首歌真实录音的知识做分析。
 
-如果你不认识这首歌（太小众/纯音乐/信息不足），设置 llm_unknown: true，但尽量填充你能推断的字段。
+严禁幻觉：
+- 歌名里的「雨」「夜」「花」等是意象，不等于歌里真的有雨声、环境音。
+- 例：南拳妈妈《下雨天》是流行抒情 ballad，不是 ambient 雨声；instrumentation 应是吉他、钢琴、弦乐、人声等。
+- instrumentation / best_for 必须基于真实曲风，不能从标题拆字猜。
+
+若认识：recognized: true，填 canonical_work。
+若不认识：recognized: false，llm_unknown: true，不要从歌名猜乐器。
 
 返回 STRICT JSON：
-{"genre":[],"mood":[],"energy_level":"medium","tempo_feel":"...","time_color":"...","space_color":"...","instrumentation":[],"vocal_style":"...","lyrical_themes":[],"emotional_curve":"...","best_for":[],"pad_estimate":{"p":0,"a":0,"d":0},"llm_unknown":false}`;
+{"recognized":true,"canonical_work":"艺人 - 歌名","genre":[],"mood":[],"energy_level":"medium","tempo_feel":"...","time_color":"...","space_color":"...","instrumentation":[],"vocal_style":"...","lyrical_themes":[],"emotional_curve":"...","best_for":[],"pad_estimate":{"p":0,"a":0,"d":0},"llm_unknown":false}`;
 
 async function analyzeSong(title, artist) {
-  const userContent = [`标题: ${title}`, artist ? `歌手: ${artist}` : ""]
-    .filter(Boolean)
-    .join("\n");
+  const identity = parseTrackIdentity(title, artist);
+  const userContent = formatProfileBrief(identity, artist);
 
   const body = {
     model: DEEPSEEK_MODEL,
@@ -279,6 +321,9 @@ function parseProfile(raw) {
         d: typeof p.pad_estimate?.d === "number" ? Math.max(-1, Math.min(1, p.pad_estimate.d)) : 0,
       },
       llm_unknown: p.llm_unknown === true,
+      recognized: p.recognized === true,
+      canonical_work: typeof p.canonical_work === "string" ? p.canonical_work : undefined,
+      analysis_version: PROFILE_ANALYSIS_VERSION,
     };
   } catch (e) {
     return null;
@@ -340,12 +385,17 @@ async function main() {
   // Step 2: Get songs that need profiling
   const toProfile = db
     .prepare(
-      `SELECT id, title, artist FROM library_tracks
-       WHERE origin = 'web'
-       AND id NOT IN (SELECT track_id FROM music_profiles)
-       ORDER BY id`,
+      `SELECT lt.id, lt.title, lt.artist
+       FROM library_tracks lt
+       LEFT JOIN music_profiles mp ON mp.track_id = lt.id
+       WHERE lt.origin = 'web'
+       AND (
+         mp.track_id IS NULL
+         OR COALESCE(json_extract(mp.profile_json, '$.analysis_version'), 1) < ?
+       )
+       ORDER BY lt.id`,
     )
-    .all();
+    .all(PROFILE_ANALYSIS_VERSION);
 
   console.log(`\n[profile] ${toProfile.length} songs need profiling.`);
   if (toProfile.length === 0) {

@@ -13,6 +13,8 @@ docs/superpowers/
 
 # Node
 node_modules/
+app/.env.production.local
+app/.env.local
 
 # Build output
 dist/

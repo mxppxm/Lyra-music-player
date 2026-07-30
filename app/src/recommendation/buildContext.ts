@@ -13,6 +13,8 @@ export type BuildContextOpts = {
   /** Total tracks in library — auto-fetched when omitted. */
   librarySize?: number;
   turns?: DialogueTurn[];
+  /** EmotionAgent labels for mood matching in LibraryAgent. */
+  emotionLabels?: readonly string[];
 };
 
 /**
@@ -64,6 +66,7 @@ export async function buildRecommendationContext(
     noveltySeeking,
     feedbackStats,
     soul,
+    emotionLabels: opts.emotionLabels ?? [],
   };
 }
 

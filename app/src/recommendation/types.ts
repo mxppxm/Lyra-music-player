@@ -35,6 +35,8 @@ export type RecommendationContext = {
   feedbackStats: ReadonlyMap<string, TrackFeedbackCounts>;
   /** Source soul — kept for future tuning without re-threading every field. */
   soul: SoulState;
+  /** Labels from EmotionAgent (e.g. 疲惫, 孤独) — used in prefilter mood match. */
+  emotionLabels: readonly string[];
 };
 
 export const RECOMMENDATION_DEFAULTS = {

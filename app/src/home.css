@@ -62,6 +62,19 @@
   /* Motion */
   --lyra-transition-ambient: background-color 8s cubic-bezier(0.32, 0, 0.42, 1);
   --lyra-transition-fade: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
+  --lyra-transition-dock: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    padding 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    backdrop-filter 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    gap 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --lyra-transition-input-dim: opacity 520ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 520ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 520ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 520ms cubic-bezier(0.4, 0, 0.2, 1);
+  --lyra-dock-collapse-ms: 300ms;
   --lyra-transition-note-height: max-height 300ms ease-out;
   --lyra-transition-control: transform 180ms ease, opacity 180ms ease, background-color 180ms ease;
 }
@@ -139,6 +152,26 @@ body,
   box-shadow: 0 8px 24px rgba(24, 18, 12, 0.06);
 }
 
+.lyra-stage--immersive {
+  padding-bottom: 96px;
+}
+
+.lyra-stage--immersive .lyra-song-info {
+  opacity: 0.88;
+  transition: opacity var(--lyra-transition-fade);
+}
+
+.lyra-stage--immersive .lyra-small-note {
+  max-width: min(520px, calc(100vw - 64px));
+  opacity: 0.92;
+  transition: opacity var(--lyra-transition-fade);
+}
+
+.lyra-ambient--immersive .lyra-stage--immersive .lyra-song-info,
+.lyra-ambient--immersive .lyra-stage--immersive .lyra-small-note {
+  text-shadow: 0 1px 24px rgba(255, 252, 248, 0.35);
+}
+
 .lyra-song-info-fade {
   transition: opacity 1.4s ease-out;
 }
@@ -155,6 +188,10 @@ body,
   pointer-events: none;
 }
 
+.lyra-dock-wrap--immersive {
+  padding-bottom: 22px;
+}
+
 .lyra-dock {
   pointer-events: auto;
   width: min(var(--lyra-dock-max-width), 100%);
@@ -169,6 +206,77 @@ body,
   -webkit-backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
   border: 1px solid var(--lyra-glass-border);
   box-shadow: var(--lyra-glass-shadow);
+}
+
+/* ── Immersive dock: staged collapse / expand ── */
+
+/* Collapse step 1: extras + glass chrome (immediate) */
+.lyra-dock-wrap--immersive:not(.lyra-dock-wrap--expanded) .lyra-dock {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: var(--lyra-transition-dock);
+  transition-delay: 0ms;
+}
+
+/* Expand step 1: glass chrome + input brighten (immediate) */
+.lyra-dock-wrap--immersive.lyra-dock-wrap--expanded .lyra-dock {
+  transition: var(--lyra-transition-dock);
+  transition-delay: 0ms;
+}
+
+.lyra-dock__extras {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: var(--lyra-transition-dock);
+}
+
+.lyra-dock__extras-inner {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Collapse: extras fold up first */
+.lyra-dock-wrap--immersive:not(.lyra-dock-wrap--expanded) .lyra-dock__extras {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition-delay: 0ms;
+}
+
+/* Expand: extras unfold after chrome settles */
+.lyra-dock-wrap--immersive.lyra-dock-wrap--expanded .lyra-dock__extras {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 140ms;
+}
+
+/* Collapse step 2: input dims only after extras (via --input-dimmed class) */
+.lyra-dock-wrap--immersive.lyra-dock-wrap--input-dimmed .lyra-input {
+  opacity: 0.32;
+  background: rgba(255, 252, 248, 0.16);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: none;
+  transition: var(--lyra-transition-input-dim);
+  transition-delay: 0ms;
+}
+
+.lyra-dock-wrap--immersive:not(.lyra-dock-wrap--input-dimmed) .lyra-input {
+  opacity: 1;
+  transition: var(--lyra-transition-input-dim);
+  transition-delay: 0ms;
+}
+
+.lyra-dock-wrap--immersive.lyra-dock-wrap--input-dimmed .lyra-input::placeholder {
+  opacity: 0.5;
 }
 
 .lyra-dock__player-row {
@@ -286,7 +394,6 @@ body,
   font-size: var(--lyra-song-font-size);
   color: var(--lyra-color-song-info);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  transition: border-color 180ms ease, box-shadow 180ms ease;
   display: block;
 }
 
@@ -328,11 +435,10 @@ body,
   font-family: var(--lyra-note-family);
   font-style: italic;
   text-align: center;
-  max-width: var(--lyra-cover-size);
+  max-width: min(520px, calc(100vw - 64px));
   line-height: 1.75;
-  transition: var(--lyra-transition-note-height);
   white-space: pre-wrap;
-  user-select: none;
+  user-select: text;
   padding: 10px 22px;
   border-radius: 16px;
   background: var(--lyra-note-glass-bg);
@@ -342,8 +448,10 @@ body,
   box-shadow: 0 10px 28px rgba(24, 18, 12, 0.05);
 }
 
-.lyra-small-note--clickable {
-  cursor: pointer;
+.lyra-stage--immersive .lyra-small-note {
+  background: rgba(255, 252, 248, 0.28);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: none;
 }
 
 /* ── Trace strip ──────────────────────────────────────────────────────── */

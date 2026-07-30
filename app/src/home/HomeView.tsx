@@ -14,6 +14,7 @@ import { ProgressBar, progressLabel } from "./ProgressBar";
 import { useProgress } from "../audio/useProgress";
 import { bindGlobalKeys } from "./keyboard";
 import { parseSlashCommand } from "./slashCommand";
+import { isZeroConfigRelease } from "../config/zeroConfig";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "../turn/Orchestrator";
 import * as turnRepo from "../db/repo/turnRepo";
@@ -33,6 +34,10 @@ type HomeViewProps = {
   onOpenHelp: () => void;
   onWeek?: () => Promise<void>;
   orchestrator: Orchestrator | null;
+  /** True while provider boot / bundled data copy is still running. */
+  booting?: boolean;
+  /** Zero-config release — no API key / settings prompts. */
+  zeroConfig?: boolean;
 };
 
 export type { HomeViewProps };
@@ -73,6 +78,27 @@ function LiveHomeView({
 
   const [traceItems, setTraceItems] = useState<TraceStripItem[]>([]);
   const [historicalPads, setHistoricalPads] = useState<PAD[]>([]);
+  const [dockHovered, setDockHovered] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [inputDimmed, setInputDimmed] = useState(false);
+
+  const isPlayback = state.kind === "playing";
+  const dockExpanded = dockHovered || inputFocused;
+  const immersivePlayback = isPlayback && !dockExpanded;
+
+  /** After dock chrome + extras finish collapsing, dim the input. */
+  useEffect(() => {
+    if (!isPlayback) {
+      setInputDimmed(false);
+      return;
+    }
+    if (dockExpanded) {
+      setInputDimmed(false);
+      return;
+    }
+    const t = window.setTimeout(() => setInputDimmed(true), 300);
+    return () => clearTimeout(t);
+  }, [dockExpanded, isPlayback]);
 
   // Refresh trace + emotion history whenever state transitions to playing
   useEffect(() => {
@@ -170,13 +196,25 @@ function LiveHomeView({
   }
 
   return (
-    <AmbientBackground pad={pad}>
+    <AmbientBackground
+      pad={pad}
+      className={immersivePlayback ? "lyra-ambient--immersive" : undefined}
+    >
       <BackgroundPhoto />
       <ShanShuiCanvas pad={pad} playing={state.kind === "playing"} />
-      <div className="lyra-stage">
+      <div
+        className={[
+          "lyra-stage",
+          immersivePlayback ? "lyra-stage--immersive" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <div style={{ flex: 1 }} />
-        <EmotionLightBand samples={padSamples} />
-        <div style={{ height: "var(--lyra-space-band-to-song)" }} />
+        {!isPlayback && <EmotionLightBand samples={padSamples} />}
+        {!isPlayback && (
+          <div style={{ height: "var(--lyra-space-band-to-song)" }} />
+        )}
         {state.kind === "playing" || state.kind === "proactive-pending" ? (
           <SongInfo title={title} artist={artist} />
         ) : (
@@ -187,39 +225,74 @@ function LiveHomeView({
         <div style={{ flex: 1 }} />
       </div>
 
-      <GlassBar>
-        <div className="lyra-dock__player-row">
-          {progress ? (
-            <ProgressBar
-              progress={progress.progress}
-              label={progressLabel(progress.elapsedMs, progress.durationMs)}
-            />
-          ) : null}
-          <PlayerControls
-            canControl={state.kind === "playing"}
-            paused={state.kind === "playing" ? !!state.paused : true}
-            onTogglePlay={() => {
-              if (state.kind !== "playing") return;
-              if (state.paused) {
-                void orchestrator.onResume();
-              } else {
-                void orchestrator.onPause();
-              }
-            }}
-            onSkip={() => {
-              if (state.kind !== "playing") return;
-              void orchestrator.onSkip();
-            }}
-          />
+      <GlassBar
+        immersive={isPlayback}
+        expanded={dockExpanded}
+        inputDimmed={isPlayback && inputDimmed}
+        onExpandedChange={setDockHovered}
+      >
+        <div className="lyra-dock__extras">
+          <div className="lyra-dock__extras-inner">
+            <div className="lyra-dock__player-row">
+              {progress ? (
+                <ProgressBar
+                  progress={progress.progress}
+                  label={progressLabel(progress.elapsedMs, progress.durationMs)}
+                />
+              ) : null}
+              <PlayerControls
+                canControl={state.kind === "playing"}
+                paused={state.kind === "playing" ? !!state.paused : true}
+                onTogglePlay={() => {
+                  if (state.kind !== "playing") return;
+                  if (state.paused) {
+                    void orchestrator.onResume();
+                  } else {
+                    void orchestrator.onPause();
+                  }
+                }}
+                onSkip={() => {
+                  if (state.kind !== "playing") return;
+                  void orchestrator.onSkip();
+                }}
+              />
+            </div>
+            <TraceStrip items={traceItems} />
+          </div>
         </div>
-        <TraceStrip items={traceItems} />
-        <InputBox onSubmit={submit} />
+        <InputBox
+          onSubmit={submit}
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
+        />
       </GlassBar>
     </AmbientBackground>
   );
 }
 
-// ── Cold-boot placeholder (no providers configured) ───────────────────────────
+// ── Zero-config waiting (keys bundled at build; brief startup) ───────────────
+
+function ZeroConfigBootView({ booting }: { booting: boolean }) {
+  return (
+    <AmbientBackground pad={ZERO_PAD}>
+      <BackgroundPhoto />
+      <ShanShuiCanvas pad={ZERO_PAD} playing={false} />
+      <div className="lyra-stage lyra-stage--centered">
+        <div className="lyra-idle-slogan" data-testid="lyra-idle-slogan">
+          Lyra 在听
+        </div>
+        <p
+          data-testid="zero-config-boot-hint"
+          style={{ opacity: 0.55, fontSize: "0.9rem", marginTop: "0.75rem" }}
+        >
+          {booting ? "正在准备…" : "稍等，马上就好"}
+        </p>
+      </div>
+    </AmbientBackground>
+  );
+}
+
+// ── Cold-boot placeholder (dev / BYOK — no bundled keys) ────────────────────
 
 function ColdBootView({ onOpenSettings }: { onOpenSettings: () => void }) {
   useEffect(() => {
@@ -300,8 +373,13 @@ export function HomeView({
   onOpenHelp,
   onWeek,
   orchestrator,
+  booting = false,
+  zeroConfig = isZeroConfigRelease(),
 }: HomeViewProps) {
   if (orchestrator === null) {
+    if (zeroConfig) {
+      return <ZeroConfigBootView booting={booting} />;
+    }
     return <ColdBootView onOpenSettings={onOpenSettings} />;
   }
   return (

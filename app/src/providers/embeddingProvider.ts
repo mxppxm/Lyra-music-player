@@ -4,7 +4,9 @@
 // Returns null when either the preference or corresponding key is missing;
 // LibraryAgent uses that null → graceful degradation to kw+pad scoring.
 
-import { SECRET_KEYS, getSecret } from "../settings/secrets";
+import { SECRET_KEYS } from "../settings/secrets";
+import { resolveSecret } from "./resolveSecret";
+import { bundledEmbeddingProvider, bundledEmbeddingKey } from "./bundledKeys";
 
 export type EmbeddingProviderId = "zhipu" | "openai";
 
@@ -83,16 +85,24 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 /** Returns null when either the provider preference or the corresponding
  *  API key is missing. LibraryAgent silently degrades when this returns null. */
 export async function createEmbeddingProvider(): Promise<EmbeddingProvider | null> {
-  const which = (await getSecret(SECRET_KEYS.embeddingProvider)) as
+  const stored = (await resolveSecret(SECRET_KEYS.embeddingProvider)) as
     | EmbeddingProviderId
+    | ""
     | null;
+  const which =
+    stored === "zhipu" || stored === "openai"
+      ? stored
+      : bundledEmbeddingProvider();
   if (which === "zhipu") {
-    const key = await getSecret(SECRET_KEYS.zhipuEmbeddingApiKey);
+    const key =
+      (await resolveSecret(SECRET_KEYS.zhipuEmbeddingApiKey)) ??
+      bundledEmbeddingKey("zhipu");
     if (!key) return null;
     return new ZhipuEmbeddingProvider(key);
   }
   if (which === "openai") {
-    const key = await getSecret(SECRET_KEYS.openaiApiKey);
+    const key =
+      (await resolveSecret(SECRET_KEYS.openaiApiKey)) ?? bundledEmbeddingKey("openai");
     if (!key) return null;
     return new OpenAIEmbeddingProvider(key);
   }

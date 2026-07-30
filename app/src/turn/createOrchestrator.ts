@@ -10,6 +10,8 @@ import { bus as perceptionBus } from "../perception/events";
 import type { LibraryTrack, PAD } from "../types";
 import type { TargetProfile } from "../agents/types";
 import type { RecommendationContext } from "../recommendation";
+import { bilibiliTrackToLibrary } from "../library/bilibiliTrackToLibrary";
+import { scheduleBackgroundProfiling } from "../recommendation";
 
 /**
  * createDefaultOrchestrator — factory that wires all Sprint 1b-β agents.
@@ -18,8 +20,8 @@ import type { RecommendationContext } from "../recommendation";
  * searching Bilibili for music videos and playing their audio streams.
  * No config needed — it's automatic.
  *
- * Returns null when no provider is registered (no API key configured),
- * which HomeView renders as the cold-boot "needs API key" state.
+ * Returns null when no provider is registered and no bundled keys were
+ * compiled in — HomeView shows cold-boot (dev) or zero-config waiting.
  */
 export function createDefaultOrchestrator(): Orchestrator | null {
   if (registry.list().length === 0) {
@@ -74,7 +76,13 @@ export function createDefaultOrchestrator(): Orchestrator | null {
 
     // Try local first (with audio PAD injected)
     const local = await originalPrefilter(target, currentPAD, limit, recCtx, audioPadMap);
-    if (local.length > 0) return local;
+    if (local.length > 0) {
+      scheduleBackgroundProfiling({
+        priorityTrackIds: local.map((t) => t.id),
+        limit: 8,
+      });
+      return local;
+    }
 
     // Empty — search Bilibili
     try {
@@ -94,24 +102,9 @@ export function createDefaultOrchestrator(): Orchestrator | null {
         bilibiliSynced = true;
         const featureCache = await readFeatureCache();
 
-        const allMetadata: LibraryTrack[] = tracks.map((t): LibraryTrack => ({
-          id: `bili:${t.bvid}`,
-          title: t.title,
-          artist: t.author || undefined,
-          album: undefined,
-          path: `bili:__pending__:${t.bvid}`, // lazy resolve on play
-          duration_ms: t.duration_ms,
-          origin: "web" as const,
-          added_at: Date.now(),
-          metadata: {
-            bvid: t.bvid,
-            aid: t.aid,
-            tag: t.tag,
-            cover: t.cover,
-            play_count: t.play_count,
-            ...(featureCache[t.bvid] ? { audio_features: featureCache[t.bvid] } : {}),
-          },
-        }));
+        const allMetadata: LibraryTrack[] = tracks.map((t) =>
+          bilibiliTrackToLibrary(t, featureCache),
+        );
 
         const { batchInsertTracks } = await import("../db/repo/libraryRepo");
         const n = await batchInsertTracks(allMetadata);
@@ -119,7 +112,14 @@ export function createDefaultOrchestrator(): Orchestrator | null {
 
         // Re-run prefilter now that metadata is in SQLite
         const rescored = await originalPrefilter(target, currentPAD, limit, recCtx, audioPadMap);
-        if (rescored.length > 0) return rescored;
+        if (rescored.length > 0) {
+          scheduleBackgroundProfiling({
+            priorityTrackIds: rescored.map((t) => t.id),
+            limit: 8,
+          });
+          return rescored;
+        }
+        scheduleBackgroundProfiling({ limit: 8 });
       }
 
       // ── Enrich top `limit` for immediate playback ──
@@ -136,56 +136,20 @@ export function createDefaultOrchestrator(): Orchestrator | null {
         }
       })();
 
-      // Fire-and-forget: generate LLM music profiles for new tracks
-      void (async () => {
-        const { MusicProfileAgent } = await import("../agents/MusicProfileAgent");
-        const profileAgent = new MusicProfileAgent();
-        const { hasProfiles, upsert } = await import("../db/repo/musicProfileRepo");
-        const bvids = enriched.filter((t) => t.audioUrl).map((t) => t.bvid);
-        if (bvids.length === 0) return;
-        const existing = await hasProfiles(bvids.map((b) => `bili:${b}`));
-        const newTracks = enriched.filter(
-          (t) => t.audioUrl && !existing.has(`bili:${t.bvid}`),
-        );
-        for (const t of newTracks.slice(0, 8)) {
-          try {
-            const profile = await profileAgent.analyze({
-              title: t.title,
-              artist: t.author || undefined,
-            });
-            if (profile) {
-              profile.track_id = `bili:${t.bvid}`;
-              await upsert(profile);
-            }
-          } catch (e) {
-            // best-effort background analysis
-          }
-        }
-      })();
+      // Fire-and-forget: generate LLM music profiles (shared with local library path)
+      scheduleBackgroundProfiling({
+        priorityTrackIds: enriched.filter((t) => t.audioUrl).map((t) => `bili:${t.bvid}`),
+        limit: 8,
+      });
 
       const excludeIds = recCtx?.excludeIds;
       return enriched
         .filter((t) => t.audioUrl !== null)
         .filter((t) => !excludeIds?.has(`bili:${t.bvid}`))
-        .map(
-          (t): LibraryTrack => ({
-            id: `bili:${t.bvid}`,
-            title: t.title,
-            artist: t.author || undefined,
-            album: undefined,
-            path: t.audioUrl!,
-            duration_ms: t.duration_ms,
-            origin: "web" as const,
-            added_at: Date.now(),
-            metadata: {
-              bvid: t.bvid,
-              aid: t.aid,
-              tag: t.tag,
-              cover: t.cover,
-              play_count: t.play_count,
-            },
-          }),
-        );
+        .map((t) => {
+          const track = bilibiliTrackToLibrary(t);
+          return { ...track, path: t.audioUrl! };
+        });
     } catch (err) {
       console.warn("[lyra] Bilibili search failed:", err);
       return [];

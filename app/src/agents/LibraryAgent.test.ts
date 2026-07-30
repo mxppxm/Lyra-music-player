@@ -68,8 +68,17 @@ describe("LibraryAgent.prefilter (profile-based)", () => {
       profileRepo: { getBatch: async () => profileMap } as any,
     });
 
-    // Query with "疲惫" — should match profile's mood
-    const out = await a.prefilter("我今天很疲惫", { p: -0.5, a: -0.5, d: 0 }, 2);
+    // Query with "疲惫" — should match profile's mood via emotion labels
+    const recCtx: RecommendationContext = {
+      excludeIds: new Set(),
+      fatigueByTrack: new Map(),
+      recentPlays: [],
+      noveltySeeking: 0.5,
+      feedbackStats: new Map(),
+      soul: { musical_taste_base: { affinity_genres: [], backbone: "", aesthetic_axes: { novelty_seeking: 0.5 } } } as unknown as RecommendationContext["soul"],
+      emotionLabels: ["疲惫"],
+    };
+    const out = await a.prefilter("我今天很疲惫", { p: -0.5, a: -0.5, d: 0 }, 2, recCtx);
     expect(out[0].id).toBe("a");
   });
 
@@ -177,18 +186,20 @@ describe("LibraryAgent.prefilter (profile-based)", () => {
       noveltySeeking: 0.5,
       feedbackStats: new Map(),
       soul: {} as RecommendationContext["soul"],
+      emotionLabels: [],
     };
     const out = await a.prefilter("test", neutralPAD, 10, recCtx);
     expect(out).toHaveLength(2);
     expect(out.find(t => t.id === "a")).toBeUndefined();
   });
 
-  it("llm_unknown profiles get lower scores", async () => {
+  it("recognized profiles rank above llm_unknown at same PAD", async () => {
     const tracks = [track("a", "known song"), track("b", "unknown song")];
     const profileMap = new Map<string, MusicProfile>();
     profileMap.set("a", makeProfile({
       track_id: "a",
       pad_estimate: { p: 0, a: 0, d: 0 },
+      recognized: true,
       llm_unknown: false,
     }));
     profileMap.set("b", makeProfile({
@@ -202,7 +213,6 @@ describe("LibraryAgent.prefilter (profile-based)", () => {
       profileRepo: { getBatch: async () => profileMap } as any,
     });
     const out = await a.prefilter("test", neutralPAD, 2);
-    // Known song should rank higher than unknown
     expect(out[0].id).toBe("a");
   });
 });

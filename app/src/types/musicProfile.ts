@@ -4,6 +4,9 @@
 
 export type EnergyLevel = "very_low" | "low" | "medium" | "high" | "very_high";
 
+/** Bump when profile prompt / parsing logic changes — stale rows get re-analyzed. */
+export const PROFILE_ANALYSIS_VERSION = 2;
+
 export type MusicProfile = {
   track_id: string;
   analyzed_at: number;
@@ -32,7 +35,18 @@ export type MusicProfile = {
   // ── 标志位 ──
   /** LLM 不认识这首歌（纯音乐/小众），标记后推荐降低权重 */
   llm_unknown?: boolean;
+  /** LLM 确认识别到具体原曲（歌名+艺人），而非仅凭标题瞎猜 */
+  recognized?: boolean;
+  /** 识别到的原曲 canonical 描述，如「南拳妈妈 - 下雨天 (2008)」 */
+  canonical_work?: string;
+  /** 画像 prompt 版本；低于 PROFILE_ANALYSIS_VERSION 时会重跑 */
+  analysis_version?: number;
 };
+
+export function profileNeedsRefresh(profile: MusicProfile | null | undefined): boolean {
+  if (!profile) return true;
+  return (profile.analysis_version ?? 1) < PROFILE_ANALYSIS_VERSION;
+}
 
 /** 用户对一首歌的评价反馈，用于更新 Soul taste */
 export type TrackFeedback = {

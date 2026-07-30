@@ -125,10 +125,10 @@ describe("HomeView — playing state", () => {
     expect(screen.getByTestId("small-note")).toHaveTextContent("舒缓的旋律，陪你慢下来");
   });
 
-  it("renders emotion light band with PAD samples", () => {
+  it("hides emotion light band during playback (immersive)", () => {
     const orc = makeStubOrchestrator(playingState);
     render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
-    expect(screen.getByTestId("emotion-light-band")).toBeInTheDocument();
+    expect(screen.queryByTestId("emotion-light-band")).not.toBeInTheDocument();
   });
 });
 

@@ -139,6 +139,7 @@ describe("CompanionAgent.choose", () => {
         noveltySeeking: 0.5,
         feedbackStats: new Map(),
         soul,
+        emotionLabels: [],
       },
     };
     const out = await a.choose(inputWithRec);

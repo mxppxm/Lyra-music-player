@@ -17,3 +17,13 @@ export {
   shuffle,
 } from "./diversity";
 export { buildRecommendationContext } from "./buildContext";
+export { scheduleBackgroundProfiling, runBackgroundProfiling } from "./backgroundProfiling";
+export {
+  profileQualityMultiplier,
+  tagOverlap,
+  genreAffinityScore,
+  energyMatchScore,
+  profileSearchHaystack,
+  tokenize,
+  keywordScoreFromHaystack,
+} from "./profileScoring";

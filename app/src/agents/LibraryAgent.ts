@@ -8,6 +8,13 @@ import {
   fatiguePenaltyWeight,
   feedbackPenalty,
   stratifiedSample,
+  tagOverlap,
+  genreAffinityScore,
+  energyMatchScore,
+  profileQualityMultiplier,
+  profileSearchHaystack,
+  tokenize,
+  keywordScoreFromHaystack,
 } from "../recommendation";
 
 const DEFAULT_LIMIT = 30;
@@ -17,50 +24,13 @@ type MusicProfileRepoLike = {
   getBatch(ids: string[]): Promise<Map<string, MusicProfile>>;
 };
 
-/** Minimal keyword score — fallback when no music profile exists. */
-function tokenize(target: string): string[] {
-  return target
-    .toLowerCase()
-    .split(/[\s,，。.！!?？:：;；\-—()（）\[\]"']+/u)
-    .filter((s) => s.length > 1);
-}
-
-function keywordScore(track: LibraryTrack, tokens: string[]): number {
-  const hay = [track.title, track.artist, track.album]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  let score = 0;
-  for (const t of tokens) if (hay.includes(t)) score++;
-  return score;
-}
-
-// ── Profile-based scoring ───────────────────────────────────────────────────
-
 /** PAD distance in [0, 1], lower = closer match */
 function padDistance(userPad: PAD, songPad: { p: number; a: number; d: number }): number {
   const dp = userPad.p - songPad.p;
   const da = userPad.a - songPad.a;
   const dd = userPad.d - songPad.d;
   const dist = Math.sqrt(dp * dp + da * da + dd * dd);
-  return 1 - dist / Math.sqrt(3); // invert: 1 = perfect match
-}
-
-/** Overlap score between user emotion labels and song mood tags */
-function moodOverlap(userLabels: string[], songMood: string[]): number {
-  if (userLabels.length === 0 || songMood.length === 0) return 0;
-  const userSet = new Set(userLabels.map(l => l.toLowerCase()));
-  const songSet = new Set(songMood.map(m => m.toLowerCase()));
-  let overlap = 0;
-  for (const m of songSet) {
-    for (const u of userSet) {
-      if (m.includes(u) || u.includes(m)) {
-        overlap++;
-        break;
-      }
-    }
-  }
-  return overlap / Math.max(userSet.size, songSet.size);
+  return 1 - dist / Math.sqrt(3);
 }
 
 /** Time-of-day match: current hour → song's time_color hint */
@@ -90,7 +60,7 @@ function timeColorScore(hour: number, timeColor: string): number {
   }
 
   if (
-    (isNight && /安静|安静|独处/i.test(lower)) ||
+    (isNight && /安静|独处/i.test(lower)) ||
     (isMorning && /清新|清醒|新鲜/i.test(lower)) ||
     (isAfternoon && /悠闲|慵懒/i.test(lower)) ||
     (isEvening && /放松|收官/i.test(lower))
@@ -102,13 +72,11 @@ function timeColorScore(hour: number, timeColor: string): number {
 }
 
 /** Scenario match: user utterance keywords vs best_for */
-function scenarioScore(target: string, bestFor: string[]): number {
-  if (bestFor.length === 0) return 0;
-  const tokens = tokenize(target);
-  if (tokens.length === 0) return 0;
-  const lowerBest = bestFor.map(b => b.toLowerCase());
+function scenarioScore(queryTokens: string[], bestFor: string[]): number {
+  if (bestFor.length === 0 || queryTokens.length === 0) return 0;
+  const lowerBest = bestFor.map((b) => b.toLowerCase());
   let hits = 0;
-  for (const t of tokens) {
+  for (const t of queryTokens) {
     for (const b of lowerBest) {
       if (b.includes(t) || t.includes(b)) {
         hits++;
@@ -120,41 +88,61 @@ function scenarioScore(target: string, bestFor: string[]): number {
 }
 
 /**
- * Score a single track against the current emotional state.
- * Returns [0, 1] composite score before fatigue / feedback adjustments.
+ * Score a single track against the current emotional state + recommendation context.
  */
 function profileScore(
   track: LibraryTrack,
   profile: MusicProfile | null,
   pad: PAD,
-  labels: string[],
-  target: string,
+  emotionLabels: string[],
+  queryTokens: string[],
   nowHour: number,
+  recCtx: RecommendationContext | undefined,
   audioPad?: PADProfile,
   noveltySeeking = 0.5,
 ): number {
-  let padScore = 0;
   const effectivePad = audioPad ?? profile?.pad_estimate;
-  if (effectivePad) {
-    padScore = padDistance(pad, effectivePad) * 0.30;
-  } else if (!profile || profile.llm_unknown) {
-    const tokens = tokenize(target);
-    const maxHits = Math.max(tokens.length, 1);
-    const kw = keywordScore(track, tokens) / maxHits;
-    return kw * 0.3;
+
+  if (!profile && !effectivePad) {
+    const hay = profileSearchHaystack(track, null);
+    const maxHits = Math.max(queryTokens.length, 1);
+    return (keywordScoreFromHaystack(hay, queryTokens) / maxHits) * 0.25;
   }
 
-  // Jitter scales with novelty_seeking — explorers get a wider candidate band
-  const jitterMax = 0.10 + noveltySeeking * 0.20;
+  if (profile?.llm_unknown && !effectivePad) {
+    const hay = profileSearchHaystack(track, profile);
+    const maxHits = Math.max(queryTokens.length, 1);
+    return (keywordScoreFromHaystack(hay, queryTokens) / maxHits) * 0.22;
+  }
 
-  const scores = {
-    pad: padScore,
-    mood: moodOverlap(labels, profile?.mood ?? []) * 0.25,
-    time: timeColorScore(nowHour, profile?.time_color ?? "") * 0.15,
-    scenario: scenarioScore(target, profile?.best_for ?? []) * 0.15,
-    jitter: Math.random() * jitterMax,
-  };
-  return scores.pad + scores.mood + scores.time + scores.scenario + scores.jitter;
+  let padScore = 0;
+  if (effectivePad) {
+    padScore = padDistance(pad, effectivePad) * 0.28;
+  }
+
+  const moodScore = tagOverlap(emotionLabels, queryTokens, profile?.mood ?? []) * 0.22;
+  const themeScore =
+    tagOverlap(emotionLabels, queryTokens, profile?.lyrical_themes ?? []) * 0.1;
+  const genreScore = genreAffinityScore(profile, recCtx?.soul) * 0.08;
+  const energyScore = energyMatchScore(profile, pad.a) * 0.07;
+  const timeScore = timeColorScore(nowHour, profile?.time_color ?? "") * 0.1;
+  const scenario = scenarioScore(queryTokens, profile?.best_for ?? []) * 0.1;
+
+  const jitterMax = 0.08 + noveltySeeking * 0.18;
+  const jitter = Math.random() * jitterMax;
+
+  let total =
+    padScore + moodScore + themeScore + genreScore + energyScore + timeScore + scenario + jitter;
+
+  total *= profileQualityMultiplier(profile);
+
+  if (!profile) {
+    const hay = profileSearchHaystack(track, null);
+    const kw = keywordScoreFromHaystack(hay, queryTokens);
+    if (kw > 0) total += (kw / Math.max(queryTokens.length, 1)) * 0.12;
+  }
+
+  return total;
 }
 
 function applyRecommendationAdjustments(
@@ -177,8 +165,6 @@ function applyRecommendationAdjustments(
   return score;
 }
 
-// ── LibraryAgent ────────────────────────────────────────────────────────────
-
 export class LibraryAgent {
   private repo: LibraryRepoLike;
   private profileRepo: MusicProfileRepoLike;
@@ -196,27 +182,34 @@ export class LibraryAgent {
     pad: PAD,
     limit: number = DEFAULT_LIMIT,
     recCtx?: RecommendationContext,
-    /** bvid → real audio PAD from FFT extraction (takes priority over LLM guess) */
     audioPadMap?: Map<string, PADProfile>,
   ): Promise<LibraryTrack[]> {
     const all = await this.repo.listAll();
     const excludeIds = recCtx?.excludeIds;
-    const filtered = excludeIds
-      ? all.filter((t) => !excludeIds.has(t.id))
-      : all;
+    const filtered = excludeIds ? all.filter((t) => !excludeIds.has(t.id)) : all;
 
     if (filtered.length === 0) return [];
 
     const profileMap = await this.profileRepo.getBatch(filtered.map((t) => t.id));
-    const labels = target.split(/\s+/).filter(s => s.length <= 6);
+    const emotionLabels = recCtx?.emotionLabels ?? [];
+    const queryTokens = tokenize(target);
     const nowHour = new Date().getHours();
     const noveltySeeking = recCtx?.noveltySeeking ?? 0.5;
 
     const scored = filtered.map((track) => {
       const bvid = track.id.startsWith("bili:") ? track.id.slice(5) : null;
       const audioPad = bvid ? audioPadMap?.get(bvid) : undefined;
+      const profile = profileMap.get(track.id) ?? null;
       const base = profileScore(
-        track, profileMap.get(track.id) ?? null, pad, labels, target, nowHour, audioPad, noveltySeeking,
+        track,
+        profile,
+        pad,
+        [...emotionLabels],
+        queryTokens,
+        nowHour,
+        recCtx,
+        audioPad,
+        noveltySeeking,
       );
       return {
         track,
@@ -226,12 +219,10 @@ export class LibraryAgent {
 
     scored.sort((a, b) => b.score - a.score);
 
-    const sampled = stratifiedSample(
+    return stratifiedSample(
       scored.map((s) => ({ item: s.track, score: s.score })),
       limit,
       noveltySeeking,
     );
-
-    return sampled;
   }
 }

@@ -1,5 +1,6 @@
 import type { ProviderId } from "../types";
-import { getSecret, SECRET_KEYS } from "../settings/secrets";
+import { SECRET_KEYS } from "../settings/secrets";
+import { resolveSecret } from "./resolveSecret";
 import { AnthropicProvider } from "./anthropic";
 import { DeepSeekProvider } from "./deepseek";
 import { ZhipuProvider } from "./zhipu";
@@ -41,8 +42,9 @@ const SPECS: ProviderSpec[] = [
 ];
 
 /**
- * bootProviders — reads API keys from keychain and registers available
- * providers into the global registry. Called once at app startup.
+ * bootProviders — reads API keys from keychain, then build-time bundled keys,
+ * and registers available providers into the global registry.
+ * Called once at app startup.
  *
  * Returns { registered, skipped } — skipped carries a reason so the UI
  * can distinguish "no key configured" from "keychain locked / IPC failure".
@@ -56,7 +58,7 @@ export async function bootProviders(): Promise<BootReport> {
     SPECS.map(async (spec) => {
       let key: string | null;
       try {
-        key = await getSecret(spec.keyName);
+        key = await resolveSecret(spec.keyName);
       } catch {
         skipped.push({ id: spec.id, reason: "keychain-error" });
         return;

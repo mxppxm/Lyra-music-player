@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lyra — Between the things you say."
 authors = ["daoyu"]
 edition = "2021"

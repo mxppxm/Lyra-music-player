@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import "./App.css";
 import { Settings } from "./settings/Settings";
+import { isZeroConfigRelease } from "./config/zeroConfig";
 import { HomeView } from "./home/HomeView";
 import { bootProviders } from "./providers/boot";
 import { createDefaultOrchestrator } from "./turn/createOrchestrator";
@@ -206,9 +207,12 @@ function App() {
   }, [reflecting]);
 
   useEffect(() => {
+    const openSettings = isZeroConfigRelease()
+      ? () => {}
+      : () => setSettingsOpen(true);
     return bindGlobalKeys({
       onTogglePlayback: () => {},
-      onOpenSettings: () => setSettingsOpen(true),
+      onOpenSettings: openSettings,
       onReflectNow: handleReflectNow,
       onOpenRoadmap: () => setRoadmapOpen(true),
       onOpenDataExplorer: () => setDataExplorerOpen(true),
@@ -345,7 +349,11 @@ function App() {
         </div>
       )}
       <HomeView
-        onOpenSettings={() => setSettingsOpen(true)}
+        booting={!bootDone}
+        zeroConfig={isZeroConfigRelease()}
+        onOpenSettings={
+          isZeroConfigRelease() ? () => {} : () => setSettingsOpen(true)
+        }
         onOpenDataExplorer={(tab) => {
           setDataExplorerInitialTab(tab);
           setDataExplorerOpen(true);
@@ -357,7 +365,13 @@ function App() {
           if (html) setWeeklyHtml(html);
         }}
       />
-      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} onSchedulerUpdate={handleSchedulerUpdate} />
+      {!isZeroConfigRelease() && (
+        <Settings
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onSchedulerUpdate={handleSchedulerUpdate}
+        />
+      )}
       <RoadmapBoard open={roadmapOpen} onClose={() => setRoadmapOpen(false)} />
       <DataExplorer
         open={dataExplorerOpen}

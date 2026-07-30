@@ -89,17 +89,11 @@ function buildMemoryBlock(i: CompanionInput): string {
   return lines.join("\n");
 }
 
-function buildBrief(i: CompanionInput): string {
-  const { pad, labels, confidence } = i.currentEmotion;
-  const soul = i.soul;
-  const memoryLine =
-    soul.shared_memory.length > 0
-      ? `- 共同记忆(最近一条): ${soul.shared_memory[soul.shared_memory.length - 1].significance}`
-      : "- 共同记忆: (无)";
 function formatProfile(p: MusicProfile | null | undefined): string {
   if (!p) return "暂无音乐画像";
 
   const parts: string[] = [];
+  if (p.recognized && p.canonical_work) parts.push(`原曲: ${p.canonical_work}`);
   if (p.genre.length > 0) parts.push(`流派: ${p.genre.join("/")}`);
   if (p.mood.length > 0) parts.push(`情绪: ${p.mood.join(", ")}`);
   if (p.energy_level) parts.push(`能量: ${p.energy_level}`);
@@ -113,10 +107,18 @@ function formatProfile(p: MusicProfile | null | undefined): string {
   if (p.best_for.length > 0) parts.push(`适合: ${p.best_for.join(", ")}`);
   parts.push(`PAD估计: p=${p.pad_estimate.p.toFixed(2)} a=${p.pad_estimate.a.toFixed(2)} d=${p.pad_estimate.d.toFixed(2)}`);
   if (p.llm_unknown) parts.push("⚠ LLM 不认识此歌，分析可能不准");
+  if (p.recognized === false && !p.llm_unknown) parts.push("⚠ 未确认识别原曲，勿按歌名字面发挥");
 
   return parts.join(" | ");
 }
 
+function buildBrief(i: CompanionInput): string {
+  const { pad, labels, confidence } = i.currentEmotion;
+  const soul = i.soul;
+  const memoryLine =
+    soul.shared_memory.length > 0
+      ? `- 共同记忆(最近一条): ${soul.shared_memory[soul.shared_memory.length - 1].significance}`
+      : "- 共同记忆: (无)";
   const candidateBlock = i.candidates
     .map((c, idx) => {
       const dur = c.duration_ms ? Math.round(c.duration_ms / 1000) + "s" : "-";

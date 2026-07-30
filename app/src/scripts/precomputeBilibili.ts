@@ -13,12 +13,14 @@
  *   await precomputeAll((p) => console.log(p));
  */
 
-import { searchBilibili, enrichTracksWithAudio, BilibiliTrack } from "../bilibili/api";
+import { searchBilibili, enrichTracksWithAudio } from "../bilibili/api";
 import { getOrAnalyzeFeatures } from "../bilibili/audioFeatures";
 import { MusicProfileAgent } from "../agents/MusicProfileAgent";
+import { buildProfileAnalyzeInput } from "../agents/buildProfileAnalyzeInput";
+import { bilibiliTrackToLibrary } from "../library/bilibiliTrackToLibrary";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import * as musicProfileRepo from "../db/repo/musicProfileRepo";
-import type { LibraryTrack } from "../types";
+import { profileNeedsRefresh } from "../types/musicProfile";
 
 export interface PrecomputeProgress {
   phase: "metadata" | "features" | "profiles" | "done";
@@ -33,39 +35,11 @@ export interface PrecomputeResult {
   profiles: number;
 }
 
-
-function trackToLibrary(
-  t: BilibiliTrack,
-  featureCache: Record<string, unknown>,
-): LibraryTrack {
-  return {
-    id: `bili:${t.bvid}`,
-    title: t.title,
-    artist: t.author || undefined,
-    album: undefined,
-    path: `bili:__pending__:${t.bvid}`,
-    duration_ms: t.duration_ms,
-    origin: "web" as const,
-    added_at: Date.now(),
-    metadata: {
-      bvid: t.bvid,
-      aid: t.aid,
-      tag: t.tag,
-      cover: t.cover,
-      play_count: t.play_count,
-      ...(featureCache[t.bvid]
-        ? { audio_features: featureCache[t.bvid] }
-        : {}),
-    },
-  };
-}
-
 export async function precomputeAll(
   onProgress: (p: PrecomputeProgress) => void,
 ): Promise<PrecomputeResult> {
   const result: PrecomputeResult = { tracks: 0, features: 0, profiles: 0 };
 
-  // Phase 1 — metadata
   onProgress({ phase: "metadata", current: 0, total: 0, detail: "拉取歌单..." });
   const { tracks } = await searchBilibili("", 9999);
   result.tracks = tracks.length;
@@ -79,11 +53,10 @@ export async function precomputeAll(
     onProgress({ phase: "done", current: 0, total: 0 });
     return result;
   }
-  const allMetadata = tracks.map((t) => trackToLibrary(t, {}));
+  const allMetadata = tracks.map((t) => bilibiliTrackToLibrary(t));
   const n = await libraryRepo.batchInsertTracks(allMetadata);
   console.log(`[precompute] synced ${n} track metadata`);
 
-  // Phase 2 — audio features (batch enrich → FFT)
   onProgress({
     phase: "features",
     current: 0,
@@ -111,7 +84,6 @@ export async function precomputeAll(
     });
   }
 
-  // Phase 3 — LLM MusicProfile
   onProgress({
     phase: "profiles",
     current: 0,
@@ -119,17 +91,22 @@ export async function precomputeAll(
     detail: "生成音乐画像...",
   });
   const profileAgent = new MusicProfileAgent();
-  const { hasProfiles } = await import("../db/repo/musicProfileRepo");
-  const existing = await hasProfiles(tracks.map((t) => `bili:${t.bvid}`));
-  const need = tracks.filter((t) => !existing.has(`bili:${t.bvid}`));
+  const existingMap = await musicProfileRepo.getBatch(
+    tracks.map((t) => `bili:${t.bvid}`),
+  );
+  const need = tracks.filter((t) =>
+    profileNeedsRefresh(existingMap.get(`bili:${t.bvid}`)),
+  );
 
   for (let i = 0; i < need.length; i++) {
     const t = need[i];
     try {
-      const profile = await profileAgent.analyze({
+      const profileInput = buildProfileAnalyzeInput({
         title: t.title,
-        artist: t.author || undefined,
+        artist: t.author,
+        tag: t.tag,
       });
+      const profile = await profileAgent.analyze(profileInput);
       if (profile) {
         profile.track_id = `bili:${t.bvid}`;
         await musicProfileRepo.upsert(profile);

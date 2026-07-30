@@ -11,6 +11,8 @@ export type InputBoxProps = {
   /** Grab keyboard focus on mount. Default true — otherwise Tauri users have
    *  to click the textarea before their first keystroke registers. */
   autoFocus?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 };
 
 export function InputBox({
@@ -18,6 +20,8 @@ export function InputBox({
   onSubmit,
   disabled = false,
   autoFocus = true,
+  onFocus,
+  onBlur,
 }: InputBoxProps) {
   const [value, setValue] = useState("");
   const { notifySubmit } = useInputDwellBus(perceptionBus, value);
@@ -51,6 +55,8 @@ export function InputBox({
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={handleKey}
+      onFocus={onFocus}
+      onBlur={onBlur}
       placeholder={placeholder}
       disabled={disabled}
       rows={1}

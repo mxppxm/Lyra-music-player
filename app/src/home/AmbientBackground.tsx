@@ -5,12 +5,14 @@ export type AmbientBackgroundProps = {
   pad: PAD;
   now?: Date;
   children?: React.ReactNode;
+  className?: string;
 };
 
 export function AmbientBackground({
   pad,
   now,
   children,
+  className,
 }: AmbientBackgroundProps) {
   const [tick, setTick] = useState(0);
 
@@ -29,7 +31,7 @@ export function AmbientBackground({
   return (
     <div
       data-testid="ambient-surface"
-      className="lyra-ambient"
+      className={["lyra-ambient", className].filter(Boolean).join(" ")}
       style={
         {
           backgroundColor: bg,

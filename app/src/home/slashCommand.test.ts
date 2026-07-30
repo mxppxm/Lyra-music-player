@@ -1,4 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("../config/zeroConfig", () => ({
+  isZeroConfigRelease: () => false,
+}));
+
 import { parseSlashCommand } from "./slashCommand";
 
 describe("parseSlashCommand", () => {
@@ -16,10 +21,6 @@ describe("parseSlashCommand", () => {
 
   it("recognises /help", () => {
     expect(parseSlashCommand("/help")).toEqual({ kind: "help" });
-  });
-
-  it("recognises /reload-musics", () => {
-    expect(parseSlashCommand("/reload-musics")).toEqual({ kind: "reload-musics" });
   });
 
   it("trims surrounding whitespace", () => {

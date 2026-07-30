@@ -217,7 +217,9 @@ export class Orchestrator {
       pseudoTargetOverride ??
       `${userUtterance} ${emotion.labels.join(" ")}`.trim();
 
-    const recCtx = await buildRecommendationContext(soul);
+    const recCtx = await buildRecommendationContext(soul, {
+      emotionLabels: emotion.labels,
+    });
 
     let candidates = await library.prefilter(
       pseudoTarget,
@@ -328,7 +330,9 @@ export class Orchestrator {
         .join(" ")
         .trim();
 
-      const recCtx = await buildRecommendationContext(soul);
+      const recCtx = await buildRecommendationContext(soul, {
+        emotionLabels: [],
+      });
 
       const candidates = await library.prefilter(
         pseudoTarget || intent.hint,
