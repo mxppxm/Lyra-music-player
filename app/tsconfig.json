@@ -18,7 +18,16 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@lyra/core": ["../packages/core/src"],
+      "@lyra/core/*": ["../packages/core/src/*"],
+      "@lyra/platform": ["../packages/platform/src"],
+      "@lyra/platform-desktop": ["../packages/platform-desktop/src"],
+      "@lyra/platform-desktop/*": ["../packages/platform-desktop/src/*"],
+      "@lyra/platform-ios": ["../packages/platform-ios/src"],
+      "@lyra/platform-ios/*": ["../packages/platform-ios/src/*"]
+    }
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]

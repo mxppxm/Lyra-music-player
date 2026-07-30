@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import path from "path";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -7,6 +8,22 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+
+  // Monorepo path aliases for @lyra/* workspace packages
+  resolve: {
+    alias: {
+      "@lyra/core": path.resolve(__dirname, "../packages/core/src"),
+      "@lyra/platform": path.resolve(__dirname, "../packages/platform/src"),
+      "@lyra/platform-desktop": path.resolve(
+        __dirname,
+        "../packages/platform-desktop/src",
+      ),
+      "@lyra/platform-ios": path.resolve(
+        __dirname,
+        "../packages/platform-ios/src",
+      ),
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
