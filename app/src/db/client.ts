@@ -1,15 +1,24 @@
-import Database from "@tauri-apps/plugin-sql";
+import { getLyraPlatform } from "@lyra/platform";
 
 export const DB_URL = "sqlite:lyra.db";
 
-let _db: Database | null = null;
+interface DbLike {
+  select<T = unknown>(sql: string, params?: unknown[]): Promise<T>;
+  execute(sql: string, params?: unknown[]): Promise<{ rowsAffected?: number }>;
+}
 
-export async function getDb(): Promise<Database> {
-  if (_db) return _db;
-  _db = await Database.load(DB_URL);
-  return _db;
+export async function getDb(): Promise<DbLike> {
+  const platform = getLyraPlatform();
+  return {
+    select: <T = unknown>(sql: string, params?: unknown[]) =>
+      platform.dbSelect(sql, params) as Promise<T>,
+    execute: (sql: string, params?: unknown[]) =>
+      platform.dbExecute(sql, params).then(
+        (r) => (r ?? {}) as { rowsAffected?: number },
+      ),
+  };
 }
 
 export function invalidateDb(): void {
-  _db = null;
+  /* platform manages connection */
 }

@@ -5,7 +5,7 @@
  * to bypass CORS restrictions in the WebView.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { getLyraPlatform } from "@lyra/platform";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,11 +36,11 @@ function parseDuration(dur: string): number {
   return 0;
 }
 
-/** Fetch via Rust proxy. Returns data field only (proxy already checked code==0). */
+/** Fetch via platform HTTP. Returns data field only. */
 async function biliGet(path: string, params: Record<string, string>): Promise<any> {
   const qs = new URLSearchParams(params).toString();
   const url = `https://api.bilibili.com${path}?${qs}`;
-  const json = await invoke<any>("bilibili_fetch", { url });
+  const json = (await getLyraPlatform().fetchJson(url)) as any;
   return json.data ?? json;
 }
 

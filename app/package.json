@@ -18,6 +18,7 @@
   "dependencies": {
     "@lyra/core": "workspace:*",
     "@lyra/platform": "workspace:*",
+    "@lyra/platform-desktop": "workspace:*",
     "@fontsource/lora": "^5.2.8",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-notification": "^2",

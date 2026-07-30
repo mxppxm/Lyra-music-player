@@ -33,6 +33,8 @@ import { RoadmapBoard } from "./ui/RoadmapBoard";
 import { DataExplorer } from "./ui/DataExplorer";
 import { HelpOverlay } from "./home/HelpOverlay";
 import { WeeklyReader } from "./home/WeeklyReader";
+import { setLyraPlatform } from "@lyra/platform";
+import { createDesktopPlatform } from "@lyra/platform-desktop";
 
 async function bootMemory(): Promise<void> {
   try {
@@ -74,6 +76,7 @@ function App() {
   const todayFirstOpenRef = useRef(true);
 
   useEffect(() => {
+    setLyraPlatform(createDesktopPlatform());
     bootProviders()
       .catch(() => {})
       .then(() => bootMemory())

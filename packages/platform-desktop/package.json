@@ -1,0 +1,14 @@
+{
+  "name": "@lyra/platform-desktop",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@lyra/platform": "workspace:*",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-sql": "^2.4.0"
+  }
+}

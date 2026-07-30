@@ -1,10 +1,18 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const loadMock = vi.fn();
+const dbExecuteMock = vi.fn();
+const dbSelectMock = vi.fn();
 
-vi.mock("@tauri-apps/plugin-sql", () => ({
-  default: { load: (...args: unknown[]) => loadMock(...args) },
-}));
+vi.mock("@lyra/platform", async () => {
+  const actual = await vi.importActual("@lyra/platform");
+  return {
+    ...actual,
+    getLyraPlatform: () => ({
+      dbExecute: dbExecuteMock,
+      dbSelect: dbSelectMock,
+    }),
+  };
+});
 
 import { getDb, invalidateDb, DB_URL } from "./client";
 
@@ -13,33 +21,22 @@ describe("db/client", () => {
     expect(DB_URL).toBe("sqlite:lyra.db");
   });
 
-  it("getDb loads via plugin with DB_URL", async () => {
-    const fake = { execute: vi.fn(), select: vi.fn() };
-    loadMock.mockResolvedValueOnce(fake);
+  it("getDb delegates to platform dbExecute", async () => {
+    dbExecuteMock.mockResolvedValueOnce({ rowsAffected: 1 });
     const db = await getDb();
-    expect(loadMock).toHaveBeenCalledWith("sqlite:lyra.db");
-    expect(db).toBe(fake);
+    await db.execute("DELETE FROM x", []);
+    expect(dbExecuteMock).toHaveBeenCalledWith("DELETE FROM x", []);
   });
 
-  it("getDb memoizes the connection", async () => {
-    loadMock.mockClear();
-    const fake = { execute: vi.fn(), select: vi.fn() };
-    loadMock.mockResolvedValue(fake);
-    const a = await getDb();
-    const b = await getDb();
-    expect(a).toBe(b);
-    // NOTE: memoization can span tests; ensure loadMock was invoked at most once
-    // in this describe execution (0 acceptable if prior test already loaded)
-    expect(loadMock.mock.calls.length).toBeLessThanOrEqual(1);
+  it("getDb delegates to platform dbSelect", async () => {
+    dbSelectMock.mockResolvedValueOnce([{ id: 1 }]);
+    const db = await getDb();
+    const rows = await db.select("SELECT 1", []);
+    expect(rows).toEqual([{ id: 1 }]);
   });
 
-  it("invalidateDb clears the cached connection", async () => {
-    const callsBefore = loadMock.mock.calls.length;
+  it("invalidateDb is a no-op (platform owns connection)", () => {
     invalidateDb();
-    const fake = { execute: vi.fn(), select: vi.fn() };
-    loadMock.mockResolvedValueOnce(fake);
-    const db = await getDb();
-    expect(db).toBe(fake);
-    expect(loadMock.mock.calls.length).toBe(callsBefore + 1);
+    expect(true).toBe(true);
   });
 });
