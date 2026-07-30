@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { SECRET_KEYS, setSecret, getSecret } from "./secrets";
-import { importLibrary } from "../library/libraryScan";
 import { lyricsRefill } from "../library/lyricsRefill";
 import { reflectNow } from "../reflect/trigger";
 
@@ -13,7 +12,8 @@ export type SettingsProps = {
 };
 
 export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
-  const [libraryPath, setLibraryPath] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [scanStatus, setScanStatus] = useState<string>("");
   const [anthropic, setAnthropic] = useState("");
   const [deepseek, setDeepseek] = useState("");
   const [zhipu, setZhipu] = useState("");
@@ -32,18 +32,15 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [embeddingDirty, setEmbeddingDirty] = useState(false);
   const [refilling, setRefilling] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [scanStatus, setScanStatus] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d, z, lib, dt, dim, pe, pm, ep, zek, ok, wd, wa, we, wlat, wlon] = await Promise.all([
+      const [a, d, z, dt, dim, pe, pm, ep, zek, ok, wd, wa, we, wlat, wlon] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
         getSecret(SECRET_KEYS.zhipuApiKey),
-        getSecret(SECRET_KEYS.libraryRootPath),
         getSecret(SECRET_KEYS.dreamDailyTime),
         getSecret(SECRET_KEYS.dreamIdleMinutes),
         getSecret(SECRET_KEYS.perceptionEnabled),
@@ -61,7 +58,6 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       setAnthropic(a ?? "");
       setDeepseek(d ?? "");
       setZhipu(z ?? "");
-      setLibraryPath(lib ?? "");
       setDreamDailyTime(dt ?? "03:14");
       setDreamIdleMinutes(dim ?? "30");
       // Default to enabled; only disable when explicitly stored as "false"
@@ -96,7 +92,6 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.anthropicApiKey, anthropic);
       await setSecret(SECRET_KEYS.deepseekApiKey, deepseek);
       await setSecret(SECRET_KEYS.zhipuApiKey, zhipu);
-      await setSecret(SECRET_KEYS.libraryRootPath, libraryPath);
       await setSecret(SECRET_KEYS.dreamDailyTime, dreamDailyTime);
       await setSecret(SECRET_KEYS.dreamIdleMinutes, dreamIdleMinutes);
       await setSecret(SECRET_KEYS.perceptionEnabled, perceptionEnabled ? "true" : "false");
@@ -110,19 +105,6 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.weeklyDirOverride, weeklyDir);
       await setSecret(SECRET_KEYS.weeklyAutoEnabled, weeklyAuto ? "true" : "false");
       setEmbeddingDirty(false);
-      if (libraryPath) {
-        setScanStatus("Scanning…");
-        try {
-          const { imported, pruned } = await importLibrary(libraryPath);
-          const impMsg = `Imported ${imported} new track${imported === 1 ? "" : "s"}.`;
-          const pruneMsg = pruned > 0
-            ? ` Pruned ${pruned} stale row${pruned === 1 ? "" : "s"}.`
-            : "";
-          setScanStatus(`${impMsg}${pruneMsg}`);
-        } catch (err) {
-          setScanStatus(`Scan failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
       onSchedulerUpdate?.(dreamDailyTime, Number(dreamIdleMinutes) || 0);
       onClose();
     } finally {
@@ -133,14 +115,14 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const onRefill = () => {
     if (refilling) return;
     setRefilling(true);
-    setScanStatus("Refilling lyrics embeddings…");
+    setScanStatus("正在补全歌词嵌入…");
     void lyricsRefill()
       .then((r) => {
         setScanStatus(
-          `Refill: ${r.succeeded} succeeded, ${r.failed} failed (of ${r.started}).`,
+          `补全完成: ${r.succeeded} 成功, ${r.failed} 失败 (共 ${r.started} 首).`,
         );
       })
-      .catch(() => setScanStatus("Refill failed silently — check console."))
+      .catch(() => setScanStatus("补全失败 — 请检查控制台."))
       .finally(() => setRefilling(false));
   };
 
@@ -149,33 +131,23 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     try {
       const { appliedFacts, dreamAdded } = await reflectNow();
       setScanStatus(
-        `Reflected — ${appliedFacts} fact update${appliedFacts === 1 ? "" : "s"}${dreamAdded ? " + one dream" : ""}.`
+        `反思完成 — ${appliedFacts} 条事实更新${dreamAdded ? " + 一个梦境" : ""}.`
       );
     } catch (err) {
-      setScanStatus(`Reflect failed: ${err instanceof Error ? err.message : String(err)}`);
+      setScanStatus(`反思失败: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div role="dialog" aria-label="Settings" className="settings-modal">
-      <h2>Settings</h2>
-      <label>
-        Music library folder
-        <input
-          type="text"
-          placeholder="/Users/you/Music"
-          value={libraryPath}
-          onChange={(e) => setLibraryPath(e.target.value)}
-          disabled={!loaded}
-        />
-      </label>
+    <div role="dialog" aria-label="设置" className="settings-modal">
+      <h2>⚙️ 设置</h2>
       {scanStatus && (
         <p style={{ opacity: 0.7, fontSize: "0.85em" }}>{scanStatus}</p>
       )}
       <label>
-        Anthropic API Key
+        Anthropic API 密钥
         <input
           type="password"
           value={anthropic}
@@ -184,7 +156,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         />
       </label>
       <label>
-        DeepSeek API Key
+        DeepSeek API 密钥
         <input
           type="password"
           value={deepseek}
@@ -193,7 +165,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         />
       </label>
       <label>
-        Zhipu API Key
+        智谱 API 密钥
         <input
           type="password"
           value={zhipu}
@@ -202,7 +174,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         />
       </label>
       <label>
-        Daily dream time (HH:MM)
+        每日梦境时间 (HH:MM)
         <input
           type="text"
           placeholder="03:14"
@@ -212,7 +184,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         />
       </label>
       <label>
-        Idle threshold (minutes, 0 = off)
+        空闲阈值 (分钟, 0=关闭)
         <input
           type="number"
           min="0"
@@ -228,10 +200,10 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           onChange={(e) => setPerceptionEnabled(e.target.checked)}
           disabled={!loaded}
         />
-        Perception (privacy) — local behavioral signals bias next song
+        感知模式 — 根据本地行为信号推荐下一首歌
       </label>
       <label>
-        Perception mode
+        感知方式
         <select
           value={perceptionMode}
           onChange={(e) =>
@@ -250,13 +222,13 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           onChange={(e) => setWeatherEnabled(e.target.checked)}
           disabled={!loaded || !perceptionEnabled}
         />
-        Weather mood (Open-Meteo) — soft PAD bias from local weather
+        天气情绪 (Open-Meteo) — 根据本地天气微调音乐偏好
       </label>
       <p style={{ opacity: 0.7, fontSize: "0.85em", margin: "0 0 8px 0" }}>
         ⓘ 未填写手动坐标时会请求系统定位权限
       </p>
       <label>
-        Weather lat (optional fallback)
+        天气纬度 (可选)
         <input
           type="text"
           value={weatherLat}
@@ -266,7 +238,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         />
       </label>
       <label>
-        Weather lon (optional fallback)
+        天气经度 (可选)
         <input
           type="text"
           value={weatherLon}
@@ -276,7 +248,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
         />
       </label>
       <label>
-        Lyrics embedding provider
+        歌词嵌入服务
         <select
           value={embeddingChoice}
           onChange={(e) => {
@@ -292,7 +264,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       </label>
       {embeddingChoice === "zhipu" && (
         <label>
-          Zhipu Embedding API Key
+          智谱 Embedding API 密钥
           <input
             type="password"
             value={zhipuEmbeddingKey}
@@ -306,7 +278,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       )}
       {embeddingChoice === "openai" && (
         <label>
-          OpenAI API Key
+          OpenAI API 密钥
           <input
             type="password"
             value={openaiKey}
@@ -321,7 +293,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       <fieldset className="settings-weekly">
         <legend>周报</legend>
         <label>
-          保存目录(留空则默认 <code>&lt;appData&gt;/weeklies</code>)
+          保存目录（留空则默认 <code>&lt;appData&gt;/weeklies</code>）
           <input
             type="text"
             value={weeklyDir}
@@ -346,24 +318,24 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           }
           title={
             embeddingDirty
-              ? "Save first — the provider/key isn't persisted yet."
+              ? "请先保存 — 嵌入服务/密钥尚未持久化"
               : undefined
           }
         >
-          {refilling ? "Refilling…" : "Refill missing lyrics embeddings"}
+          {refilling ? "正在补全…" : "补全缺少的歌词嵌入"}
         </button>
       </div>
       <div className="settings-actions">
         <button onClick={onReflect} disabled={saving || !loaded}>
-          Reflect now
+          立即反思
         </button>
       </div>
       <div className="settings-actions">
         <button onClick={onClose} disabled={saving}>
-          Cancel
+          取消
         </button>
         <button onClick={onSave} disabled={saving || !loaded}>
-          Save
+          保存
         </button>
       </div>
     </div>

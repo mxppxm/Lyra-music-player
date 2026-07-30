@@ -119,7 +119,7 @@ describe("CompanionAgent.choose", () => {
     expect(retryMsgs[retryMsgs.length - 1].content).toContain("t2");
   });
 
-  it("falls back to candidates[0] when even retry misses (preserves LLM rationale)", async () => {
+  it("falls back to lowest-fatigue candidate when retry misses", async () => {
     const bad1 = JSON.stringify({
       song_id: "made-up-1",
       target_profile: "tp1", rationale: "r1", needed_shift: "陪着",
@@ -130,9 +130,19 @@ describe("CompanionAgent.choose", () => {
     });
     const p = stubSequential(bad1, bad2);
     const a = new CompanionAgent({ provider: p });
-    const out = await a.choose(input);
-    expect(out.song_id).toBe("t1"); // candidates[0]
-    // Rationale/target_profile from the retry (the last LLM output) preserved
+    const inputWithRec = {
+      ...input,
+      recommendation: {
+        excludeIds: new Set<string>(),
+        fatigueByTrack: new Map([["t1", 0.9], ["t2", 0.1]]),
+        recentPlays: [],
+        noveltySeeking: 0.5,
+        feedbackStats: new Map(),
+        soul,
+      },
+    };
+    const out = await a.choose(inputWithRec);
+    expect(out.song_id).toBe("t2");
     expect(out.rationale).toBe("r2");
     expect(out.target_profile).toBe("tp2");
     expect(out.needed_shift).toBe("打断");

@@ -10,10 +10,9 @@ describe("SongInfo", () => {
     ).toBeInTheDocument();
   });
 
-  it("uses the song-info design-token color and font-size", () => {
+  it("uses the song-info CSS class for styling", () => {
     render(<SongInfo title="a" artist="b" />);
     const node = screen.getByTestId("song-info");
-    expect(node.style.color).toBe("var(--lyra-color-song-info)");
-    expect(node.style.fontSize).toBe("var(--lyra-song-font-size)");
+    expect(node.className).toContain("lyra-song-info");
   });
 });

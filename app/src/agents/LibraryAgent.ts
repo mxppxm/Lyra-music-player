@@ -1,31 +1,23 @@
 import type { LibraryTrack, PAD } from "../types";
+import type { MusicProfile } from "../types/musicProfile";
 import * as libraryRepo from "../db/repo/libraryRepo";
-import * as featuresRepo from "../db/repo/libraryFeaturesRepo";
-import * as lyricsRepo from "../db/repo/lyricsEmbeddingsRepo";
-import type { LibraryFeatures } from "../db/repo/libraryFeaturesRepo";
-import type { LyricsEmbedding } from "../db/repo/lyricsEmbeddingsRepo";
-import { createEmbeddingProvider } from "../providers/embeddingProvider";
-import type { EmbeddingProvider } from "../providers/embeddingProvider";
-import type { TargetProfile } from "./types";
-import { padToBpm } from "./padToBpm";
-
-export type LibraryRepoLike = { listAll(): Promise<LibraryTrack[]> };
-export type FeaturesRepoLike = {
-  getBatch(ids: string[]): Promise<Map<string, LibraryFeatures>>;
-};
-export type LyricsRepoLike = {
-  getBatch(ids: string[]): Promise<Map<string, LyricsEmbedding>>;
-};
-export type ProviderFactory = () => Promise<EmbeddingProvider | null>;
+import * as musicProfileRepo from "../db/repo/musicProfileRepo";
+import type { PADProfile } from "../bilibili/audioFeatures";
+import type { RecommendationContext } from "../recommendation";
+import {
+  fatiguePenaltyWeight,
+  feedbackPenalty,
+  stratifiedSample,
+} from "../recommendation";
 
 const DEFAULT_LIMIT = 30;
 
-/** Weights when all four signals are present. sem leads (lyrics-embedding
- *  match is sharpest), pad + bpm mid, kw a small tie-breaker. Missing
- *  signals drop out and remaining weights renormalize in combineWeighted. */
-const WEIGHTS = { kw: 0.15, pad: 0.25, sem: 0.4, bpm: 0.2 } as const;
-type SignalKey = keyof typeof WEIGHTS;
+type LibraryRepoLike = { listAll(): Promise<LibraryTrack[]> };
+type MusicProfileRepoLike = {
+  getBatch(ids: string[]): Promise<Map<string, MusicProfile>>;
+};
 
+/** Minimal keyword score — fallback when no music profile exists. */
 function tokenize(target: string): string[] {
   return target
     .toLowerCase()
@@ -43,157 +35,203 @@ function keywordScore(track: LibraryTrack, tokens: string[]): number {
   return score;
 }
 
-function normaliseKeyword(score: number, maxHits: number): number {
-  return maxHits === 0 ? 0 : score / maxHits;
+// ── Profile-based scoring ───────────────────────────────────────────────────
+
+/** PAD distance in [0, 1], lower = closer match */
+function padDistance(userPad: PAD, songPad: { p: number; a: number; d: number }): number {
+  const dp = userPad.p - songPad.p;
+  const da = userPad.a - songPad.a;
+  const dd = userPad.d - songPad.d;
+  const dist = Math.sqrt(dp * dp + da * da + dd * dd);
+  return 1 - dist / Math.sqrt(3); // invert: 1 = perfect match
 }
 
-function padDistance(pad: PAD, f: LibraryFeatures): number {
-  if (f.energy === null || f.valence === null) return 1;
-  const targetA = (pad.a + 1) / 2;
-  const targetP = (pad.p + 1) / 2;
-  return (Math.abs(targetA - f.energy) + Math.abs(targetP - f.valence)) / 2;
-}
-
-/** BPM proximity in [0, 1]. Returns undefined for null bpm so
- *  combineWeighted renormalizes over the remaining signals.
- *
- *  Cross-track fairness note: once any track in the candidate set has a
- *  non-null bpm, the anyBpm gate opens and this signal enters scoring.
- *  Tracks without bpm renormalise over 3 signals (kw/pad/sem) — effectively
- *  neutral on the bpm axis. Tracks WITH bpm get scored and can drop below
- *  a bpm-less rival if the tempo mismatch is large. This is intentional
- *  (bpm is real information, absence is missing information), not a bug. */
-function bpmScore(
-  trackBpm: number | null | undefined,
-  targetBpm: number,
-  tolerance: number,
-): number | undefined {
-  if (trackBpm == null) return undefined;
-  const dist = Math.abs(trackBpm - targetBpm);
-  return 1 - Math.min(dist / tolerance, 1);
-}
-
-function cosineDistance(a: Float32Array, b: Float32Array): number {
-  if (a.length === 0 || a.length !== b.length) return 1;
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
+/** Overlap score between user emotion labels and song mood tags */
+function moodOverlap(userLabels: string[], songMood: string[]): number {
+  if (userLabels.length === 0 || songMood.length === 0) return 0;
+  const userSet = new Set(userLabels.map(l => l.toLowerCase()));
+  const songSet = new Set(songMood.map(m => m.toLowerCase()));
+  let overlap = 0;
+  for (const m of songSet) {
+    for (const u of userSet) {
+      if (m.includes(u) || u.includes(m)) {
+        overlap++;
+        break;
+      }
+    }
   }
-  if (na === 0 || nb === 0) return 1;
-  return 1 - dot / (Math.sqrt(na) * Math.sqrt(nb));
+  return overlap / Math.max(userSet.size, songSet.size);
 }
 
-/** Weighted average, automatically renormalized over signals that are present. */
-function combineWeighted(scores: Partial<Record<SignalKey, number>>): number {
-  const entries = (Object.entries(scores) as [SignalKey, number][]).filter(
-    ([, v]) => v !== undefined,
-  );
-  if (entries.length === 0) return 0;
-  const total = entries.reduce((s, [k]) => s + WEIGHTS[k], 0);
-  return entries.reduce((s, [k, v]) => s + v * WEIGHTS[k], 0) / total;
-}
+/** Time-of-day match: current hour → song's time_color hint */
+function timeColorScore(hour: number, timeColor: string): number {
+  const lower = timeColor.toLowerCase();
+  const isNight = hour >= 22 || hour < 5;
+  const isMorning = hour >= 5 && hour < 11;
+  const isAfternoon = hour >= 11 && hour < 17;
+  const isEvening = hour >= 17 && hour < 22;
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+  if (
+    (isNight && /凌晨|深夜|夜晚|半夜|夜|dark|night/i.test(lower)) ||
+    (isMorning && /早晨|清晨|早上|日出|morning|dawn/i.test(lower)) ||
+    (isAfternoon && /午后|下午|午后|afternoon/i.test(lower)) ||
+    (isEvening && /傍晚|黄昏|晚上|dusk|evening/i.test(lower))
+  ) {
+    return 1;
   }
-  return a;
+
+  if (
+    (isNight && /晚/i.test(lower)) ||
+    (isMorning && /早|晨/i.test(lower)) ||
+    (isAfternoon && /午|太阳/i.test(lower)) ||
+    (isEvening && /晚|夕|暮/i.test(lower))
+  ) {
+    return 0.5;
+  }
+
+  if (
+    (isNight && /安静|安静|独处/i.test(lower)) ||
+    (isMorning && /清新|清醒|新鲜/i.test(lower)) ||
+    (isAfternoon && /悠闲|慵懒/i.test(lower)) ||
+    (isEvening && /放松|收官/i.test(lower))
+  ) {
+    return 0.3;
+  }
+
+  return 0;
 }
+
+/** Scenario match: user utterance keywords vs best_for */
+function scenarioScore(target: string, bestFor: string[]): number {
+  if (bestFor.length === 0) return 0;
+  const tokens = tokenize(target);
+  if (tokens.length === 0) return 0;
+  const lowerBest = bestFor.map(b => b.toLowerCase());
+  let hits = 0;
+  for (const t of tokens) {
+    for (const b of lowerBest) {
+      if (b.includes(t) || t.includes(b)) {
+        hits++;
+        break;
+      }
+    }
+  }
+  return Math.min(hits / bestFor.length, 1);
+}
+
+/**
+ * Score a single track against the current emotional state.
+ * Returns [0, 1] composite score before fatigue / feedback adjustments.
+ */
+function profileScore(
+  track: LibraryTrack,
+  profile: MusicProfile | null,
+  pad: PAD,
+  labels: string[],
+  target: string,
+  nowHour: number,
+  audioPad?: PADProfile,
+  noveltySeeking = 0.5,
+): number {
+  let padScore = 0;
+  const effectivePad = audioPad ?? profile?.pad_estimate;
+  if (effectivePad) {
+    padScore = padDistance(pad, effectivePad) * 0.30;
+  } else if (!profile || profile.llm_unknown) {
+    const tokens = tokenize(target);
+    const maxHits = Math.max(tokens.length, 1);
+    const kw = keywordScore(track, tokens) / maxHits;
+    return kw * 0.3;
+  }
+
+  // Jitter scales with novelty_seeking — explorers get a wider candidate band
+  const jitterMax = 0.10 + noveltySeeking * 0.20;
+
+  const scores = {
+    pad: padScore,
+    mood: moodOverlap(labels, profile?.mood ?? []) * 0.25,
+    time: timeColorScore(nowHour, profile?.time_color ?? "") * 0.15,
+    scenario: scenarioScore(target, profile?.best_for ?? []) * 0.15,
+    jitter: Math.random() * jitterMax,
+  };
+  return scores.pad + scores.mood + scores.time + scores.scenario + scores.jitter;
+}
+
+function applyRecommendationAdjustments(
+  baseScore: number,
+  trackId: string,
+  recCtx: RecommendationContext | undefined,
+): number {
+  if (!recCtx) return baseScore;
+
+  let score = baseScore;
+  const fatigue = recCtx.fatigueByTrack.get(trackId) ?? 0;
+  if (fatigue > 0) {
+    score -= fatigue * fatiguePenaltyWeight(recCtx.noveltySeeking);
+  }
+
+  const fb = recCtx.feedbackStats.get(trackId);
+  const fbPen = feedbackPenalty(fb, recCtx.noveltySeeking);
+  score -= fbPen;
+
+  return score;
+}
+
+// ── LibraryAgent ────────────────────────────────────────────────────────────
 
 export class LibraryAgent {
   private repo: LibraryRepoLike;
-  private features: FeaturesRepoLike;
-  private lyrics: LyricsRepoLike;
-  private makeProvider: ProviderFactory;
+  private profileRepo: MusicProfileRepoLike;
 
-  constructor(
-    opts: {
-      repo?: LibraryRepoLike;
-      features?: FeaturesRepoLike;
-      lyrics?: LyricsRepoLike;
-      makeProvider?: ProviderFactory;
-    } = {},
-  ) {
-    this.repo = opts.repo ?? { listAll: libraryRepo.listAll };
-    this.features = opts.features ?? { getBatch: featuresRepo.getBatch };
-    this.lyrics = opts.lyrics ?? { getBatch: lyricsRepo.getBatch };
-    this.makeProvider = opts.makeProvider ?? createEmbeddingProvider;
+  constructor(opts: {
+    repo?: LibraryRepoLike;
+    profileRepo?: MusicProfileRepoLike;
+  } = {}) {
+    this.repo = opts.repo ?? libraryRepo;
+    this.profileRepo = opts.profileRepo ?? musicProfileRepo;
   }
 
   async prefilter(
-    target: TargetProfile,
-    currentPAD: PAD,
-    limit = DEFAULT_LIMIT,
-    excludeIds?: ReadonlySet<string>,
+    target: string,
+    pad: PAD,
+    limit: number = DEFAULT_LIMIT,
+    recCtx?: RecommendationContext,
+    /** bvid → real audio PAD from FFT extraction (takes priority over LLM guess) */
+    audioPadMap?: Map<string, PADProfile>,
   ): Promise<LibraryTrack[]> {
-    const tokens = tokenize(target);
-    const allRaw = await this.repo.listAll();
-    const all =
-      excludeIds && excludeIds.size > 0
-        ? allRaw.filter((t) => !excludeIds.has(t.id))
-        : allRaw;
-    if (all.length === 0) return [];
-    const ids = all.map((t) => t.id);
+    const all = await this.repo.listAll();
+    const excludeIds = recCtx?.excludeIds;
+    const filtered = excludeIds
+      ? all.filter((t) => !excludeIds.has(t.id))
+      : all;
 
-    const provider = await this.makeProvider().catch(() => null);
-    const [featuresByTrack, lyricsByTrack, targetVec] = await Promise.all([
-      this.features.getBatch(ids).catch(() => new Map<string, LibraryFeatures>()),
-      this.lyrics.getBatch(ids).catch(() => new Map<string, LyricsEmbedding>()),
-      provider
-        ? provider.embed(target).catch(() => null)
-        : Promise.resolve(null),
-    ]);
+    if (filtered.length === 0) return [];
 
-    const rawKeyword = all.map((t) => keywordScore(t, tokens));
-    const maxHits = Math.max(...rawKeyword, 0);
-    const anyKeyword = maxHits > 0;
-    // "any features" means at least one row has a usable (non-null) axis.
-    // A features table full of all-null rows must NOT count — otherwise the
-    // scored path yields identical zeros for every track and JS stable sort
-    // degrades to insertion order (deterministic same-N-forever).
-    let anyFeatures = false;
-    let anyBpm = false;
-    for (const f of featuresByTrack.values()) {
-      if (f.energy !== null || f.valence !== null) anyFeatures = true;
-      if (f.bpm !== null && f.bpm !== undefined) anyBpm = true;
-      if (anyFeatures && anyBpm) break;
-    }
-    const anySem = targetVec !== null && lyricsByTrack.size > 0;
-    const bpmTarget = padToBpm(currentPAD);
+    const profileMap = await this.profileRepo.getBatch(filtered.map((t) => t.id));
+    const labels = target.split(/\s+/).filter(s => s.length <= 6);
+    const nowHour = new Date().getHours();
+    const noveltySeeking = recCtx?.noveltySeeking ?? 0.5;
 
-    if (!anyKeyword && !anyFeatures && !anySem && !anyBpm) {
-      return shuffle(all).slice(0, limit);
-    }
-
-    const scored = all.map((t, i) => {
-      const scores: Partial<Record<SignalKey, number>> = {};
-      if (anyKeyword) scores.kw = normaliseKeyword(rawKeyword[i], maxHits);
-      const feats = featuresByTrack.get(t.id);
-      if (feats && (feats.energy !== null || feats.valence !== null)) {
-        scores.pad = 1 - padDistance(currentPAD, feats);
-      }
-      if (anyBpm) {
-        const s = bpmScore(feats?.bpm, bpmTarget.targetBpm, bpmTarget.tolerance);
-        if (s !== undefined) scores.bpm = s;
-      }
-      const lyrEmb = lyricsByTrack.get(t.id);
-      if (
-        targetVec &&
-        lyrEmb &&
-        lyrEmb.embedding.length === targetVec.length
-      ) {
-        scores.sem = 1 - cosineDistance(targetVec, lyrEmb.embedding);
-      }
-      return { t, score: combineWeighted(scores) };
+    const scored = filtered.map((track) => {
+      const bvid = track.id.startsWith("bili:") ? track.id.slice(5) : null;
+      const audioPad = bvid ? audioPadMap?.get(bvid) : undefined;
+      const base = profileScore(
+        track, profileMap.get(track.id) ?? null, pad, labels, target, nowHour, audioPad, noveltySeeking,
+      );
+      return {
+        track,
+        score: applyRecommendationAdjustments(base, track.id, recCtx),
+      };
     });
 
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit).map((s) => s.t);
+
+    const sampled = stratifiedSample(
+      scored.map((s) => ({ item: s.track, score: s.score })),
+      limit,
+      noveltySeeking,
+    );
+
+    return sampled;
   }
 }

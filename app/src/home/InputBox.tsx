@@ -25,9 +25,6 @@ export function InputBox({
 
   useEffect(() => {
     if (!autoFocus || disabled) return;
-    // Defer to next tick so the Tauri window's initial layout / focus events
-    // settle before we claim keyboard focus. Without this the OS chrome
-    // sometimes wins the initial focus race and typing lands nowhere.
     const t = setTimeout(() => ref.current?.focus(), 0);
     return () => clearTimeout(t);
   }, [autoFocus, disabled]);
@@ -50,30 +47,13 @@ export function InputBox({
     <textarea
       ref={ref}
       data-testid="lyra-input"
+      className="lyra-input"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={handleKey}
       placeholder={placeholder}
       disabled={disabled}
       rows={1}
-      style={{
-        width: "var(--lyra-input-max-width)",
-        maxWidth: 800,
-        height: "var(--lyra-input-height)",
-        padding: "10px 20px",
-        borderRadius: "var(--lyra-input-radius)",
-        border: "none",
-        outline: "none",
-        resize: "none",
-        background: "var(--lyra-color-input-bg)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
-        fontFamily: "var(--lyra-song-family)",
-        fontSize: "var(--lyra-song-font-size)",
-        color: "var(--lyra-color-song-info)",
-        boxShadow: "0 1px 0 0 rgba(0,0,0,0.05), inset 0 0 0 1px rgba(0,0,0,0.03)",
-        display: "block",
-      }}
     />
   );
 }

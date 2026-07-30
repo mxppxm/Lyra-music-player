@@ -170,11 +170,11 @@ describe("HomeView — error state", () => {
   it("shows error message in small note", () => {
     const orc = makeStubOrchestrator({
       kind: "error",
-      message: "library is empty; add music in Settings",
+      message: "B 站上暂时没搜到合适的歌，换种心情说说看？",
     });
     render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
     expect(screen.getByTestId("small-note")).toHaveTextContent(
-      "library is empty; add music in Settings",
+      "B 站上暂时没搜到合适的歌，换种心情说说看？",
     );
   });
 });

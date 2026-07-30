@@ -78,6 +78,18 @@ function App() {
       .then(() => bootMemory())
       .catch(() => {})
       .then(async () => {
+        // Copy precomputed Bilibili data (DB + feature cache) from bundle
+        // to app data dir on first launch. Idempotent — no-op if exists.
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const msg = await invoke<string>("setup_bundled_data");
+          console.log("[lyra] bundled data setup:", msg);
+        } catch (e) {
+          console.warn("[lyra] bundled data setup skipped:", e);
+        }
+      })
+      .catch(() => {})
+      .then(async () => {
         // Rehydrate sulk state from persisted SoulState so a 3-day sulk
         // survives an app restart. Expired sulks are dropped by hydrate().
         const persistedSulkMs = await readPersistedSulkUntil();

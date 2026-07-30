@@ -5,6 +5,8 @@ import { writeTrace } from "../reasoning/writeTrace";
 import { parseLooseJson } from "../lib/parseLooseJson";
 import { songDisplayTitle } from "../library/display";
 import type { ChosenSong, CompanionInput } from "./types";
+import type { MusicProfile } from "../types/musicProfile";
+import { shuffle } from "../recommendation";
 
 const SHIFTS = ["接住", "点燃", "陪着", "打断"] as const;
 type Shift = (typeof SHIFTS)[number];
@@ -22,6 +24,50 @@ function extractJson(raw: string): unknown {
   } catch {
     throw new CompanionAgentError(`bad JSON: ${raw.slice(0, 200)}`);
   }
+}
+
+function buildRecentPlaysBlock(i: CompanionInput): string {
+  const rec = i.recommendation;
+  if (!rec || rec.recentPlays.length === 0) return "";
+
+  const unique = new Map<string, { turnsAgo: number; skipped: boolean }>();
+  for (const p of rec.recentPlays) {
+    if (!unique.has(p.songId)) {
+      unique.set(p.songId, { turnsAgo: p.turnsAgo, skipped: p.skipped });
+    }
+  }
+
+  const lines = ["近期已播（禁止再选这些 id）:"];
+  let n = 0;
+  for (const [id, meta] of unique) {
+    if (n >= 15) break;
+    const tag = meta.skipped ? " [用户跳过]" : "";
+    lines.push(`- ${id} (${meta.turnsAgo} 轮前${tag})`);
+    n++;
+  }
+  lines.push(`novelty_seeking=${rec.noveltySeeking.toFixed(2)} — 越高越应推新鲜歌`);
+  return lines.join("\n");
+}
+
+function pickFallbackSongId(input: CompanionInput): string {
+  const ids = input.candidates.map((c) => c.id);
+  const rec = input.recommendation;
+
+  if (!rec || rec.fatigueByTrack.size === 0) {
+    const pool = shuffle(ids).slice(0, Math.min(5, ids.length));
+    return pool[0] ?? ids[0];
+  }
+
+  let best = ids[0];
+  let bestFatigue = Infinity;
+  for (const id of ids) {
+    const f = rec.fatigueByTrack.get(id) ?? 0;
+    if (f < bestFatigue) {
+      bestFatigue = f;
+      best = id;
+    }
+  }
+  return best;
 }
 
 function buildMemoryBlock(i: CompanionInput): string {
@@ -50,16 +96,46 @@ function buildBrief(i: CompanionInput): string {
     soul.shared_memory.length > 0
       ? `- 共同记忆(最近一条): ${soul.shared_memory[soul.shared_memory.length - 1].significance}`
       : "- 共同记忆: (无)";
+function formatProfile(p: MusicProfile | null | undefined): string {
+  if (!p) return "暂无音乐画像";
+
+  const parts: string[] = [];
+  if (p.genre.length > 0) parts.push(`流派: ${p.genre.join("/")}`);
+  if (p.mood.length > 0) parts.push(`情绪: ${p.mood.join(", ")}`);
+  if (p.energy_level) parts.push(`能量: ${p.energy_level}`);
+  if (p.tempo_feel) parts.push(`节奏: ${p.tempo_feel}`);
+  if (p.time_color) parts.push(`时间感: ${p.time_color}`);
+  if (p.space_color) parts.push(`空间感: ${p.space_color}`);
+  if (p.instrumentation.length > 0) parts.push(`乐器: ${p.instrumentation.join(", ")}`);
+  if (p.vocal_style) parts.push(`人声: ${p.vocal_style}`);
+  if (p.lyrical_themes.length > 0) parts.push(`主题: ${p.lyrical_themes.join(", ")}`);
+  if (p.emotional_curve) parts.push(`情绪弧线: ${p.emotional_curve}`);
+  if (p.best_for.length > 0) parts.push(`适合: ${p.best_for.join(", ")}`);
+  parts.push(`PAD估计: p=${p.pad_estimate.p.toFixed(2)} a=${p.pad_estimate.a.toFixed(2)} d=${p.pad_estimate.d.toFixed(2)}`);
+  if (p.llm_unknown) parts.push("⚠ LLM 不认识此歌，分析可能不准");
+
+  return parts.join(" | ");
+}
+
   const candidateBlock = i.candidates
-    .map(
-      (c, idx) =>
-        `[${idx + 1}] id=${c.id} · ${songDisplayTitle(c)} · ${c.artist ?? "(无艺人)"} · ${
-          c.album ?? "-"
-        } · ${c.duration_ms ? Math.round(c.duration_ms / 1000) + "s" : "-"}`,
-    )
+    .map((c, idx) => {
+      const dur = c.duration_ms ? Math.round(c.duration_ms / 1000) + "s" : "-";
+      const artist = c.artist ?? "(无艺人)";
+      const title = songDisplayTitle(c);
+
+      const profileStr = formatProfile(c.musicProfile);
+
+      // Show real audio PAD prominently when available
+      const audioPadStr = c.audioPad
+        ? `🎵 真实音频PAD: p=${c.audioPad.p.toFixed(2)} a=${c.audioPad.a.toFixed(2)} d=${c.audioPad.d.toFixed(2)}`
+        : "";
+
+      return `[${idx + 1}] id=${c.id} · ${title} · ${artist} · ${dur}${audioPadStr ? `\n   ${audioPadStr}` : ""}\n   └ 画像: ${profileStr}`;
+    })
     .join("\n");
 
   const memoryBlock = buildMemoryBlock(i);
+  const recentPlaysBlock = buildRecentPlaysBlock(i);
 
   const parts = [
     `用户的话: ${i.userUtterance || "(她/他刚打开 app,还没说话)"}`,
@@ -74,6 +150,11 @@ function buildBrief(i: CompanionInput): string {
   if (memoryBlock) {
     parts.push("");
     parts.push(memoryBlock);
+  }
+
+  if (recentPlaysBlock) {
+    parts.push("");
+    parts.push(recentPlaysBlock);
   }
 
   parts.push("");
@@ -172,9 +253,9 @@ export class CompanionAgent {
     // are still useful.
     if (!idSet.has(picked.song_id)) {
       console.warn(
-        `[lyra] CompanionAgent: retry still bad (${JSON.stringify(picked.song_id)}); falling back to candidates[0]`,
+        `[lyra] CompanionAgent: retry still bad (${JSON.stringify(picked.song_id)}); falling back to lowest-fatigue candidate`,
       );
-      picked = { ...picked, song_id: candidateIds[0] };
+      picked = { ...picked, song_id: pickFallbackSongId(input) };
     }
 
     return picked;

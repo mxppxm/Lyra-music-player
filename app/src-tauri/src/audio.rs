@@ -1,11 +1,29 @@
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
-use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Resolve ffmpeg binary path at runtime so GUI apps launched from Finder
+/// can still find it even without /opt/homebrew/bin on PATH.
+fn find_ffmpeg() -> Option<String> {
+    // Common macOS Homebrew locations
+    let candidates = [
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/opt/homebrew/opt/ffmpeg/bin/ffmpeg",
+    ];
+    for p in candidates {
+        if std::path::Path::new(p).is_file() {
+            return Some(p.to_owned());
+        }
+    }
+    // Fallback: hope it's on PATH (works when launched from terminal)
+    None
+}
+
+use crate::audio_features::{self, AudioFeatures};
 
 // Extra time we wait past the declared song duration before assuming the
 // primary Sink::empty() watcher will never fire. Covers decoder tail latency,
@@ -13,6 +31,8 @@ use std::time::Duration;
 // itself. 750ms is enough for MP3/FLAC/AAC without noticeably delaying the
 // next song when the primary path is broken.
 const FALLBACK_SLACK_MS: u64 = 750;
+
+type Callback = Box<dyn FnOnce(u64) + Send>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AudioError {
@@ -41,6 +61,10 @@ pub struct AudioPlayer {
     shutdown: Option<mpsc::Sender<()>>,
     // Kept so Drop can join the worker before the AudioPlayer disappears.
     worker: Option<thread::JoinHandle<()>>,
+    // Playback position tracking: (start_time, total_duration_ms)
+    playback_start: Arc<Mutex<Option<(Instant, u64)>>>,
+    // Pause flag — checked by fallback timer to suppress auto-advance.
+    paused: Arc<AtomicBool>,
 }
 
 impl AudioPlayer {
@@ -81,25 +105,13 @@ impl AudioPlayer {
             current_id: Arc::new(AtomicU64::new(0)),
             shutdown: Some(shutdown_tx),
             worker: Some(worker),
+            playback_start: Arc::new(Mutex::new(None)),
+            paused: Arc::new(AtomicBool::new(false)),
         })
     }
 
-    /// Play `path`. Returns a monotonically increasing playback id.
-    /// When the sink naturally drains (song finished), `on_complete(id)` is
-    /// called on a background thread. If `stop()` or another `play_file()` is
-    /// called first, the watcher exits silently — the caller only gets
-    /// `on_complete` for natural completions.
-    ///
-    /// `duration_hint_ms`: optional song length. When provided, a fallback
-    /// timer thread fires `on_complete` after `duration + FALLBACK_SLACK_MS`
-    /// if the primary Sink::empty() watcher hasn't already fired. This
-    /// guards against rodio 0.19 + symphonia edge cases where `sound_count`
-    /// never decrements to 0 after an MP3 decoder EOFs — without the
-    /// fallback the watcher polls forever and auto-advance never triggers.
-    ///
-    /// Exactly one of the two paths ever invokes the callback — whichever
-    /// takes the boxed FnOnce out of the shared slot first. Superseded
-    /// playbacks (id bumped) suppress both paths.
+    /// Play `path`. Reads entire file into memory, then delegates to
+    /// [`play_bytes`]. Same contract.
     pub fn play_file<F>(
         &self,
         path: &Path,
@@ -109,19 +121,76 @@ impl AudioPlayer {
     where
         F: 'static + Send + FnOnce(u64),
     {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let decoder = Decoder::new(reader).map_err(|e| AudioError::Decode(e.to_string()))?;
+        let bytes = std::fs::read(path)?;
+        self.play_bytes(bytes, duration_hint_ms, on_complete)
+    }
 
-        // Create the sink upfront so a failure here doesn't leave shared
-        // state half-mutated. The sink attaches to the OutputStreamHandle
-        // but contributes silence until we append.
+    /// Play raw audio bytes (downloaded from a URL, e.g. Bilibili DASH stream).
+    /// Uses ffmpeg to convert to WAV first, then plays via rodio.
+    pub fn play_bytes<F>(
+        &self,
+        bytes: Vec<u8>,
+        duration_hint_ms: Option<u64>,
+        on_complete: F,
+    ) -> Result<u64, AudioError>
+    where
+        F: 'static + Send + FnOnce(u64),
+    {
+        use std::io::Write;
+        // Reset pause flag on new playback.
+        self.paused.store(false, Ordering::SeqCst);
+        let pid = std::process::id();
+        let m4s_path = std::env::temp_dir().join(format!("lyra_{}.m4s", pid));
+        let wav_path = std::env::temp_dir().join(format!("lyra_{}.wav", pid));
+
+        // Write raw m4s bytes to temp file.
+        {
+            let mut f = std::fs::File::create(&m4s_path)?;
+            f.write_all(&bytes)?;
+            f.flush()?;
+        }
+
+        // Convert to WAV via ffmpeg.
+        let ffmpeg_path = find_ffmpeg().unwrap_or_else(|| "ffmpeg".to_owned());
+        let ffmpeg = std::process::Command::new(&ffmpeg_path)
+            .args([
+                "-y",
+                "-i",
+                m4s_path.to_str().unwrap_or(""),
+                "-f", "wav",
+                "-acodec", "pcm_s16le",
+                "-ar", "44100",
+                "-ac", "2",
+                wav_path.to_str().unwrap_or(""),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        // Clean up m4s regardless of ffmpeg result.
+        let _ = std::fs::remove_file(&m4s_path);
+
+        match ffmpeg {
+            Ok(status) if status.success() => {}
+            Ok(status) => return Err(AudioError::Decode(format!("ffmpeg exited {}", status))),
+            Err(e) => return Err(AudioError::Decode(format!("ffmpeg: {}", e))),
+        }
+
+        let file = std::fs::File::open(&wav_path).map_err(AudioError::Io)?;
+        let decoder = Decoder::new(file).map_err(|e| AudioError::Decode(e.to_string()))?;
+
+        // Clean up wav after playback.
+        let wav_cleanup = wav_path.clone();
+        let on_complete = move |id: u64| {
+            let _ = std::fs::remove_file(&wav_cleanup);
+            on_complete(id);
+        };
+
+        // ── Identical sink logic — see original play_file for details ──────
         let new_sink = Sink::try_new(&self.handle)
             .map_err(|e| AudioError::Stream(e.to_string()))?;
 
-        // Bump id BEFORE swapping the sink. The previous watcher thread (if
-        // any) may still be sleeping between polls; when it next reads
-        // current_id it will find a different value and exit silently.
         let id = self.current_id.fetch_add(1, Ordering::SeqCst) + 1;
 
         {
@@ -129,41 +198,28 @@ impl AudioPlayer {
             if let Some(old) = guard.take() {
                 old.stop();
             }
-            // Append AFTER stopping the old sink — otherwise both sinks
-            // feed the shared handle for a lock-acquisition-window worth
-            // of samples, causing audible double-audio at each swap.
             new_sink.append(decoder);
             *guard = Some(new_sink);
         }
 
-        // Shared FnOnce slot so both the empty-watcher and the duration
-        // fallback race for it; whoever wins take()s the boxed callback,
-        // the loser sees None and drops.
-        type Callback = Box<dyn FnOnce(u64) + Send>;
         let on_complete: Arc<Mutex<Option<Callback>>> =
             Arc::new(Mutex::new(Some(Box::new(on_complete))));
 
-        // Primary watcher — polls sink emptiness every 300ms.
+        // Primary watcher
         let sink_arc = Arc::clone(&self.sink);
         let current_id_w = Arc::clone(&self.current_id);
         let cb_w = Arc::clone(&on_complete);
         thread::spawn(move || {
-            // Grace period so we don't observe "empty" before playback starts.
             thread::sleep(Duration::from_millis(400));
             loop {
                 if current_id_w.load(Ordering::SeqCst) != id {
-                    return; // superseded
+                    return;
                 }
                 let done = {
                     let guard = sink_arc.lock().unwrap();
                     guard.as_ref().map_or(true, |s| s.empty())
                 };
                 if done {
-                    // Take the callback slot FIRST — this guarantees that a
-                    // stop() or fallback race can't fire the same callback
-                    // twice. Then verify id inside; if it moved, we drop
-                    // the callback without invoking it (equivalent to stop's
-                    // "no natural-complete" contract).
                     let taken = cb_w.lock().unwrap().take();
                     if let Some(cb) = taken {
                         if current_id_w.load(Ordering::SeqCst) == id {
@@ -176,16 +232,20 @@ impl AudioPlayer {
             }
         });
 
-        // Fallback timer — only armed when the caller knows the song length.
-        // A hint of 0 means "duration unknown" (metadata read failed); firing
-        // the fallback then would truncate short songs at FALLBACK_SLACK_MS,
-        // so skip.
+        // Fallback timer
         if let Some(dur_ms) = duration_hint_ms.filter(|d| *d > 0) {
             let current_id_f = Arc::clone(&self.current_id);
+            let paused_f = Arc::clone(&self.paused);
             let cb_f = Arc::clone(&on_complete);
             let wait_ms = dur_ms.saturating_add(FALLBACK_SLACK_MS);
             thread::spawn(move || {
                 thread::sleep(Duration::from_millis(wait_ms));
+                // If paused, skip — the primary watcher will handle completion
+                // after the user resumes.  This prevents auto-advance during
+                // manual pause.
+                if paused_f.load(Ordering::SeqCst) {
+                    return;
+                }
                 let taken = cb_f.lock().unwrap().take();
                 if let Some(cb) = taken {
                     if current_id_f.load(Ordering::SeqCst) == id {
@@ -195,6 +255,12 @@ impl AudioPlayer {
             });
         }
 
+        // Record playback start for progress tracking
+        {
+            let mut start = self.playback_start.lock().unwrap();
+            *start = Some((Instant::now(), duration_hint_ms.unwrap_or(0)));
+        }
+
         Ok(id)
     }
 
@@ -202,10 +268,47 @@ impl AudioPlayer {
         // Invalidate the current id so the watcher thread's completion emit
         // (if it happens to observe emptiness at the same time) gets suppressed.
         self.current_id.fetch_add(1, Ordering::SeqCst);
+        self.paused.store(false, Ordering::SeqCst);
         let mut guard = self.sink.lock().unwrap();
         if let Some(sink) = guard.take() {
             sink.stop();
         }
+        // Clear position tracking
+        let mut start = self.playback_start.lock().unwrap();
+        *start = None;
+    }
+
+    pub fn pause(&self) {
+        self.paused.store(true, Ordering::SeqCst);
+        let guard = self.sink.lock().unwrap();
+        if let Some(ref sink) = *guard {
+            sink.pause();
+        }
+    }
+
+    pub fn resume(&self) {
+        let guard = self.sink.lock().unwrap();
+        if let Some(ref sink) = *guard {
+            sink.play();
+        }
+        self.paused.store(false, Ordering::SeqCst);
+    }
+
+    /// Returns `(elapsed_ms, total_duration_ms)` if playback is active, or `None` if idle.
+    pub fn get_position(&self) -> Option<(u64, u64)> {
+        let start = self.playback_start.lock().unwrap();
+        let (t0, total) = (*start)?;
+        let elapsed = t0.elapsed().as_millis() as u64;
+        // Cap at total so the bar doesn't overshoot
+        let elapsed = if total > 0 { elapsed.min(total) } else { elapsed };
+        // If sink is gone / empty, report playback as finished
+        let guard = self.sink.lock().unwrap();
+        let playing = guard.as_ref().map_or(false, |s| !s.empty());
+        if !playing && elapsed > 0 {
+            // Already stopped or finished — return the last known position
+            return Some((elapsed, total));
+        }
+        Some((elapsed, total))
     }
 
     pub fn is_playing(&self) -> bool {
@@ -233,4 +336,92 @@ impl Drop for AudioPlayer {
             let _ = worker.join();
         }
     }
+}
+
+/// Download audio from URL, transcode to WAV, extract features.
+/// Used to build the audio-feature cache for mood-based song selection.
+/// Returns AudioFeatures or an error string.
+#[tauri::command]
+pub async fn analyze_audio_url(url: String) -> Result<AudioFeatures, String> {
+    use reqwest::header::{HeaderValue, REFERER, USER_AGENT};
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_static(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        ),
+    );
+    headers.insert(REFERER, HeaderValue::from_static("https://www.bilibili.com/"));
+    headers.insert(
+        "Cookie",
+        HeaderValue::from_static("buvid3=random-buvid3-for-lyra"),
+    );
+
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .map_err(|e| format!("reqwest: {}", e))?;
+
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("fetch: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| format!("read: {}", e))?;
+
+    // Spawn blocking for ffmpeg + rodio decode (CPU-bound)
+    tokio::task::spawn_blocking(move || {
+        use std::io::Write;
+        let pid = std::process::id();
+        let m4s_path = std::env::temp_dir().join(format!("lyra_analyze_{}.m4s", pid));
+        let wav_path = std::env::temp_dir().join(format!("lyra_analyze_{}.wav", pid));
+
+        // Write m4s
+        {
+            let mut f = std::fs::File::create(&m4s_path)
+                .map_err(|e| format!("create m4s: {}", e))?;
+            f.write_all(&bytes)
+                .map_err(|e| format!("write m4s: {}", e))?;
+        }
+
+        // ffmpeg → WAV
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-y", "-i",
+                m4s_path.to_str().unwrap_or(""),
+                "-f", "wav",
+                "-acodec", "pcm_s16le",
+                "-ar", "44100",
+                "-ac", "2",
+                wav_path.to_str().unwrap_or(""),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("ffmpeg spawn: {}", e))?;
+
+        let _ = std::fs::remove_file(&m4s_path);
+
+        if !status.success() {
+            let _ = std::fs::remove_file(&wav_path);
+            return Err(format!("ffmpeg exited {}", status));
+        }
+
+        // Extract features
+        let features = audio_features::extract(&wav_path)
+            .map_err(|e| format!("feature extract: {}", e))?;
+
+        let _ = std::fs::remove_file(&wav_path);
+
+        Ok(features)
+    })
+    .await
+    .map_err(|e| format!("join: {}", e))?
 }

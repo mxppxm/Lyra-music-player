@@ -4,11 +4,10 @@
 
 export type SlashCommand =
   | { kind: "settings" }
-  | { kind: "stats" }        // opens Data Explorer at the llm_usage tab
-  | { kind: "explorer" }     // opens Data Explorer at the default (turns) tab
-  | { kind: "help" }         // opens Help overlay
-  | { kind: "reload-musics" } // wipes library tables and re-imports from the configured root
-  | { kind: "week" };         // generates weekly view
+  | { kind: "stats" }
+  | { kind: "explorer" }
+  | { kind: "help" }
+  | { kind: "week" };
 
 /** Returns a command object when the trimmed input is one of the known slash
  *  patterns. Returns null for anything else — even close misses like
@@ -19,7 +18,6 @@ export function parseSlashCommand(raw: string): SlashCommand | null {
   if (t === "/stats") return { kind: "stats" };
   if (t === "/explorer") return { kind: "explorer" };
   if (t === "/help") return { kind: "help" };
-  if (t === "/reload-musics") return { kind: "reload-musics" };
   if (t === "/week") return { kind: "week" };
   return null;
 }

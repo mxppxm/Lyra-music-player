@@ -1,52 +1,69 @@
-/* home.css — design tokens per docs/superpowers/specs/2026-07-06-v0.1-home-ui-design.md */
+/* home.css — Lyra home surface design tokens + component styles */
 
 @import "@fontsource/lora/400-italic.css";
 
 :root {
-  /* Sizes */
+  /* Layout */
   --lyra-cover-size: 400px;
   --lyra-cover-radius: 12px;
   --lyra-cover-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --lyra-band-width: 400px;
+  --lyra-band-width: 420px;
   --lyra-band-height: 32px;
+  --lyra-dock-max-width: 560px;
+  --lyra-dock-radius: 22px;
 
   /* Typography */
-  --lyra-song-font-size: 16px;
+  --lyra-song-font-size: 15px;
   --lyra-note-font-size: 15px;
   --lyra-song-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --lyra-note-family: "Lora", Georgia, "Times New Roman", serif;
+    "SF Pro Text", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --lyra-note-family: "Lora", "Songti SC", Georgia, "Times New Roman", serif;
 
   /* Input */
-  --lyra-input-height: 44px;
-  --lyra-input-radius: 22px;
+  --lyra-input-height: 46px;
+  --lyra-input-radius: 14px;
   --lyra-input-max-width: calc(100vw - 80px);
 
-  /* Colors (light-mode; dark deep-night overrides added in a future ticket) */
-  --lyra-color-song-info: rgba(0, 0, 0, 0.58);
-  --lyra-color-small-note: rgba(0, 0, 0, 0.50);
-  --lyra-color-placeholder: rgba(0, 0, 0, 0.35);
-  --lyra-color-input-bg: rgba(255, 255, 255, 0.4);
-  --lyra-color-input-focus-underline: rgba(0, 0, 0, 0.15);
+  /* Ink on glass — warm, readable on ambient backgrounds */
+  --lyra-color-song-info: rgba(28, 24, 20, 0.72);
+  --lyra-color-small-note: rgba(28, 24, 20, 0.62);
+  --lyra-color-placeholder: rgba(28, 24, 20, 0.34);
+  --lyra-color-input-bg: rgba(255, 255, 255, 0.52);
+  --lyra-color-input-focus-underline: rgba(28, 24, 20, 0.12);
+
+  /* Glass surfaces */
+  --lyra-glass-bg: rgba(255, 252, 248, 0.42);
+  --lyra-glass-blur: 28px;
+  --lyra-glass-border: rgba(255, 255, 255, 0.55);
+  --lyra-glass-shadow:
+    0 18px 48px rgba(24, 18, 12, 0.12),
+    0 2px 8px rgba(24, 18, 12, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --lyra-note-glass-bg: rgba(255, 252, 248, 0.38);
+  --lyra-progress-track-bg: rgba(28, 24, 20, 0.08);
+  --lyra-progress-fill: rgba(28, 24, 20, 0.38);
+  --lyra-control-ink: rgba(28, 24, 20, 0.78);
+  --lyra-control-ink-muted: rgba(28, 24, 20, 0.34);
+  --lyra-control-primary-bg: rgba(28, 24, 20, 0.88);
+  --lyra-control-primary-fg: rgba(255, 252, 248, 0.96);
 
   /* Rhythm */
-  --lyra-viewport-padding: 56px;
+  --lyra-viewport-padding: 48px;
   --lyra-space-cover-to-band: 36px;
   --lyra-space-band-to-song: 28px;
   --lyra-space-song-to-note: 18px;
   --lyra-space-trace-to-input: 44px;
-  --lyra-trace-item-size: 16px;
-  --lyra-trace-item-gap: 14px;
+  --lyra-trace-item-size: 18px;
+  --lyra-trace-item-gap: 10px;
   --lyra-trace-count: 5;
   --lyra-trace-distance-from-input: 16px;
 
   /* Motion */
-  --lyra-transition-ambient:
-    background-color 8s cubic-bezier(0.32, 0, 0.42, 1);
-  --lyra-transition-fade:
-    opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
-  --lyra-transition-note-height:
-    max-height 300ms ease-out;
+  --lyra-transition-ambient: background-color 8s cubic-bezier(0.32, 0, 0.42, 1);
+  --lyra-transition-fade: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1);
+  --lyra-transition-note-height: max-height 300ms ease-out;
+  --lyra-transition-control: transform 180ms ease, opacity 180ms ease, background-color 180ms ease;
 }
 
 /* Global reset for the home surface */
@@ -68,11 +85,297 @@ body,
   box-sizing: border-box;
 }
 
-button {
+/* Override App.css legacy button styles inside Lyra home */
+.lyra-ambient button,
+.lyra-dock button {
   font: inherit;
+  box-shadow: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  background: transparent;
 }
 
-/* Cover placeholder breath — so subtle you only notice after 30s of looking */
+.lyra-ambient button:hover,
+.lyra-dock button:hover {
+  border-color: transparent;
+}
+
+.lyra-ambient button:active,
+.lyra-dock button:active {
+  background: transparent;
+}
+
+/* ── Main stage ─────────────────────────────────────────────────────────── */
+
+.lyra-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--lyra-viewport-padding);
+  gap: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.lyra-stage--centered {
+  justify-content: center;
+}
+
+.lyra-idle-slogan {
+  color: var(--lyra-color-song-info);
+  font-size: var(--lyra-song-font-size);
+  font-family: var(--lyra-note-family);
+  font-style: italic;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--lyra-space-trace-to-input);
+  padding: 10px 24px;
+  border-radius: 999px;
+  background: var(--lyra-note-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--lyra-glass-border);
+  box-shadow: 0 8px 24px rgba(24, 18, 12, 0.06);
+}
+
+.lyra-song-info-fade {
+  transition: opacity 1.4s ease-out;
+}
+
+/* ── Floating dock ────────────────────────────────────────────────────── */
+
+.lyra-dock-wrap {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 0 24px 28px;
+  pointer-events: none;
+}
+
+.lyra-dock {
+  pointer-events: auto;
+  width: min(var(--lyra-dock-max-width), 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 16px 18px 18px;
+  border-radius: var(--lyra-dock-radius);
+  background: var(--lyra-glass-bg);
+  backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
+  border: 1px solid var(--lyra-glass-border);
+  box-shadow: var(--lyra-glass-shadow);
+}
+
+.lyra-dock__player-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Progress ─────────────────────────────────────────────────────────── */
+
+.lyra-progress {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lyra-progress__track {
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--lyra-progress-track-bg);
+  overflow: hidden;
+}
+
+.lyra-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(28, 24, 20, 0.28) 0%,
+    var(--lyra-progress-fill) 100%
+  );
+  transition: width 400ms linear;
+}
+
+.lyra-progress__label {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--lyra-color-small-note);
+  opacity: 0.72;
+  text-align: center;
+}
+
+/* ── Player controls ──────────────────────────────────────────────────── */
+
+.lyra-player-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.lyra-control-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: var(--lyra-transition-control);
+  color: var(--lyra-control-ink);
+}
+
+.lyra-control-btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.lyra-control-btn--ghost {
+  width: 38px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+}
+
+.lyra-control-btn--ghost:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.42);
+  transform: translateY(-1px);
+}
+
+.lyra-control-btn--primary {
+  width: 48px;
+  height: 48px;
+  background: var(--lyra-control-primary-bg);
+  color: var(--lyra-control-primary-fg);
+  box-shadow: 0 10px 24px rgba(24, 18, 12, 0.18);
+}
+
+.lyra-control-btn--primary:not(:disabled):hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 14px 28px rgba(24, 18, 12, 0.22);
+}
+
+.lyra-control-btn--primary:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ── Input ────────────────────────────────────────────────────────────── */
+
+.lyra-input {
+  width: 100%;
+  max-width: 100%;
+  min-height: var(--lyra-input-height);
+  padding: 12px 18px;
+  border-radius: var(--lyra-input-radius);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  outline: none;
+  resize: none;
+  background: var(--lyra-color-input-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  font-family: var(--lyra-song-family);
+  font-size: var(--lyra-song-font-size);
+  color: var(--lyra-color-song-info);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+  display: block;
+}
+
+.lyra-input::placeholder {
+  color: var(--lyra-color-placeholder);
+}
+
+.lyra-input:focus {
+  border-color: rgba(28, 24, 20, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 0 0 3px rgba(28, 24, 20, 0.06);
+}
+
+.lyra-input:disabled {
+  opacity: 0.55;
+}
+
+/* ── Song info & note ─────────────────────────────────────────────────── */
+
+.lyra-song-info {
+  color: var(--lyra-color-song-info);
+  font-size: var(--lyra-song-font-size);
+  font-family: var(--lyra-song-family);
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: var(--lyra-cover-size);
+  min-height: 1.4em;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+}
+
+.lyra-small-note {
+  color: var(--lyra-color-small-note);
+  font-size: var(--lyra-note-font-size);
+  font-family: var(--lyra-note-family);
+  font-style: italic;
+  text-align: center;
+  max-width: var(--lyra-cover-size);
+  line-height: 1.75;
+  transition: var(--lyra-transition-note-height);
+  white-space: pre-wrap;
+  user-select: none;
+  padding: 10px 22px;
+  border-radius: 16px;
+  background: var(--lyra-note-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 10px 28px rgba(24, 18, 12, 0.05);
+}
+
+.lyra-small-note--clickable {
+  cursor: pointer;
+}
+
+/* ── Trace strip ──────────────────────────────────────────────────────── */
+
+.lyra-trace-strip {
+  display: flex;
+  justify-content: center;
+  gap: var(--lyra-trace-item-gap);
+  padding-top: 2px;
+}
+
+.lyra-trace-item {
+  width: var(--lyra-trace-item-size);
+  height: var(--lyra-trace-item-size);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  padding: 0;
+  opacity: 0.62;
+  cursor: pointer;
+  background: rgba(28, 24, 20, 0.18);
+  background-size: cover;
+  background-position: center;
+  transition: opacity 180ms ease, transform 180ms ease;
+  box-shadow: 0 2px 6px rgba(24, 18, 12, 0.08);
+}
+
+.lyra-trace-item:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+/* Cover placeholder breath */
 @keyframes lyra-cover-breath {
   0%,
   100% {

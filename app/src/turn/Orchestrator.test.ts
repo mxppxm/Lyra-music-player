@@ -21,7 +21,28 @@ vi.mock("../tray/trayBridge", () => ({
   setBreathing: vi.fn(async () => {}),
 }));
 
+vi.mock("../db/repo/libraryRepo", () => ({
+  listAll: vi.fn(async () => []),
+}));
+
+vi.mock("../db/repo/turnRepo", () => ({
+  listRecentTurns: vi.fn(async () => []),
+  insertTurn: vi.fn(async () => {}),
+  updateTurn: vi.fn(async () => {}),
+  setTurnLatency: vi.fn(async () => {}),
+}));
+
+vi.mock("../db/repo/musicProfileRepo", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/repo/musicProfileRepo")>();
+  return {
+    ...actual,
+    getBatch: vi.fn(async () => new Map()),
+    getFeedbackStats: vi.fn(async () => new Map()),
+  };
+});
+
 import { setBreathing } from "../tray/trayBridge";
+import { listRecentTurns } from "../db/repo/turnRepo";
 
 function makeDeps(overrides: Partial<any> = {}) {
   const emotion = {
@@ -67,7 +88,7 @@ function makeDeps(overrides: Partial<any> = {}) {
   };
   const soulStore = { load: vi.fn(async () => soul), apply: vi.fn(async () => {}) };
   const turnRepo = { insertTurn: vi.fn(async () => {}) };
-  const audio = { playFile: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
+  const audio = { playFile: vi.fn(async () => {}), stop: vi.fn(async () => {}), pause: vi.fn(async () => {}), resume: vi.fn(async () => {}) };
   return {
     emotion,
     companion,
@@ -152,14 +173,14 @@ describe("Orchestrator.onUserInput happy path", () => {
 });
 
 describe("Orchestrator.onUserInput error paths", () => {
-  it("emits error when library is empty", async () => {
+  it("emits error when no candidates found", async () => {
     const deps = makeDeps({ library: { prefilter: vi.fn(async () => []) } });
     const orc = new Orchestrator(deps as any);
     let last: any = null;
     orc.subscribe((s) => (last = s));
     await orc.onUserInput("hi");
     expect(last.kind).toBe("error");
-    expect(last.message).toMatch(/library/i);
+    expect(last.message).toMatch(/搜不到|没搜到/i);
   });
 
   it("emits error when emotion agent throws", async () => {
@@ -175,23 +196,30 @@ describe("Orchestrator.onUserInput error paths", () => {
 });
 
 describe("Orchestrator T7: reaction capture", () => {
-  it("onSkip folds skip event into current turn", async () => {
+  it("onSkip finalises turn and auto-advances to next song", async () => {
     const deps = makeDeps();
     const updateTurn = vi.fn(async () => {});
     deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
     const orc = new Orchestrator(deps as any);
 
     await orc.onUserInput("来一首歌");
-    // Verify we're in playing state with a currentTurn
     expect(orc.getState().kind).toBe("playing");
 
+    // Skip — should finalise the current turn and auto-play next song
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
     await orc.onSkip();
 
-    // On next input, finalise previous turn — updateTurn should be called
-    await orc.onUserInput("再来一首");
+    // Should have emitted thinking → playing for the next song
+    expect(seen).toEqual(["thinking", "playing"]);
+
+    // updateTurn should have been called with the skipped turn
     expect(updateTurn).toHaveBeenCalled();
     const updatedTurn = (updateTurn.mock.calls[0] as unknown as [DialogueTurn])[0];
     expect(updatedTurn.user_reaction.behavioral.skipped).toBe(true);
+
+    // Should have called companion.choose twice (once for original, once for skip auto-advance)
+    expect(deps.companion.choose).toHaveBeenCalledTimes(2);
   });
 
   it("verbal from next input is attributed to previous turn", async () => {
@@ -520,20 +548,39 @@ describe("Orchestrator T8: emotion prediction channel (auto-advance)", () => {
     expect(autoTurn.current_emotion.predicted_trajectory).toBeUndefined();
   });
 
-  // Regression: without exclusion the same emotion + same pseudoTarget yields
-  // the same top-ranked song, and the LLM re-picks it every time. That produced
-  // "song ends → same song replays" instead of auto-advance.
-  it("auto-advance excludes the just-played song from prefilter candidates", async () => {
+  it("auto-advance passes recommendation context that excludes recent plays", async () => {
     const t1: LibraryTrack = { id: "t1", path: "/a.mp3", origin: "local", added_at: 0, title: "T1" };
     const t2: LibraryTrack = { id: "t2", path: "/b.mp3", origin: "local", added_at: 0, title: "T2" };
+
+    (listRecentTurns as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: "turn-1",
+        timestamp: 1000,
+        current_emotion: {
+          pad: { p: 0, a: 0, d: 0 },
+          labels: [],
+          confidence: 0.5,
+          source: "emotion-agent-inferred",
+        },
+        user_utterance: { modality: "text", content: "start" },
+        agent_response: { song_id: "t1", rationale: "y" },
+        user_reaction: {
+          behavioral: { listen_duration_ms: 0, completed: true, skipped: false, repeated: 0, volume_delta: 0 },
+          silence_positive: false,
+        },
+        emotion_delta: { p: 0, a: 0, d: 0 },
+      },
+    ]);
+
     const prefilter = vi.fn(
       async (
         _target: unknown,
         _pad: unknown,
         _limit: unknown,
-        exclude?: ReadonlySet<string>,
+        recCtx?: { excludeIds?: ReadonlySet<string> },
       ) => {
         const all = [t1, t2];
+        const exclude = recCtx?.excludeIds;
         return exclude ? all.filter((t) => !exclude.has(t.id)) : all;
       },
     );
@@ -549,21 +596,15 @@ describe("Orchestrator T8: emotion prediction channel (auto-advance)", () => {
     });
     const orc = new Orchestrator(deps as any);
 
-    // First turn → t1 (first candidate)
     await orc.onUserInput("start");
     expect(deps.audio.playFile).toHaveBeenLastCalledWith("/a.mp3", null);
 
-    // Song completes → auto-advance must exclude t1 and pick t2
     await orc.onSongComplete();
 
-    // 2nd prefilter call is auto-advance: 4th arg must exclude t1
     const secondCall = prefilter.mock.calls[1] as unknown as [
-      unknown, unknown, unknown, ReadonlySet<string>,
+      unknown, unknown, unknown, { excludeIds: ReadonlySet<string> },
     ];
-    expect(secondCall[3]).toBeInstanceOf(Set);
-    expect(secondCall[3].has("t1")).toBe(true);
-
-    // And audio played the OTHER song
+    expect(secondCall[3].excludeIds.has("t1")).toBe(true);
     expect(deps.audio.playFile).toHaveBeenLastCalledWith("/b.mp3", null);
   });
 });

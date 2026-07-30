@@ -1,6 +1,7 @@
 export type KeyboardHandlers = {
   onTogglePlayback: () => void;
   onOpenSettings: () => void;
+  onSkipNext?: () => void;
   onReflectNow?: () => void;
   onOpenRoadmap?: () => void;
   onOpenDataExplorer?: () => void;
@@ -24,6 +25,10 @@ export function isMetaShiftE(e: KeyboardEvent): boolean {
 
 export function isMetaShiftD(e: KeyboardEvent): boolean {
   return (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D");
+}
+
+export function isMetaArrowRight(e: KeyboardEvent): boolean {
+  return (e.metaKey || e.ctrlKey) && e.key === "ArrowRight";
 }
 
 function isEditingTarget(target: EventTarget | null): boolean {
@@ -56,6 +61,11 @@ export function bindGlobalKeys(h: KeyboardHandlers): () => void {
     if (isMetaShiftD(e)) {
       e.preventDefault();
       h.onOpenDataExplorer?.();
+      return;
+    }
+    if (isMetaArrowRight(e)) {
+      e.preventDefault();
+      h.onSkipNext?.();
       return;
     }
     if (isPlainSpace(e)) {

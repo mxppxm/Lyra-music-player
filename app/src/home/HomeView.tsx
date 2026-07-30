@@ -8,31 +8,19 @@ import { SmallNote } from "./SmallNote";
 import { TraceStrip } from "./TraceStrip";
 import type { TraceStripItem } from "./TraceStrip";
 import { InputBox } from "./InputBox";
+import { GlassBar } from "./GlassBar";
+import { PlayerControls } from "./PlayerControls";
+import { ProgressBar, progressLabel } from "./ProgressBar";
+import { useProgress } from "../audio/useProgress";
 import { bindGlobalKeys } from "./keyboard";
 import { parseSlashCommand } from "./slashCommand";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "../turn/Orchestrator";
 import * as turnRepo from "../db/repo/turnRepo";
 import { songDisplayTitle, songDisplayArtist } from "../library/display";
-import { reloadLibrary, type ReloadProgress } from "../library/reloadLibrary";
 import type { PAD } from "../types";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
-
-// Voice: first-person, matches Lyra's tone in the rest of the UI.
-function reloadNoteText(p: ReloadProgress): string {
-  switch (p.kind) {
-    case "starting": return "我正在准备重新加载曲库…";
-    case "clearing": return "我把旧曲目记录清了…";
-    case "scanning": return "我在扫描曲库,请稍等…";
-    case "done": {
-      const pruneTail = p.pruned > 0 ? ` · 清 ${p.pruned} 行` : "";
-      return `曲库重新加载完成:${p.imported} 首${pruneTail}`;
-    }
-    case "no-root": return "还没设置曲库路径 — /settings 里填一下";
-    case "failed": return `重新加载失败:${p.message}`;
-  }
-}
 
 export type DataExplorerTabId =
   | "turns" | "soul" | "salient" | "library" | "lyrics_emb"
@@ -65,7 +53,8 @@ function LiveHomeView({
   orchestrator: Orchestrator;
 }) {
   const { state, submit: rawSubmit } = useTurn(orchestrator);
-  const [reloadStatus, setReloadStatus] = useState<string | null>(null);
+  const playing = state.kind === "playing";
+  const progress = useProgress(playing);
 
   // Slash commands intercept before the Orchestrator runs. Known commands
   // dispatch a UI action and never become a DialogueTurn — no LLM call,
@@ -78,38 +67,12 @@ function LiveHomeView({
     else if (cmd.kind === "stats") onOpenDataExplorer("llm_usage");
     else if (cmd.kind === "explorer") onOpenDataExplorer();
     else if (cmd.kind === "help") onOpenHelp();
-    else if (cmd.kind === "reload-musics") void handleReload();
     else if (cmd.kind === "week") void onWeek?.();
     return Promise.resolve();
   };
 
-  const handleReload = async () => {
-    await reloadLibrary((p) => setReloadStatus(reloadNoteText(p)));
-    // Leave the terminal status visible briefly, then let the normal
-    // SmallNote text take over again.
-    setTimeout(() => setReloadStatus(null), 5000);
-  };
   const [traceItems, setTraceItems] = useState<TraceStripItem[]>([]);
   const [historicalPads, setHistoricalPads] = useState<PAD[]>([]);
-  const [songInfoVisible, setSongInfoVisible] = useState(false);
-
-  // 每首新歌开头亮 3s 交代"我在听什么",随后淡出。哲学:听音乐和心情,不是看具体歌曲。
-  // proactive-pending 则持续展示邀约歌名，直到用户回应或状态离开。
-  const playingSongId = state.kind === "playing" ? state.song.id : null;
-  const pendingSongId = state.kind === "proactive-pending" ? state.song.id : null;
-  useEffect(() => {
-    if (pendingSongId !== null) {
-      setSongInfoVisible(true);
-      return;
-    }
-    if (playingSongId === null) {
-      setSongInfoVisible(false);
-      return;
-    }
-    setSongInfoVisible(true);
-    const t = setTimeout(() => setSongInfoVisible(false), 3000);
-    return () => clearTimeout(t);
-  }, [playingSongId, pendingSongId]);
 
   // Refresh trace + emotion history whenever state transitions to playing
   useEffect(() => {
@@ -130,10 +93,19 @@ function LiveHomeView({
     return bindGlobalKeys({
       onOpenSettings,
       onTogglePlayback: () => {
-        console.log("[lyra] toggle playback");
+        if (state.kind !== "playing") return;
+        if (state.paused) {
+          void orchestrator.onResume();
+        } else {
+          void orchestrator.onPause();
+        }
+      },
+      onSkipNext: () => {
+        if (state.kind !== "playing") return;
+        void orchestrator.onSkip();
       },
     });
-  }, [onOpenSettings]);
+  }, [onOpenSettings, state, orchestrator]);
 
   // Derive display values from state
   const pad: PAD =
@@ -162,8 +134,7 @@ function LiveHomeView({
       : "";
 
   const noteText: string =
-    reloadStatus ??
-    (state.kind === "idle"
+    state.kind === "idle"
       ? "Lyra 在等你说一句话"
       : state.kind === "thinking"
         ? "…"
@@ -173,10 +144,10 @@ function LiveHomeView({
             ? state.rationale
             : state.kind === "error"
               ? state.message
-              : "");
+              : "";
 
   const noteColor: string | undefined =
-    state.kind === "error" && reloadStatus === null
+    state.kind === "error"
       ? "rgba(200,80,80,0.75)"
       : undefined;
 
@@ -188,32 +159,9 @@ function LiveHomeView({
       <AmbientBackground pad={pad}>
         <BackgroundPhoto />
         <ShanShuiCanvas pad={pad} playing={false} />
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "var(--lyra-viewport-padding)",
-            gap: 0,
-            position: "relative",
-            zIndex: 1,
-          }}
-        >
-          <div
-            data-testid="lyra-idle-slogan"
-            style={{
-              color: "var(--lyra-color-song-info)",
-              fontSize: "var(--lyra-song-font-size)",
-              fontFamily: "var(--lyra-note-family)",
-              fontStyle: "italic",
-              letterSpacing: "0.04em",
-              marginBottom: "var(--lyra-space-trace-to-input)",
-              opacity: 0.7,
-            }}
-          >
-            {reloadStatus ?? "Lyra 在听"}
+        <div className="lyra-stage lyra-stage--centered">
+          <div className="lyra-idle-slogan" data-testid="lyra-idle-slogan">
+            Lyra 在听
           </div>
           <InputBox onSubmit={submit} />
         </div>
@@ -225,42 +173,48 @@ function LiveHomeView({
     <AmbientBackground pad={pad}>
       <BackgroundPhoto />
       <ShanShuiCanvas pad={pad} playing={state.kind === "playing"} />
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          padding: "var(--lyra-viewport-padding)",
-          gap: 0,
-          position: "relative",
-          zIndex: 1,
-        }}
-      >
+      <div className="lyra-stage">
         <div style={{ flex: 1 }} />
         <EmotionLightBand samples={padSamples} />
         <div style={{ height: "var(--lyra-space-band-to-song)" }} />
         {state.kind === "playing" || state.kind === "proactive-pending" ? (
-          <div
-            data-testid="song-info-fade"
-            style={{
-              opacity: songInfoVisible ? 1 : 0,
-              transition: "opacity 1.4s ease-out",
-              pointerEvents: songInfoVisible ? "auto" : "none",
-            }}
-          >
-            <SongInfo title={title} artist={artist} />
-          </div>
+          <SongInfo title={title} artist={artist} />
         ) : (
           <SongInfo title="" artist="" />
         )}
         <div style={{ height: "var(--lyra-space-song-to-note)" }} />
         <SmallNote text={noteText} color={noteColor} />
         <div style={{ flex: 1 }} />
-        <TraceStrip items={traceItems} />
-        <div style={{ height: "var(--lyra-space-trace-to-input)" }} />
-        <InputBox onSubmit={submit} />
       </div>
+
+      <GlassBar>
+        <div className="lyra-dock__player-row">
+          {progress ? (
+            <ProgressBar
+              progress={progress.progress}
+              label={progressLabel(progress.elapsedMs, progress.durationMs)}
+            />
+          ) : null}
+          <PlayerControls
+            canControl={state.kind === "playing"}
+            paused={state.kind === "playing" ? !!state.paused : true}
+            onTogglePlay={() => {
+              if (state.kind !== "playing") return;
+              if (state.paused) {
+                void orchestrator.onResume();
+              } else {
+                void orchestrator.onPause();
+              }
+            }}
+            onSkip={() => {
+              if (state.kind !== "playing") return;
+              void orchestrator.onSkip();
+            }}
+          />
+        </div>
+        <TraceStrip items={traceItems} />
+        <InputBox onSubmit={submit} />
+      </GlassBar>
     </AmbientBackground>
   );
 }

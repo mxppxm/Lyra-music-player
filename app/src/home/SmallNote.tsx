@@ -28,20 +28,9 @@ export function SmallNote({
     <div
       data-testid="small-note"
       data-lyra-hover="small_note"
+      className={`lyra-small-note${isLong ? " lyra-small-note--clickable" : ""}`}
       onClick={() => isLong && setExpanded((e) => !e)}
-      style={{
-        color: color ?? "var(--lyra-color-small-note)",
-        fontSize: "var(--lyra-note-font-size)",
-        fontFamily: "var(--lyra-note-family)",
-        fontStyle: "italic",
-        textAlign: "center",
-        maxWidth: "var(--lyra-cover-size)",
-        cursor: isLong ? "pointer" : "default",
-        lineHeight: 1.7,
-        transition: "var(--lyra-transition-note-height)",
-        whiteSpace: "pre-wrap",
-        userSelect: "none",
-      }}
+      style={color ? { color } : undefined}
     >
       {display}
     </div>

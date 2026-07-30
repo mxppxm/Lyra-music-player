@@ -1,29 +1,31 @@
 use lyra_lib::secrets;
+use std::path::PathBuf;
 
-// keyring test uses the mock keyring in tests (feature default in v3);
-// on macOS CI this may fall through to the real Keychain; scope test keys
-// with a random suffix to avoid pollution.
-
-fn tkey(name: &str) -> String {
-    format!("lyra-test-{}-{}", name, std::process::id())
+fn temp_dir() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("lyra-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).ok();
+    dir
 }
 
 #[test]
 fn set_get_roundtrip() {
-    let k = tkey("k1");
-    secrets::set_secret(&k, "v1").unwrap();
-    assert_eq!(secrets::get_secret(&k).unwrap().as_deref(), Some("v1"));
-    secrets::delete_secret(&k).unwrap();
+    let dir = temp_dir();
+    let k = "k1_roundtrip";
+    secrets::set_secret(&dir, k, "v1").unwrap();
+    assert_eq!(secrets::get_secret(&dir, k).unwrap().as_deref(), Some("v1"));
+    secrets::delete_secret(&dir, k).unwrap();
 }
 
 #[test]
 fn get_missing_returns_none() {
-    let k = tkey("does-not-exist");
-    assert_eq!(secrets::get_secret(&k).unwrap(), None);
+    let dir = temp_dir();
+    let k = "does-not-exist";
+    assert_eq!(secrets::get_secret(&dir, k).unwrap(), None);
 }
 
 #[test]
 fn delete_missing_is_ok() {
-    let k = tkey("also-missing");
-    secrets::delete_secret(&k).unwrap();
+    let dir = temp_dir();
+    let k = "also-missing";
+    secrets::delete_secret(&dir, k).unwrap();
 }

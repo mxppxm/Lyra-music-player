@@ -13,35 +13,19 @@ export function TraceStrip({ items, onSelect }: TraceStripProps) {
     <div
       data-testid="trace-strip"
       data-lyra-hover="trace_strip"
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        gap: "var(--lyra-trace-item-gap)",
-      }}
+      className="lyra-trace-strip"
     >
       {shown.map((item) => (
         <button
           key={item.id}
+          type="button"
+          className="lyra-trace-item"
           onClick={() => onSelect?.(item.id)}
-          style={{
-            width: "var(--lyra-trace-item-size)",
-            height: "var(--lyra-trace-item-size)",
-            borderRadius: 2,
-            border: "none",
-            padding: 0,
-            opacity: 0.55,
-            cursor: "pointer",
-            background: item.coverUrl ? `url(${item.coverUrl})` : "rgba(0,0,0,0.28)",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            transition: "opacity 200ms ease",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.opacity = "1";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.opacity = "0.55";
-          }}
+          style={
+            item.coverUrl
+              ? { backgroundImage: `url(${item.coverUrl})` }
+              : undefined
+          }
           aria-label={`recall turn ${item.id}`}
         />
       ))}

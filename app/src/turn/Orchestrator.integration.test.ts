@@ -304,6 +304,8 @@ function makeIntegrationDeps(turnCounter: { n: number }) {
   const audio = {
     playFile: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
+    pause: vi.fn(async () => {}),
+    resume: vi.fn(async () => {}),
   };
 
   return {

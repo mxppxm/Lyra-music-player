@@ -19,5 +19,8 @@ dist/
 build/
 target/
 
+# Local runtime logs
+nohup.out
+
 # Rust incremental
 **/*.rs.bk
