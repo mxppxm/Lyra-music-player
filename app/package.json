@@ -16,6 +16,8 @@
     "eval:emotion": "LYRA_EVAL=1 vitest run src/agents/emotion-eval.regression.test.ts --reporter=basic"
   },
   "dependencies": {
+    "@lyra/core": "workspace:*",
+    "@lyra/platform": "workspace:*",
     "@fontsource/lora": "^5.2.8",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-notification": "^2",

@@ -1,0 +1,11 @@
+{
+  "name": "lyra-monorepo",
+  "private": true,
+  "version": "0.1.1",
+  "scripts": {
+    "test:app": "pnpm -C app test",
+    "test:mobile": "pnpm -C app-mobile test",
+    "build:app": "pnpm -C app build",
+    "build:mobile": "pnpm -C app-mobile build"
+  }
+}
