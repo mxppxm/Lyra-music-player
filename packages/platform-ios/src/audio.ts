@@ -23,24 +23,22 @@ export const iosAudio: Pick<
     const id = nextId++;
     const audioId = `lyra-${id}`;
 
-    try {
-      await AudioPlayer.create({
-        audioId,
-        audioSource: url,
-        friendlyTitle: "Lyra",
-        useForNotification: true,
-        isBackgroundMusic: true,
-      });
-      await AudioPlayer.play({ audioId });
-      currentId = id;
-      currentAudioId = audioId;
-      return id;
-    } catch (e) {
-      console.error("[ios-audio] playUrl failed:", e);
-      currentId = null;
-      currentAudioId = null;
-      throw e;
-    }
+    console.log("[ios-audio] create", audioId, url.slice(0, 80));
+    await AudioPlayer.create({
+      audioId,
+      audioSource: url,
+      friendlyTitle: "Lyra",
+      useForNotification: false,
+      isBackgroundMusic: true,
+    });
+    console.log("[ios-audio] created", audioId);
+
+    await AudioPlayer.play({ audioId });
+    console.log("[ios-audio] playing", audioId);
+
+    currentId = id;
+    currentAudioId = audioId;
+    return id;
   },
   async playFile(path, durationMs) {
     return iosAudio.playUrl(path, durationMs);
