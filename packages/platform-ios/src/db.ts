@@ -26,12 +26,11 @@ export const iosDb = {
   async copyBundledDbIfNeeded() {
     if (!Capacitor.isNativePlatform()) return;
     try {
-      // Check if already copied
-      const stat = await Filesystem.stat({
+      await Filesystem.stat({
         path: "lyra.db",
         directory: Directory.Data,
       });
-      if (stat.uri) return;
+      return; // already exists
     } catch {
       /* not found — copy */
     }
@@ -48,6 +47,20 @@ export const iosDb = {
       });
     } catch (e) {
       console.warn("[ios-db] bundled db copy skipped:", e);
+    }
+
+    try {
+      const features = await Filesystem.readFile({
+        path: "public/lyra-audio-features.json",
+        directory: Directory.Data,
+      });
+      await Filesystem.writeFile({
+        path: "lyra-audio-features.json",
+        data: features.data as string,
+        directory: Directory.Data,
+      });
+    } catch (e) {
+      console.warn("[ios-db] bundled features copy skipped:", e);
     }
   },
 };
