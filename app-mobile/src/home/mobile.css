@@ -1,0 +1,175 @@
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #faf8f5;
+  color: #2c2418;
+}
+
+.lyra-mobile-stage {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) 16px
+    calc(env(safe-area-inset-bottom) + 16px);
+  gap: 16px;
+}
+
+.lyra-mobile-stage--centered {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.lyra-mobile-idle-slogan {
+  font-size: 18px;
+  font-style: italic;
+  color: #6b6156;
+  margin-bottom: 24px;
+  padding: 10px 24px;
+  border-radius: 999px;
+  background: rgba(255, 252, 248, 0.72);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 8px 24px rgba(24, 18, 12, 0.06);
+}
+
+.lyra-mobile-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 8px;
+}
+
+.lyra-mobile-song-info {
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+  color: #2c2418;
+}
+
+.lyra-mobile-small-note {
+  font-size: 15px;
+  line-height: 1.55;
+  text-align: center;
+  color: #5a5146;
+  max-width: 34em;
+  margin: 0 auto;
+}
+
+.lyra-mobile-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 252, 248, 0.78);
+  backdrop-filter: blur(16px) saturate(1.15);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 12px 32px rgba(24, 18, 12, 0.1);
+}
+
+.lyra-mobile-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lyra-mobile-progress__track {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(44, 36, 24, 0.1);
+  overflow: hidden;
+}
+
+.lyra-mobile-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #6b6156;
+  transition: width 400ms linear;
+}
+
+.lyra-mobile-progress__label {
+  font-size: 12px;
+  color: #6b6156;
+  font-variant-numeric: tabular-nums;
+}
+
+.lyra-mobile-player-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+}
+
+.lyra-mobile-control-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #2c2418;
+  display: grid;
+  place-items: center;
+  opacity: 0.85;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.lyra-mobile-control-btn:active {
+  transform: scale(0.94);
+}
+
+.lyra-mobile-control-btn--primary {
+  width: 56px;
+  height: 56px;
+  background: rgba(44, 36, 24, 0.06);
+}
+
+.lyra-mobile-control-btn--ghost {
+  opacity: 0.35;
+}
+
+.lyra-mobile-input-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.lyra-mobile-input {
+  flex: 1;
+  min-height: 44px;
+  max-height: 120px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(44, 36, 24, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+}
+
+.lyra-mobile-send-btn {
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: none;
+  background: #2c2418;
+  color: #faf8f5;
+  font: inherit;
+  font-size: 15px;
+  opacity: 0.9;
+}
+
+.lyra-mobile-send-btn:disabled {
+  opacity: 0.35;
+}

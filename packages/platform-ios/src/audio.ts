@@ -17,19 +17,30 @@ export const iosAudio: Pick<
   | "onComplete"
 > = {
   async playUrl(url, _durationMs) {
+    // Stop any existing playback before creating a new source
+    await iosAudio.stop();
+
     const id = nextId++;
     const audioId = `lyra-${id}`;
-    await AudioPlayer.create({
-      audioId,
-      audioSource: url,
-      friendlyTitle: "Lyra",
-      useForNotification: true,
-      isBackgroundMusic: true,
-    });
-    await AudioPlayer.play({ audioId });
-    currentId = id;
-    currentAudioId = audioId;
-    return id;
+
+    try {
+      await AudioPlayer.create({
+        audioId,
+        audioSource: url,
+        friendlyTitle: "Lyra",
+        useForNotification: true,
+        isBackgroundMusic: true,
+      });
+      await AudioPlayer.play({ audioId });
+      currentId = id;
+      currentAudioId = audioId;
+      return id;
+    } catch (e) {
+      console.error("[ios-audio] playUrl failed:", e);
+      currentId = null;
+      currentAudioId = null;
+      throw e;
+    }
   },
   async playFile(path, durationMs) {
     return iosAudio.playUrl(path, durationMs);

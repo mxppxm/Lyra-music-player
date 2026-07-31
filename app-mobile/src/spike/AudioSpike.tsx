@@ -19,6 +19,7 @@ export function AudioSpike() {
       const id = await getLyraPlatform().playUrl(url, t.duration_ms);
       setStatus(`playing id=${id} — lock your phone to test background`);
     } catch (e) {
+      console.error("[spike] play failed:", e);
       setStatus(`error: ${String(e)}`);
     }
   };
