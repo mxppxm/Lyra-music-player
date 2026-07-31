@@ -16,6 +16,7 @@ export interface LyraPlatform {
     params?: unknown[],
   ): Promise<T[]>;
   copyBundledDbIfNeeded(): Promise<void>;
+  ensureMigrations(): Promise<void>;
 
   getSecret(key: string): Promise<string | null>;
   setSecret(key: string, value: string): Promise<void>;

@@ -15,6 +15,7 @@ const testPlatform: LyraPlatform = {
   dbExecute: async () => ({ rowsAffected: 0 }),
   dbSelect: async () => [],
   copyBundledDbIfNeeded: async () => {},
+  ensureMigrations: async () => {},
   getSecret: async () => null,
   setSecret: async () => {},
   deleteSecret: async () => {},

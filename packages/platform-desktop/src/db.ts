@@ -10,7 +10,7 @@ async function db(): Promise<Database> {
 
 export const desktopDb: Pick<
   LyraPlatform,
-  "dbExecute" | "dbSelect" | "copyBundledDbIfNeeded"
+  "dbExecute" | "dbSelect" | "copyBundledDbIfNeeded" | "ensureMigrations"
 > = {
   async dbExecute(sql, params = []) {
     const d = await db();
@@ -22,5 +22,8 @@ export const desktopDb: Pick<
   },
   async copyBundledDbIfNeeded() {
     /* desktop: Tauri resources copy handled at boot — no-op */
+  },
+  async ensureMigrations() {
+    /* desktop: Tauri plugin runs migrations at load — no-op */
   },
 };

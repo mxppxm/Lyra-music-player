@@ -17,6 +17,8 @@ export function App() {
       void getLyraPlatform()
         .copyBundledDbIfNeeded()
         .catch((e) => console.warn("[lyra-ios] db copy:", e))
+        .then(() => getLyraPlatform().ensureMigrations())
+        .catch((e) => console.warn("[lyra-ios] migrations:", e))
         .then(() => bootProviders())
         .then((report) => {
           console.log("[lyra-ios] providers registered:", report.registered);
