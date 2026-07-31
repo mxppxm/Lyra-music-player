@@ -28,7 +28,7 @@ export const iosAudio: Pick<
       audioId,
       audioSource: url,
       friendlyTitle: "Lyra",
-      useForNotification: false,
+      useForNotification: true,
       isBackgroundMusic: true,
     });
     console.log("[ios-audio] created", audioId);
