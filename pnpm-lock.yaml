@@ -107,9 +107,6 @@ importers:
       '@lyra/platform-ios':
         specifier: workspace:*
         version: link:../packages/platform-ios
-      '@mediagrid/capacitor-native-audio':
-        specifier: ^3.0.0
-        version: 3.0.0(@capacitor/core@7.6.8)
       react:
         specifier: ^19.1.0
         version: 19.2.8
@@ -176,9 +173,6 @@ importers:
       '@lyra/platform':
         specifier: workspace:*
         version: link:../platform
-      '@mediagrid/capacitor-native-audio':
-        specifier: ^3.0.0
-        version: 3.0.0(@capacitor/core@7.6.8)
 
 packages:
 
@@ -692,11 +686,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@mediagrid/capacitor-native-audio@3.0.0':
-    resolution: {integrity: sha512-u3LvuqJn2VLND8KXdkxoD8YobcNylF40d6fA5KirNY5/79rwviY28AksbVZSo41YjkhJSNVnKilPBe6nzpP8kA==}
-    peerDependencies:
-      '@capacitor/core': '>=8.0.0'
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -2620,10 +2609,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-
-  '@mediagrid/capacitor-native-audio@3.0.0(@capacitor/core@7.6.8)':
-    dependencies:
-      '@capacitor/core': 7.6.8
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:

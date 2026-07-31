@@ -14,8 +14,6 @@ PODS:
   - CapacitorPreferences (7.0.4):
     - Capacitor
   - IONFilesystemLib (1.1.2)
-  - MediagridCapacitorNativeAudio (3.0.0):
-    - Capacitor
   - SQLCipher (4.10.0):
     - SQLCipher/standard (= 4.10.0)
   - SQLCipher/common (4.10.0)
@@ -30,7 +28,6 @@ DEPENDENCIES:
   - "CapacitorCordova (from `../../../node_modules/.pnpm/@capacitor+ios@7.6.8_@capacitor+core@7.6.8/node_modules/@capacitor/ios`)"
   - "CapacitorFilesystem (from `../../../node_modules/.pnpm/@capacitor+filesystem@7.1.8_@capacitor+core@7.6.8/node_modules/@capacitor/filesystem`)"
   - "CapacitorPreferences (from `../../../node_modules/.pnpm/@capacitor+preferences@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/preferences`)"
-  - "MediagridCapacitorNativeAudio (from `../../../node_modules/.pnpm/@mediagrid+capacitor-native-audio@3.0.0_@capacitor+core@7.6.8/node_modules/@mediagrid/capacitor-native-audio`)"
 
 SPEC REPOS:
   trunk:
@@ -51,8 +48,6 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/@capacitor+filesystem@7.1.8_@capacitor+core@7.6.8/node_modules/@capacitor/filesystem"
   CapacitorPreferences:
     :path: "../../../node_modules/.pnpm/@capacitor+preferences@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/preferences"
-  MediagridCapacitorNativeAudio:
-    :path: "../../../node_modules/.pnpm/@mediagrid+capacitor-native-audio@3.0.0_@capacitor+core@7.6.8/node_modules/@mediagrid/capacitor-native-audio"
 
 SPEC CHECKSUMS:
   Capacitor: ff6bf01336ac353098378828aff465095a89e459
@@ -62,10 +57,9 @@ SPEC CHECKSUMS:
   CapacitorFilesystem: c63fc54df41e5a6761785a7f3c49dc696c22e296
   CapacitorPreferences: 69d9991307507aeab8ef8019c10b9babfda0e9ca
   IONFilesystemLib: 21a63377696b2d8fab5632ecfb7d2ac67bddb68a
-  MediagridCapacitorNativeAudio: 668d954fc546f57cc88c4fb29a6f91088b710ae9
   SQLCipher: eb79c64049cb002b4e9fcb30edb7979bf4706dfc
   ZIPFoundation: dfd3d681c4053ff7e2f7350bc4e53b5dba3f5351
 
-PODFILE CHECKSUM: 8137bbb12e1c7747fdc147024685d42f8558d4cc
+PODFILE CHECKSUM: 17fef4dec08fb51d5080d73986cb40816e601acf
 
 COCOAPODS: 1.16.2

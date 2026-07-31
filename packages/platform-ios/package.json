@@ -7,11 +7,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@lyra/platform": "workspace:*",
-    "@capacitor/core": "^7.0.0",
     "@capacitor-community/sqlite": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
     "@capacitor/filesystem": "^7.0.0",
     "@capacitor/preferences": "^7.0.0",
-    "@mediagrid/capacitor-native-audio": "^3.0.0"
+    "@lyra/platform": "workspace:*"
   }
 }

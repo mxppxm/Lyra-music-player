@@ -26,3 +26,4 @@ nohup.out
 
 # Rust incremental
 **/*.rs.bk
+app-mobile/.env.production.local

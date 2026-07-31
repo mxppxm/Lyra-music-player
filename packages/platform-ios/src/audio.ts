@@ -1,9 +1,5 @@
-import { AudioPlayer } from "@mediagrid/capacitor-native-audio";
+import { LyraAudio } from "./nativeAudio.ts";
 import type { LyraPlatform } from "@lyra/platform";
-
-let nextId = 1;
-let currentId: number | null = null;
-let currentAudioId: string | null = null;
 
 export const iosAudio: Pick<
   LyraPlatform,
@@ -16,86 +12,44 @@ export const iosAudio: Pick<
   | "getPosition"
   | "onComplete"
 > = {
-  async playUrl(url, _durationMs) {
-    // Stop any existing playback before creating a new source
+  async playUrl(url, durationMs) {
     await iosAudio.stop();
-
-    const id = nextId++;
-    const audioId = `lyra-${id}`;
-
-    console.log("[ios-audio] create", audioId, url.slice(0, 80));
-    await AudioPlayer.create({
-      audioId,
-      audioSource: url,
-      friendlyTitle: "Lyra",
-      useForNotification: true,
-      isBackgroundMusic: true,
+    const { playbackId } = await LyraAudio.playUrl({
+      url,
+      durationMs: durationMs ?? 0,
     });
-    console.log("[ios-audio] created", audioId);
-
-    await AudioPlayer.play({ audioId });
-    console.log("[ios-audio] playing", audioId);
-
-    currentId = id;
-    currentAudioId = audioId;
-    return id;
+    return playbackId;
   },
   async playFile(path, durationMs) {
     return iosAudio.playUrl(path, durationMs);
   },
   async stop() {
-    if (currentAudioId) {
-      try {
-        await AudioPlayer.stop({ audioId: currentAudioId });
-        await AudioPlayer.destroy({ audioId: currentAudioId });
-      } catch {
-        /* already gone */
-      }
-    }
-    currentId = null;
-    currentAudioId = null;
+    await LyraAudio.stop();
   },
   async pause() {
-    if (currentAudioId) {
-      await AudioPlayer.pause({ audioId: currentAudioId });
-    }
+    await LyraAudio.pause();
   },
   async resume() {
-    if (currentAudioId) {
-      await AudioPlayer.play({ audioId: currentAudioId });
-    }
+    await LyraAudio.resume();
   },
   async isPlaying() {
-    if (!currentAudioId) return false;
-    try {
-      const { isPlaying } = await AudioPlayer.isPlaying({
-        audioId: currentAudioId,
-      });
-      return isPlaying;
-    } catch {
-      return false;
-    }
+    const { isPlaying } = await LyraAudio.isPlaying();
+    return isPlaying;
   },
   async getPosition(): Promise<[number, number] | null> {
-    if (!currentAudioId) return null;
-    try {
-      const { currentTime } = await AudioPlayer.getCurrentTime({
-        audioId: currentAudioId,
-      });
-      return [Math.round(currentTime * 1000), 0];
-    } catch {
-      return null;
-    }
+    const { elapsedMs, durationMs } = await LyraAudio.getPosition();
+    if (elapsedMs === null || durationMs === null) return null;
+    return [elapsedMs, durationMs];
   },
   onComplete(cb) {
-    if (!currentAudioId) return () => {};
-    const audioId = currentAudioId;
-    const handler = () => {
-      if (currentId !== null) cb(currentId);
-    };
-    void AudioPlayer.onAudioEnd({ audioId }, handler);
+    let remove: (() => void) | null = null;
+    void LyraAudio.addListener("ended", (data) => {
+      cb(data.playbackId);
+    }).then((r) => {
+      remove = r.remove;
+    });
     return () => {
-      /* plugin v3 lacks listener removal; leak acceptable for MVP */
+      remove?.();
     };
   },
 };
