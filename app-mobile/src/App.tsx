@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { setLyraPlatform } from "@lyra/platform";
 import { createIosPlatform } from "@lyra/platform-ios";
+import { AudioSpike } from "./spike/AudioSpike";
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -22,10 +23,5 @@ export function App() {
     );
   }
 
-  return (
-    <div style={{ padding: 40, fontFamily: "system-ui" }}>
-      <h1>Lyra iOS</h1>
-      <p>Platform shell ready. Next: wire Orchestrator.</p>
-    </div>
-  );
+  return <AudioSpike />;
 }

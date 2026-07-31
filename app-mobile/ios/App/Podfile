@@ -1,6 +1,6 @@
 require_relative '../../../node_modules/.pnpm/@capacitor+ios@7.6.8_@capacitor+core@7.6.8/node_modules/@capacitor/ios/scripts/pods_helpers'
 
-platform :ios, '14.0'
+platform :ios, '15.0'
 use_frameworks!
 
 # workaround to avoid Xcode caching of Pods that requires
@@ -11,10 +11,11 @@ install! 'cocoapods', :disable_input_output_paths => true
 def capacitor_pods
   pod 'Capacitor', :path => '../../../node_modules/.pnpm/@capacitor+ios@7.6.8_@capacitor+core@7.6.8/node_modules/@capacitor/ios'
   pod 'CapacitorCordova', :path => '../../../node_modules/.pnpm/@capacitor+ios@7.6.8_@capacitor+core@7.6.8/node_modules/@capacitor/ios'
-  pod 'CapacitorApp', :path => '../../../node_modules/.pnpm/@capacitor+app@7.1.2_@capacitor+core@7.6.8/node_modules/@capacitor/app'
   pod 'CapacitorCommunitySqlite', :path => '../../../node_modules/.pnpm/@capacitor-community+sqlite@7.0.3_@capacitor+core@7.6.8/node_modules/@capacitor-community/sqlite'
+  pod 'CapacitorApp', :path => '../../../node_modules/.pnpm/@capacitor+app@7.1.2_@capacitor+core@7.6.8/node_modules/@capacitor/app'
   pod 'CapacitorFilesystem', :path => '../../../node_modules/.pnpm/@capacitor+filesystem@7.1.8_@capacitor+core@7.6.8/node_modules/@capacitor/filesystem'
   pod 'CapacitorPreferences', :path => '../../../node_modules/.pnpm/@capacitor+preferences@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/preferences'
+  pod 'MediagridCapacitorNativeAudio', :path => '../../../node_modules/.pnpm/@mediagrid+capacitor-native-audio@3.0.0_@capacitor+core@7.6.8/node_modules/@mediagrid/capacitor-native-audio'
 end
 
 target 'App' do
