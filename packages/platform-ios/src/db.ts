@@ -5,12 +5,20 @@ import { Filesystem, Directory } from "@capacitor/filesystem";
 const sqlite = new SQLiteConnection(CapacitorSQLite);
 const DB_NAME = "lyra";
 
-async function openDb() {
-  const isConn = (await sqlite.isConnection(DB_NAME, false)).result;
-  if (isConn) {
-    return sqlite.retrieveConnection(DB_NAME, false);
-  }
-  return sqlite.createConnection(DB_NAME, false, "no-encryption", 1, false);
+type DbHandle = Awaited<ReturnType<SQLiteConnection["createConnection"]>>;
+
+let dbPromise: Promise<DbHandle> | null = null;
+
+async function openDb(): Promise<DbHandle> {
+  if (dbPromise) return dbPromise;
+  dbPromise = (async () => {
+    const isConn = (await sqlite.isConnection(DB_NAME, false)).result;
+    if (isConn) {
+      return sqlite.retrieveConnection(DB_NAME, false);
+    }
+    return sqlite.createConnection(DB_NAME, false, "no-encryption", 1, false);
+  })();
+  return dbPromise;
 }
 
 export const iosDb = {
