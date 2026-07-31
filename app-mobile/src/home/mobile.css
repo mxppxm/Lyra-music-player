@@ -1,3 +1,51 @@
+/* mobile.css — mirrors app/src/home.css design tokens so the iOS surface
+ * reads as the same product as the Mac desktop home. */
+
+@import "@fontsource/lora/400-italic.css";
+
+:root {
+  /* Layout */
+  --lyra-dock-radius: 22px;
+
+  /* Typography */
+  --lyra-song-font-size: 15px;
+  --lyra-note-font-size: 15px;
+  --lyra-song-family:
+    "SF Pro Text", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --lyra-note-family: "Lora", "Songti SC", Georgia, "Times New Roman", serif;
+
+  /* Input */
+  --lyra-input-height: 46px;
+  --lyra-input-radius: 14px;
+
+  /* Ink on glass — deeper than the Mac tokens for outdoor readability */
+  --lyra-color-song-info: rgba(28, 24, 20, 0.9);
+  --lyra-color-small-note: rgba(28, 24, 20, 0.75);
+  --lyra-color-placeholder: rgba(28, 24, 20, 0.45);
+  --lyra-color-input-bg: rgba(255, 255, 255, 0.62);
+
+  /* Glass surfaces */
+  --lyra-glass-bg: rgba(255, 252, 248, 0.55);
+  --lyra-glass-blur: 28px;
+  --lyra-glass-border: rgba(255, 255, 255, 0.55);
+  --lyra-glass-shadow:
+    0 18px 48px rgba(24, 18, 12, 0.12),
+    0 2px 8px rgba(24, 18, 12, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --lyra-note-glass-bg: rgba(255, 252, 248, 0.5);
+  --lyra-progress-track-bg: rgba(28, 24, 20, 0.1);
+  --lyra-progress-fill: rgba(28, 24, 20, 0.55);
+  --lyra-control-ink: rgba(28, 24, 20, 0.92);
+  --lyra-control-primary-bg: rgba(28, 24, 20, 0.9);
+  --lyra-control-primary-fg: rgba(255, 252, 248, 0.96);
+
+  /* Motion */
+  --lyra-transition-ambient: background-color 8s cubic-bezier(0.32, 0, 0.42, 1);
+  --lyra-transition-control: transform 180ms ease, opacity 180ms ease,
+    background-color 180ms ease;
+}
+
 html,
 body,
 #root {
@@ -5,14 +53,64 @@ body,
   padding: 0;
   min-height: 100vh;
   min-height: 100dvh;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--lyra-song-family);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Fallback before the ambient surface mounts / for overscroll. */
   background: #faf8f5;
-  color: #2c2418;
+  color: var(--lyra-color-song-info);
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.lyra-mobile-stage button,
+.lyra-mobile-dock button {
+  font: inherit;
+}
+
+/* ── Ambient surface ──────────────────────────────────────────────────── */
+
+.lyra-mobile-ambient {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: var(--lyra-transition-ambient);
+}
+
+/* Depth layer over the flat ambient color: a warm glow bleeding in from the
+ * top plus a gentle light-to-shade falloff. Kept as translucent overlays so
+ * the 8s background-color transition underneath stays smooth. */
+.lyra-mobile-ambient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* Above the transitioning background color, below all content. */
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      130% 55% at 50% -8%,
+      rgba(255, 250, 238, 0.55) 0%,
+      rgba(255, 250, 238, 0) 62%
+    ),
+    linear-gradient(
+      168deg,
+      rgba(255, 255, 255, 0.38) 0%,
+      rgba(255, 255, 255, 0.06) 45%,
+      rgba(28, 24, 20, 0.12) 100%
+    );
+}
+
+/* ── Main stage ───────────────────────────────────────────────────────── */
+
 .lyra-mobile-stage {
+  flex: 1;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -28,15 +126,18 @@ body,
 }
 
 .lyra-mobile-idle-slogan {
-  font-size: 18px;
+  color: var(--lyra-color-song-info);
+  font-size: var(--lyra-song-font-size);
+  font-family: var(--lyra-note-family);
   font-style: italic;
-  color: #6b6156;
+  letter-spacing: 0.06em;
   margin-bottom: 24px;
   padding: 10px 24px;
   border-radius: 999px;
-  background: rgba(255, 252, 248, 0.72);
+  background: var(--lyra-note-glass-bg);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--lyra-glass-border);
   box-shadow: 0 8px 24px rgba(24, 18, 12, 0.06);
 }
 
@@ -45,131 +146,192 @@ body,
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 12px;
+  gap: 18px;
   padding: 24px 8px;
 }
 
 .lyra-mobile-song-info {
-  font-size: 22px;
-  font-weight: 600;
+  color: var(--lyra-color-song-info);
+  font-size: var(--lyra-song-font-size);
+  font-family: var(--lyra-song-family);
+  font-weight: 500;
   text-align: center;
-  color: #2c2418;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 1.4em;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
 }
 
 .lyra-mobile-small-note {
-  font-size: 15px;
-  line-height: 1.55;
+  color: var(--lyra-color-small-note);
+  font-size: var(--lyra-note-font-size);
+  font-family: var(--lyra-note-family);
+  font-style: italic;
   text-align: center;
-  color: #5a5146;
   max-width: 34em;
   margin: 0 auto;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  padding: 10px 22px;
+  border-radius: 16px;
+  background: var(--lyra-note-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 10px 28px rgba(24, 18, 12, 0.05);
 }
+
+/* ── Floating dock ────────────────────────────────────────────────────── */
 
 .lyra-mobile-dock {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 14px;
-  border-radius: 20px;
-  background: rgba(255, 252, 248, 0.78);
-  backdrop-filter: blur(16px) saturate(1.15);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 12px 32px rgba(24, 18, 12, 0.1);
+  padding: 16px 18px 18px;
+  border-radius: var(--lyra-dock-radius);
+  background: var(--lyra-glass-bg);
+  backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
+  border: 1px solid var(--lyra-glass-border);
+  box-shadow: var(--lyra-glass-shadow);
 }
 
+/* ── Progress ─────────────────────────────────────────────────────────── */
+
 .lyra-mobile-progress {
+  width: 100%;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .lyra-mobile-progress__track {
-  flex: 1;
-  height: 4px;
+  width: 100%;
+  height: 3px;
   border-radius: 999px;
-  background: rgba(44, 36, 24, 0.1);
+  background: var(--lyra-progress-track-bg);
   overflow: hidden;
 }
 
 .lyra-mobile-progress__fill {
   height: 100%;
   border-radius: 999px;
-  background: #6b6156;
+  background: linear-gradient(
+    90deg,
+    rgba(28, 24, 20, 0.28) 0%,
+    var(--lyra-progress-fill) 100%
+  );
   transition: width 400ms linear;
 }
 
 .lyra-mobile-progress__label {
-  font-size: 12px;
-  color: #6b6156;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--lyra-color-small-note);
+  opacity: 0.72;
+  text-align: center;
 }
+
+/* ── Player controls ──────────────────────────────────────────────────── */
 
 .lyra-mobile-player-controls {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 20px;
+  gap: 14px;
 }
 
 .lyra-mobile-control-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: var(--lyra-transition-control);
+  color: var(--lyra-control-ink);
   background: transparent;
-  color: #2c2418;
-  display: grid;
-  place-items: center;
-  opacity: 0.85;
-  transition: opacity 180ms ease, transform 180ms ease;
+  padding: 0;
 }
 
-.lyra-mobile-control-btn:active {
-  transform: scale(0.94);
-}
-
-.lyra-mobile-control-btn--primary {
-  width: 56px;
-  height: 56px;
-  background: rgba(44, 36, 24, 0.06);
+.lyra-mobile-control-btn:disabled {
+  opacity: 0.28;
+  transform: none;
 }
 
 .lyra-mobile-control-btn--ghost {
-  opacity: 0.35;
+  width: 38px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.42);
 }
+
+.lyra-mobile-control-btn--primary {
+  width: 48px;
+  height: 48px;
+  background: var(--lyra-control-primary-bg);
+  color: var(--lyra-control-primary-fg);
+  box-shadow: 0 10px 24px rgba(24, 18, 12, 0.18);
+}
+
+.lyra-mobile-control-btn--primary:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+/* ── Input ────────────────────────────────────────────────────────────── */
 
 .lyra-mobile-input-wrap {
   display: flex;
   gap: 8px;
-  align-items: flex-end;
+  align-items: stretch;
 }
 
 .lyra-mobile-input {
   flex: 1;
-  min-height: 44px;
+  min-height: var(--lyra-input-height);
   max-height: 120px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(44, 36, 24, 0.12);
-  background: rgba(255, 255, 255, 0.72);
-  font: inherit;
-  font-size: 16px;
-  line-height: 1.4;
-  resize: none;
+  padding: 12px 18px;
+  border-radius: var(--lyra-input-radius);
+  border: 1px solid rgba(255, 255, 255, 0.45);
   outline: none;
+  resize: none;
+  background: var(--lyra-color-input-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  font-family: var(--lyra-song-family);
+  font-size: 16px; /* ≥16px keeps iOS from auto-zooming on focus */
+  color: var(--lyra-color-song-info);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  display: block;
+}
+
+.lyra-mobile-input::placeholder {
+  color: var(--lyra-color-placeholder);
+}
+
+.lyra-mobile-input:focus {
+  border-color: rgba(28, 24, 20, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 0 0 3px rgba(28, 24, 20, 0.06);
 }
 
 .lyra-mobile-send-btn {
   padding: 12px 18px;
-  border-radius: 14px;
+  border-radius: var(--lyra-input-radius);
   border: none;
-  background: #2c2418;
-  color: #faf8f5;
+  background: var(--lyra-control-primary-bg);
+  color: var(--lyra-control-primary-fg);
   font: inherit;
   font-size: 15px;
-  opacity: 0.9;
+  box-shadow: 0 10px 24px rgba(24, 18, 12, 0.18);
+  transition: var(--lyra-transition-control);
 }
 
 .lyra-mobile-send-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.28;
+  box-shadow: none;
 }

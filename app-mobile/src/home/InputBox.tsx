@@ -44,7 +44,7 @@ export function InputBox({
         onBlur={onBlur}
         disabled={disabled}
         placeholder={placeholder}
-        rows={2}
+        rows={1}
         className="lyra-mobile-input"
       />
       <button

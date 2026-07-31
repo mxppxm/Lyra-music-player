@@ -5,7 +5,10 @@ import { bootProviders } from "@lyra/core/providers/boot";
 import { createDefaultOrchestrator } from "@lyra/core";
 import type { Orchestrator } from "@lyra/core";
 import { MobileHomeView } from "./home/MobileHomeView";
+import { AmbientBackground } from "./home/AmbientBackground";
 import "./home/mobile.css";
+
+const ZERO_PAD = { p: 0, a: 0, d: 0 };
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -34,17 +37,21 @@ export function App() {
 
   if (!ready) {
     return (
-      <div className="lyra-mobile-stage lyra-mobile-stage--centered">
-        <div className="lyra-mobile-idle-slogan">Lyra 在醒来的路上…</div>
-      </div>
+      <AmbientBackground pad={ZERO_PAD}>
+        <div className="lyra-mobile-stage lyra-mobile-stage--centered">
+          <div className="lyra-mobile-idle-slogan">Lyra 在醒来的路上…</div>
+        </div>
+      </AmbientBackground>
     );
   }
 
   if (!orchestrator) {
     return (
-      <div className="lyra-mobile-stage lyra-mobile-stage--centered">
-        <div className="lyra-mobile-idle-slogan">Lyra 还没准备好</div>
-      </div>
+      <AmbientBackground pad={ZERO_PAD}>
+        <div className="lyra-mobile-stage lyra-mobile-stage--centered">
+          <div className="lyra-mobile-idle-slogan">Lyra 还没准备好</div>
+        </div>
+      </AmbientBackground>
     );
   }
 

@@ -39,7 +39,8 @@ export function PlayerControls({
 
       <button
         type="button"
-        className="lyra-mobile-control-btn"
+        className="lyra-mobile-control-btn lyra-mobile-control-btn--ghost"
+        disabled={!canControl}
         onClick={onSkip}
         title="下一首"
         aria-label="下一首"
