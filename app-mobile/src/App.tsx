@@ -14,7 +14,9 @@ export function App() {
   useEffect(() => {
     try {
       setLyraPlatform(createIosPlatform());
-      void bootProviders().then(() => {
+      void bootProviders().then((report) => {
+        console.log("[lyra-ios] providers registered:", report.registered);
+        console.log("[lyra-ios] providers skipped:", report.skipped);
         const orch = createDefaultOrchestrator();
         setOrchestrator(orch);
         setReady(true);
