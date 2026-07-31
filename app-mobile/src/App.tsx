@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { setLyraPlatform } from "@lyra/platform";
+import { getLyraPlatform, setLyraPlatform } from "@lyra/platform";
 import { createIosPlatform } from "@lyra/platform-ios";
 import { bootProviders } from "@lyra/core/providers/boot";
 import { createDefaultOrchestrator } from "@lyra/core";
@@ -14,13 +14,17 @@ export function App() {
   useEffect(() => {
     try {
       setLyraPlatform(createIosPlatform());
-      void bootProviders().then((report) => {
-        console.log("[lyra-ios] providers registered:", report.registered);
-        console.log("[lyra-ios] providers skipped:", report.skipped);
-        const orch = createDefaultOrchestrator();
-        setOrchestrator(orch);
-        setReady(true);
-      });
+      void getLyraPlatform()
+        .copyBundledDbIfNeeded()
+        .catch((e) => console.warn("[lyra-ios] db copy:", e))
+        .then(() => bootProviders())
+        .then((report) => {
+          console.log("[lyra-ios] providers registered:", report.registered);
+          console.log("[lyra-ios] providers skipped:", report.skipped);
+          const orch = createDefaultOrchestrator();
+          setOrchestrator(orch);
+          setReady(true);
+        });
     } catch (e) {
       console.error("[lyra-ios] platform init failed:", e);
     }

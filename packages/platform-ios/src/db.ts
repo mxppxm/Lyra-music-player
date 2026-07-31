@@ -16,7 +16,15 @@ async function openDb(): Promise<DbHandle> {
     if (isConn) {
       return sqlite.retrieveConnection(DB_NAME, false);
     }
-    return sqlite.createConnection(DB_NAME, false, "no-encryption", 1, false);
+    const conn = await sqlite.createConnection(
+      DB_NAME,
+      false,
+      "no-encryption",
+      1,
+      false,
+    );
+    await conn.open();
+    return conn;
   })();
   return dbPromise;
 }
