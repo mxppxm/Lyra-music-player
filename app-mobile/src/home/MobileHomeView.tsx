@@ -16,8 +16,10 @@ import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "@lyra/core";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
 import type { PAD } from "../lib/color";
+import { setImmersiveStatusBar } from "./immersiveStatusBar";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
+const LYRA_START_LABEL = "让 Lyra 帮你启动";
 
 type MobileHomeViewProps = {
   orchestrator: Orchestrator;
@@ -35,9 +37,20 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   const coverShiftRef = useRef<HTMLDivElement>(null);
   const [coverTransform, setCoverTransform] = useState<string>("none");
 
+  // Keep immersive across the thinking gap between songs; only drop it when
+  // the playback session itself ends.
   useEffect(() => {
-    if (!playing) setImmersive(false);
-  }, [playing]);
+    if (state.kind !== "playing" && state.kind !== "thinking") {
+      setImmersive(false);
+    }
+  }, [state.kind]);
+
+  useEffect(() => {
+    void setImmersiveStatusBar(immersive);
+    return () => {
+      void setImmersiveStatusBar(false);
+    };
+  }, [immersive]);
 
   // FLIP: glide the cover to the screen center and scale it up when
   // entering immersive mode; "none" on exit animates it back.
@@ -132,12 +145,14 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
       <AmbientBackground pad={pad}>
         <GlowCanvas palette={palette} />
         <div className="lyra-mobile-stage lyra-mobile-stage--centered">
-          <div
+          <button
+            type="button"
             className="lyra-mobile-idle-slogan"
             data-testid="lyra-idle-slogan"
+            onClick={() => void orchestrator.onLyraStart()}
           >
-            Lyra 在听
-          </div>
+            {LYRA_START_LABEL}
+          </button>
           <InputBox onSubmit={submit} />
         </div>
       </AmbientBackground>

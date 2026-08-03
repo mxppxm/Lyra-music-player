@@ -150,6 +150,18 @@ body,
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--lyra-glass-border);
   box-shadow: 0 8px 24px rgba(24, 18, 12, 0.06);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+button.lyra-idle-slogan:hover {
+  border-color: rgba(24, 18, 12, 0.18);
+  box-shadow: 0 10px 28px rgba(24, 18, 12, 0.10);
+}
+
+button.lyra-idle-slogan:active {
+  transform: translateY(1px);
 }
 
 .lyra-stage--immersive {

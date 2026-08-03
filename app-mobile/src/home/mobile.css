@@ -195,15 +195,15 @@ body,
   height: 100%;
 }
 
-/* Keeps ink text legible over the drifting colour. */
+/* Soft veil so ink stays readable — kept light so glow colour still reads. */
 .lyra-mobile-glow__mist {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     to bottom,
-    rgba(255, 252, 248, 0.2) 0%,
-    rgba(255, 252, 248, 0.38) 55%,
-    rgba(255, 252, 248, 0.62) 100%
+    rgba(255, 252, 248, 0.08) 0%,
+    rgba(255, 252, 248, 0.18) 55%,
+    rgba(255, 252, 248, 0.32) 100%
   );
 }
 
@@ -420,6 +420,18 @@ body,
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--lyra-glass-border);
   box-shadow: 0 8px 24px rgba(24, 18, 12, 0.06);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+button.lyra-mobile-idle-slogan:hover {
+  border-color: rgba(24, 18, 12, 0.18);
+  box-shadow: 0 10px 28px rgba(24, 18, 12, 0.10);
+}
+
+button.lyra-mobile-idle-slogan:active {
+  transform: translateY(1px);
 }
 
 /* ── Boot screen (no glass capsule) ───────────────────────────────────── */

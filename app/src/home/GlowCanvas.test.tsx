@@ -17,10 +17,10 @@ describe("glowPalette", () => {
       { p: 0, a: 0, d: 0 },
     ]) {
       for (const c of glowPalette(pad)) {
-        expect(c.s).toBeGreaterThanOrEqual(30);
-        expect(c.s).toBeLessThanOrEqual(80);
-        expect(c.l).toBeGreaterThanOrEqual(44);
-        expect(c.l).toBeLessThanOrEqual(76);
+        expect(c.s).toBeGreaterThanOrEqual(48);
+        expect(c.s).toBeLessThanOrEqual(90);
+        expect(c.l).toBeGreaterThanOrEqual(42);
+        expect(c.l).toBeLessThanOrEqual(72);
         expect(c.h).toBeGreaterThanOrEqual(0);
         expect(c.h).toBeLessThan(360);
       }

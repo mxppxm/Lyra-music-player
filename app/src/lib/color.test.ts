@@ -16,16 +16,16 @@ describe("padHSL", () => {
     expect(padHSL({ p: 1, a: 0, d: 0 }).h).toBeCloseTo(30);
   });
 
-  it("saturation follows arousal in [20, 50]", () => {
-    expect(padHSL({ p: 0, a: 0, d: 0 }).s).toBe(20);
-    expect(padHSL({ p: 0, a: 1, d: 0 }).s).toBe(50);
-    expect(padHSL({ p: 0, a: -1, d: 0 }).s).toBe(-10); // formula allows negatives; clamp is a later job
+  it("saturation follows arousal", () => {
+    expect(padHSL({ p: 0, a: 0, d: 0 }).s).toBe(32);
+    expect(padHSL({ p: 0, a: 1, d: 0 }).s).toBe(68);
+    expect(padHSL({ p: 0, a: -1, d: 0 }).s).toBe(-4); // formula allows negatives; clamp is a later job
   });
 
-  it("lightness follows dominance in [80, 96]", () => {
-    expect(padHSL({ p: 0, a: 0, d: 0 }).l).toBe(88);
-    expect(padHSL({ p: 0, a: 0, d: 1 }).l).toBe(96);
-    expect(padHSL({ p: 0, a: 0, d: -1 }).l).toBe(80);
+  it("lightness follows dominance", () => {
+    expect(padHSL({ p: 0, a: 0, d: 0 }).l).toBe(82);
+    expect(padHSL({ p: 0, a: 0, d: 1 }).l).toBe(90);
+    expect(padHSL({ p: 0, a: 0, d: -1 }).l).toBe(74);
   });
 });
 

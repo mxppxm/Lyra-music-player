@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AmbientBackground } from "./AmbientBackground";
 import { BackgroundPhoto } from "./BackgroundPhoto";
 import { ShanShuiCanvas } from "./ShanShuiCanvas";
@@ -21,8 +21,11 @@ import type { Orchestrator } from "../turn/Orchestrator";
 import * as turnRepo from "../db/repo/turnRepo";
 import { songDisplayTitle, songDisplayArtist } from "../library/display";
 import type { PAD } from "../types";
+import { setImmersiveFullscreen } from "./immersiveFullscreen";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
+type HeldSong = { title: string; artist: string };
+const LYRA_START_LABEL = "让 Lyra 帮你启动";
 
 export type DataExplorerTabId =
   | "turns" | "soul" | "salient" | "library" | "lyrics_emb"
@@ -91,6 +94,28 @@ function LiveHomeView({
   const dockExpanded = dockHovered || inputFocused;
   const immersivePlayback = playbackActive && !dockExpanded;
 
+  // Fullscreen for the whole playback session (not just collapsed dock) so
+  // the macOS menu bar stays hidden while a song is on.
+  useEffect(() => {
+    void setImmersiveFullscreen(playbackActive);
+    return () => {
+      void setImmersiveFullscreen(false);
+    };
+  }, [playbackActive]);
+
+  // Hold the last playing pad/song across the thinking gap so ambient colour,
+  // glow, and song chrome don't flash back to the idle/normal layout while
+  // the next track is being chosen.
+  const heldPadRef = useRef<PAD>(ZERO_PAD);
+  const heldSongRef = useRef<HeldSong>({ title: "", artist: "" });
+  if (state.kind === "playing") {
+    heldPadRef.current = state.turn.current_emotion.pad;
+    heldSongRef.current = {
+      title: songDisplayTitle(state.song),
+      artist: songDisplayArtist(state.song),
+    };
+  }
+
   /** After dock chrome + extras finish collapsing, dim the input. */
   useEffect(() => {
     if (!playbackActive) {
@@ -142,7 +167,9 @@ function LiveHomeView({
   const pad: PAD =
     state.kind === "playing"
       ? state.turn.current_emotion.pad
-      : ZERO_PAD;
+      : playbackActive
+        ? heldPadRef.current
+        : ZERO_PAD;
 
   // Keep the band painted while thinking (song switch) so we don't flash the
   // empty-state hairline. proactive-pending uses the same history if any.
@@ -157,12 +184,16 @@ function LiveHomeView({
   const title: string =
     state.kind === "playing" || state.kind === "proactive-pending"
       ? songDisplayTitle(state.song)
-      : "";
+      : playbackActive
+        ? heldSongRef.current.title
+        : "";
 
   const artist: string =
     state.kind === "playing" || state.kind === "proactive-pending"
       ? songDisplayArtist(state.song)
-      : "";
+      : playbackActive
+        ? heldSongRef.current.artist
+        : "";
 
   const noteText: string =
     state.kind === "idle"
@@ -191,9 +222,14 @@ function LiveHomeView({
         <BackgroundPhoto />
         <ShanShuiCanvas pad={pad} playing={false} />
         <div className="lyra-stage lyra-stage--centered">
-          <div className="lyra-idle-slogan" data-testid="lyra-idle-slogan">
-            Lyra 在听
-          </div>
+          <button
+            type="button"
+            className="lyra-idle-slogan"
+            data-testid="lyra-idle-slogan"
+            onClick={() => void orchestrator.onLyraStart()}
+          >
+            {LYRA_START_LABEL}
+          </button>
           <InputBox onSubmit={submit} />
         </div>
       </AmbientBackground>
@@ -217,15 +253,11 @@ function LiveHomeView({
           .join(" ")}
       >
         <div style={{ flex: 1 }} />
-        {!isPlayback && <EmotionLightBand samples={padSamples} />}
-        {!isPlayback && (
+        {!playbackActive && <EmotionLightBand samples={padSamples} />}
+        {!playbackActive && (
           <div style={{ height: "var(--lyra-space-band-to-song)" }} />
         )}
-        {state.kind === "playing" || state.kind === "proactive-pending" ? (
-          <SongInfo title={title} artist={artist} />
-        ) : (
-          <SongInfo title="" artist="" />
-        )}
+        <SongInfo title={title} artist={artist} />
         <div style={{ height: "var(--lyra-space-song-to-note)" }} />
         <SmallNote text={noteText} color={noteColor} />
         <div style={{ flex: 1 }} />
@@ -285,7 +317,7 @@ function ZeroConfigBootView({ booting }: { booting: boolean }) {
       <ShanShuiCanvas pad={ZERO_PAD} playing={false} />
       <div className="lyra-stage lyra-stage--centered">
         <div className="lyra-idle-slogan" data-testid="lyra-idle-slogan">
-          Lyra 在听
+          {LYRA_START_LABEL}
         </div>
         <p
           data-testid="zero-config-boot-hint"

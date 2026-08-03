@@ -13,6 +13,7 @@
 		AA0000000000000000000001 /* LyraAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000011 /* LyraAudioPlugin.swift */; };
 		AA0000000000000000000002 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000012 /* MainViewController.swift */; };
 		AA0000000000000000000003 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000013 /* SceneDelegate.swift */; };
+		AA0000000000000000000004 /* LyraUIPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000014 /* LyraUIPlugin.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -60,6 +61,7 @@
 		AA0000000000000000000011 /* LyraAudioPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyraAudioPlugin.swift; sourceTree = "<group>"; };
 		AA0000000000000000000012 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		AA0000000000000000000013 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		AA0000000000000000000014 /* LyraUIPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyraUIPlugin.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 				AA0000000000000000000011 /* LyraAudioPlugin.swift */,
 				AA0000000000000000000012 /* MainViewController.swift */,
 				AA0000000000000000000013 /* SceneDelegate.swift */,
+				AA0000000000000000000014 /* LyraUIPlugin.swift */,
 				AB0000000000000000000011 /* LyraLiveActivityAttributes.swift */,
 				AB0000000000000000000012 /* LyraPlaybackBridge.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -312,6 +315,7 @@
 				AA0000000000000000000001 /* LyraAudioPlugin.swift in Sources */,
 				AA0000000000000000000002 /* MainViewController.swift in Sources */,
 				AA0000000000000000000003 /* SceneDelegate.swift in Sources */,
+				AA0000000000000000000004 /* LyraUIPlugin.swift in Sources */,
 				AB0000000000000000000001 /* LyraLiveActivityAttributes.swift in Sources */,
 				AB0000000000000000000002 /* LyraPlaybackBridge.swift in Sources */,
 				AB0000000000000000000003 /* LyraPlaybackIntents.swift in Sources */,

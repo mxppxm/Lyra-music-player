@@ -106,25 +106,25 @@ export function GlowCanvas({ palette }: GlowCanvasProps) {
         ctx,
         w * 0.35 + Math.sin(t * 0.1) * w * 0.07,
         h * 0.34 + Math.cos(t * 0.083) * h * 0.06,
-        maxDim * 0.5 * (1 + 0.07 * Math.sin(t * 0.14)),
+        maxDim * 0.52 * (1 + 0.07 * Math.sin(t * 0.14)),
         shown.primary,
-        0.5,
+        0.72,
       );
       drawBlob(
         ctx,
         w * 0.66 + Math.sin(t * 0.075 + 2.1) * w * 0.06,
         h * 0.62 + Math.cos(t * 0.095 + 1.3) * h * 0.06,
-        maxDim * 0.46 * (1 + 0.08 * Math.cos(t * 0.11)),
+        maxDim * 0.48 * (1 + 0.08 * Math.cos(t * 0.11)),
         shown.secondary,
-        0.42,
+        0.62,
       );
       drawBlob(
         ctx,
         w * 0.5 + Math.cos(t * 0.12 + 4.2) * w * 0.05,
         h * 0.48 + Math.sin(t * 0.09 + 3.1) * h * 0.06,
-        maxDim * 0.3 * (1 + 0.1 * Math.sin(t * 0.17)),
+        maxDim * 0.34 * (1 + 0.1 * Math.sin(t * 0.17)),
         shown.primary,
-        0.25,
+        0.48,
       );
     };
     raf = requestAnimationFrame(frame);

@@ -54,7 +54,7 @@ describe("HomeView — idle state", () => {
     expect(screen.getByTestId("ambient-surface")).toBeInTheDocument();
     // Sprint 6: sparse idle shows slogan + input only, no cover/band/note
     expect(screen.getByTestId("lyra-idle-slogan")).toBeInTheDocument();
-    expect(screen.getByText("Lyra 在听")).toBeInTheDocument();
+    expect(screen.getByText("让 Lyra 帮你启动")).toBeInTheDocument();
     expect(screen.getByTestId("lyra-input")).toBeInTheDocument();
     expect(screen.queryByTestId("album-cover-frame")).not.toBeInTheDocument();
     expect(screen.queryByTestId("emotion-light-band")).not.toBeInTheDocument();
@@ -196,6 +196,21 @@ describe("HomeView — immersive playback across song transitions", () => {
 
     expect(screen.getByTestId("ambient-surface").className).toContain("lyra-ambient--immersive");
     expect(screen.getByTestId("glass-dock-wrap").className).toContain("lyra-dock-wrap--immersive");
+  });
+
+  it("keeps emotion band hidden and song info held while thinking between songs", () => {
+    const { orc, emit } = makeEmittingStub(playingState);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
+
+    expect(screen.queryByTestId("emotion-light-band")).not.toBeInTheDocument();
+    expect(screen.getByTestId("song-info")).toHaveTextContent("T");
+
+    act(() => emit({ kind: "thinking", user_utterance: "" }));
+
+    // Normal-mode chrome must not flash back during the LLM pick-next-song gap.
+    expect(screen.queryByTestId("emotion-light-band")).not.toBeInTheDocument();
+    expect(screen.getByTestId("song-info")).toHaveTextContent("T");
+    expect(screen.getByTestId("song-info")).toHaveTextContent("A");
   });
 
   it("exits immersive when the session ends in error instead of a new song", () => {

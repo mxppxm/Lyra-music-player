@@ -18,12 +18,13 @@ function clamp(v: number, lo: number, hi: number): number {
  */
 export function glowPalette(pad: PAD): [HSL, HSL, HSL] {
   const { h } = padHSL(pad);
-  const s = clamp(46 + pad.a * 22, 30, 80);
-  const l = clamp(60 + pad.d * 10, 50, 70);
+  // Punchier than ambient — sat/light tuned so fog reads over the photo.
+  const s = clamp(62 + pad.a * 26, 48, 90);
+  const l = clamp(54 + pad.d * 8, 46, 68);
   return [
     { h, s, l },
-    { h: (h + 26) % 360, s, l: clamp(l + 6, 50, 76) },
-    { h: (h + 334) % 360, s, l: clamp(l - 6, 44, 70) },
+    { h: (h + 26) % 360, s, l: clamp(l + 5, 46, 72) },
+    { h: (h + 334) % 360, s, l: clamp(l - 5, 42, 66) },
   ];
 }
 
@@ -41,9 +42,9 @@ type Blob = {
 };
 
 const BLOBS: Blob[] = [
-  { anchorX: 0.30, anchorY: 0.34, driftX: 0.08, driftY: 0.07, radiusFrac: 0.46, periodS: 17, phase: 0.0, alpha: 0.52 },
-  { anchorX: 0.72, anchorY: 0.30, driftX: 0.07, driftY: 0.08, radiusFrac: 0.40, periodS: 21, phase: 2.1, alpha: 0.42 },
-  { anchorX: 0.50, anchorY: 0.76, driftX: 0.09, driftY: 0.06, radiusFrac: 0.44, periodS: 14, phase: 4.2, alpha: 0.46 },
+  { anchorX: 0.30, anchorY: 0.34, driftX: 0.08, driftY: 0.07, radiusFrac: 0.50, periodS: 17, phase: 0.0, alpha: 0.78 },
+  { anchorX: 0.72, anchorY: 0.30, driftX: 0.07, driftY: 0.08, radiusFrac: 0.44, periodS: 21, phase: 2.1, alpha: 0.68 },
+  { anchorX: 0.50, anchorY: 0.76, driftX: 0.09, driftY: 0.06, radiusFrac: 0.48, periodS: 14, phase: 4.2, alpha: 0.72 },
 ];
 
 function lerp(a: number, b: number, t: number): number {

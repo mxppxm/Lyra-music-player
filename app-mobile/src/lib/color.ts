@@ -19,8 +19,9 @@ function lerp(a: number, b: number, t: number): number {
 
 export function padHSL(pad: PAD): HSL {
   const h = lerp(240, 30, (pad.p + 1) / 2);
-  const s = 20 + pad.a * 30;
-  const l = 88 + pad.d * 8;
+  // Stronger sat / slightly lower lightness so ambient tint is readable.
+  const s = 32 + pad.a * 36;
+  const l = 82 + pad.d * 8;
   return { h, s, l };
 }
 
@@ -51,5 +52,6 @@ export function hslToString(hsl: HSL): string {
 export function ambientColor(pad: PAD, now: Date): string {
   const base = timeBase(now);
   const emotional = padHSL(pad);
-  return hslToString(mixHSL(base, emotional, 0.4));
+  // Higher emotion weight so playback colour reads clearly over time-of-day base.
+  return hslToString(mixHSL(base, emotional, 0.58));
 }

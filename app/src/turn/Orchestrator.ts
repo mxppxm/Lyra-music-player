@@ -502,6 +502,40 @@ export class Orchestrator {
     }
   }
 
+  /**
+   * One-tap start from the idle slogan: skip EmotionAgent, use soul's current
+   * mood, and let Companion pick a song (same path as auto-advance).
+   * No-ops while already thinking / playing / pending.
+   */
+  async onLyraStart(): Promise<void> {
+    const kind = this.state.kind;
+    if (kind === "thinking" || kind === "playing" || kind === "proactive-pending") {
+      return;
+    }
+
+    this.emit({ kind: "thinking", user_utterance: "" });
+
+    try {
+      const soul = await this.deps.soulStore.load();
+      const emotion: CurrentEmotion = {
+        pad: soul.dynamic_mood.current_pad,
+        labels: [],
+        confidence: 0.2,
+        source: "emotion-agent-inferred",
+      };
+      await this.runTurnWithEmotion(
+        emotion,
+        "",
+        "proactive-open",
+        "让 Lyra 帮你启动",
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[lyra] lyra-start error:", err);
+      this.emit({ kind: "error", message: msg });
+    }
+  }
+
   /** Record listen progress — keeps running maximum of ms listened. */
   onListenProgress(ms: number): void {
     this.pendingEvents.push({ kind: "listen_progress", ms });

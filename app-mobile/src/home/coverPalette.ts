@@ -33,8 +33,8 @@ function rgbToHsl(r: number, g: number, b: number): HSL {
 export function padPalette(pad: PAD): Palette {
   const base = padHSL(pad);
   return {
-    primary: hsl(base.h, base.s + 28, base.l - 14),
-    secondary: hsl(base.h + 42, base.s + 18, base.l - 24),
+    primary: hsl(base.h, base.s + 40, Math.min(Math.max(base.l - 18, 28), 62)),
+    secondary: hsl(base.h + 42, base.s + 28, Math.min(Math.max(base.l - 28, 20), 55)),
   };
 }
 
@@ -94,14 +94,14 @@ function extract(img: HTMLImageElement): Palette | null {
       rgbToHsl(b.r / b.n, b.g / b.n, b.b / b.n);
 
     const p = toHsl(sorted[0]);
-    const primary = hsl(p.h, p.s + 15, Math.min(Math.max(p.l, 26), 62));
+    const primary = hsl(p.h, Math.min(p.s + 28, 90), Math.min(Math.max(p.l, 28), 58));
 
-    let secondary = hsl(p.h + 35, p.s + 8, Math.max(p.l - 18, 16));
+    let secondary = hsl(p.h + 35, Math.min(p.s + 18, 85), Math.max(p.l - 18, 18));
     for (const candidate of sorted.slice(1)) {
       const c = toHsl(candidate);
       const hueDist = Math.min(Math.abs(c.h - p.h), 360 - Math.abs(c.h - p.h));
       if (hueDist > 50) {
-        secondary = hsl(c.h, c.s + 12, Math.min(Math.max(c.l, 18), 55));
+        secondary = hsl(c.h, Math.min(c.s + 22, 88), Math.min(Math.max(c.l, 20), 52));
         break;
       }
     }
