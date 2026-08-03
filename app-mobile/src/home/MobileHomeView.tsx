@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AmbientBackground } from "./AmbientBackground";
-import { CoverBackground, CoverArt } from "./CoverBackground";
+import { CoverArt, normalizeCoverUrl } from "./CoverBackground";
+import { GlowCanvas } from "./GlowCanvas";
+import { useCoverPalette } from "./coverPalette";
 import { SongInfo } from "./SongInfo";
 import { SmallNote } from "./SmallNote";
 import { InputBox } from "./InputBox";
@@ -28,6 +30,33 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   useAutoAdvance(orchestrator, setPlaybackError);
   const [dockExpanded, setDockExpanded] = useState(false);
+  const [immersive, setImmersive] = useState(false);
+  const coverShiftRef = useRef<HTMLDivElement>(null);
+  const [coverTransform, setCoverTransform] = useState<string>("none");
+
+  useEffect(() => {
+    if (!playing) setImmersive(false);
+  }, [playing]);
+
+  // FLIP: glide the cover to the screen center and scale it up when
+  // entering immersive mode; "none" on exit animates it back.
+  useLayoutEffect(() => {
+    if (!immersive) {
+      setCoverTransform("none");
+      return;
+    }
+    const el = coverShiftRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const targetSize = Math.min(window.innerWidth * 0.82, 330);
+    const scale = targetSize / rect.width;
+    const dx = window.innerWidth / 2 - (rect.left + rect.width / 2);
+    const dy = window.innerHeight / 2 - (rect.top + rect.height / 2);
+    setCoverTransform(`translate(${dx}px, ${dy}px) scale(${scale})`);
+  }, [immersive]);
+
+  const actuallyPlaying =
+    state.kind === "playing" && !state.paused && progress !== null;
 
   const title: string =
     state.kind === "playing" || state.kind === "proactive-pending"
@@ -91,12 +120,14 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
       ? state.song.metadata?.cover
       : null;
   const coverUrl = typeof coverRaw === "string" ? coverRaw : null;
+  const palette = useCoverPalette(normalizeCoverUrl(coverUrl), pad);
 
   const isSparseIdle = state.kind === "idle";
 
   if (isSparseIdle) {
     return (
       <AmbientBackground pad={pad}>
+        <GlowCanvas palette={palette} />
         <div className="lyra-mobile-stage lyra-mobile-stage--centered">
           <div
             className="lyra-mobile-idle-slogan"
@@ -112,10 +143,30 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
 
   return (
     <AmbientBackground pad={pad}>
-      <CoverBackground url={coverUrl} />
-      <div className="lyra-mobile-stage">
+      <GlowCanvas palette={palette} />
+      <div
+        className={[
+          "lyra-mobile-stage",
+          immersive ? "lyra-mobile-stage--immersive" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => {
+          if (playing) setImmersive((v) => !v);
+        }}
+      >
         <div className="lyra-mobile-content">
-          <CoverArt url={coverUrl} />
+          <div
+            ref={coverShiftRef}
+            className="lyra-mobile-cover-shift"
+            style={{ transform: coverTransform }}
+          >
+            <CoverArt
+            url={coverUrl}
+            cd={immersive}
+            spinning={immersive && actuallyPlaying}
+          />
+          </div>
           <SongInfo title={title} artist={artist} />
           <SmallNote text={noteText} color={noteColor} />
         </div>
@@ -128,14 +179,31 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
           ]
             .filter(Boolean)
             .join(" ")}
-          onClick={() => setDockExpanded((v) => !v)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setDockExpanded((v) => !v);
+          }}
         >
-          {progress && (
-            <ProgressBar
-              progress={progress.progress}
-              label={progressLabel(progress.elapsedMs, progress.durationMs)}
-            />
-          )}
+          <div
+            className={[
+              "lyra-mobile-progress-wrap",
+              progress ? "lyra-mobile-progress-wrap--show" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-hidden={!progress}
+          >
+            <div className="lyra-mobile-progress-wrap__inner">
+              <ProgressBar
+                progress={progress?.progress ?? 0}
+                label={
+                  progress
+                    ? progressLabel(progress.elapsedMs, progress.durationMs)
+                    : ""
+                }
+              />
+            </div>
+          </div>
           <PlayerControls
             canControl={playing}
             paused={state.kind === "playing" ? Boolean(state.paused) : true}

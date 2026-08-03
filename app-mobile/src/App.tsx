@@ -10,6 +10,28 @@ import "./home/mobile.css";
 
 const ZERO_PAD = { p: 0, a: 0, d: 0 };
 
+/** Corner stamp so any screenshot proves exactly which build is installed. */
+function BuildStamp() {
+  return (
+    <div
+      data-testid="build-stamp"
+      style={{
+        position: "fixed",
+        right: 8,
+        bottom: 4,
+        fontSize: 10,
+        lineHeight: 1.2,
+        opacity: 0.35,
+        zIndex: 50,
+        pointerEvents: "none",
+        fontFamily: "monospace",
+      }}
+    >
+      {__LYRA_BUILD_TIME__}
+    </div>
+  );
+}
+
 export function App() {
   const [ready, setReady] = useState(false);
   const [orchestrator, setOrchestrator] = useState<Orchestrator | null>(null);
@@ -35,25 +57,26 @@ export function App() {
     }
   }, []);
 
-  if (!ready) {
-    return (
-      <AmbientBackground pad={ZERO_PAD}>
-        <div className="lyra-mobile-stage lyra-mobile-stage--centered">
-          <div className="lyra-mobile-idle-slogan">Lyra 在醒来的路上…</div>
-        </div>
-      </AmbientBackground>
-    );
-  }
+  const content = !ready ? (
+    <AmbientBackground pad={ZERO_PAD}>
+      <div className="lyra-mobile-stage lyra-mobile-stage--centered">
+        <div className="lyra-mobile-idle-slogan">Lyra 在醒来的路上…</div>
+      </div>
+    </AmbientBackground>
+  ) : !orchestrator ? (
+    <AmbientBackground pad={ZERO_PAD}>
+      <div className="lyra-mobile-stage lyra-mobile-stage--centered">
+        <div className="lyra-mobile-idle-slogan">Lyra 还没准备好</div>
+      </div>
+    </AmbientBackground>
+  ) : (
+    <MobileHomeView orchestrator={orchestrator} />
+  );
 
-  if (!orchestrator) {
-    return (
-      <AmbientBackground pad={ZERO_PAD}>
-        <div className="lyra-mobile-stage lyra-mobile-stage--centered">
-          <div className="lyra-mobile-idle-slogan">Lyra 还没准备好</div>
-        </div>
-      </AmbientBackground>
-    );
-  }
-
-  return <MobileHomeView orchestrator={orchestrator} />;
+  return (
+    <>
+      {content}
+      <BuildStamp />
+    </>
+  );
 }

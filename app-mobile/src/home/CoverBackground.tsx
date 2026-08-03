@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type CoverBackgroundProps = {
   /** Raw bilibili cover URL from track metadata (may be protocol-relative). */
@@ -13,37 +13,116 @@ export function normalizeCoverUrl(url: string | null): string | null {
   return url.replace(/^http:\/\//i, "https://");
 }
 
+export type CoverArtProps = CoverBackgroundProps & {
+  /** Immersive mode: morph the square card into a vinyl CD. */
+  cd?: boolean;
+  /** True while the disc should rotate (immersive + actually playing). */
+  spinning?: boolean;
+};
+
+const SPIN_SECONDS_PER_REV = 22;
+const ANGLE_RESET_MS = 560;
+
 /**
- * Crisp cover card for the playing view — the visible album art, above the
- * blurred backdrop. Hidden entirely when the track has no cover / the image
- * fails (the blurred backdrop already carries the mood).
+ * Cover for the playing view: a rounded-square card in the normal layout,
+ * morphing into a spinning vinyl CD (grooves + spindle hole) in immersive
+ * mode. Rotation is rAF-driven so the angle is continuous — pausing keeps
+ * it, and leaving immersive eases it back to 0° in sync with the morph.
+ * Hidden entirely when the track has no cover / the image fails.
  */
-export function CoverArt({ url }: CoverBackgroundProps) {
+export function CoverArt({ url, cd = false, spinning = false }: CoverArtProps) {
   const src = normalizeCoverUrl(url);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(
     "loading",
   );
+  const discRef = useRef<HTMLDivElement>(null);
+  const angleRef = useRef(0);
+  // Mount guard: no transitions of any kind during the first frame, so the
+  // cover never "animates in" from a wrong radius on (re)mount.
+  const [animated, setAnimated] = useState(false);
 
   useEffect(() => {
     setStatus(src ? "loading" : "error");
   }, [src]);
 
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setAnimated(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // rAF-driven rotation — angle persists across spin start/stop.
+  useEffect(() => {
+    if (!spinning) return;
+    let last = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const dt = Math.min((now - last) / 1000, 0.1);
+      last = now;
+      angleRef.current =
+        (angleRef.current + (dt * 360) / SPIN_SECONDS_PER_REV) % 360;
+      discRef.current?.style.setProperty(
+        "transform",
+        `rotate(${angleRef.current}deg)`,
+      );
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [spinning]);
+
+  // Leaving CD mode: ease the current angle back to 0° alongside the
+  // circle→square morph, instead of snapping.
+  useEffect(() => {
+    if (cd) return;
+    const start = angleRef.current;
+    if (start === 0) return;
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - t0) / ANGLE_RESET_MS);
+      const eased = 1 - Math.pow(1 - p, 3);
+      const angle = start * (1 - eased);
+      discRef.current?.style.setProperty("transform", `rotate(${angle}deg)`);
+      if (p < 1) {
+        raf = requestAnimationFrame(tick);
+      } else {
+        angleRef.current = 0;
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [cd]);
+
   if (!src || status === "error") return null;
 
   return (
-    <div className="lyra-mobile-cover-art" data-testid="cover-art">
-      <img
-        src={src}
-        alt=""
-        referrerPolicy="no-referrer"
-        onLoad={() => setStatus("loaded")}
-        onError={() => setStatus("error")}
-        className={
-          status === "loaded"
-            ? "lyra-mobile-cover-art__img lyra-mobile-cover-art__img--loaded"
-            : "lyra-mobile-cover-art__img"
-        }
-      />
+    <div
+      className={[
+        "lyra-mobile-cover-art",
+        cd ? "lyra-mobile-cover-art--cd" : "",
+        animated ? "" : "lyra-mobile-cover-art--no-anim",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-testid="cover-art"
+    >
+      <div className="lyra-mobile-cover-art__disc" ref={discRef}>
+        {/* hdslb.com 403s non-bilibili Referers — send none (200). */}
+        <img
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          onLoad={() => setStatus("loaded")}
+          onError={() => setStatus("error")}
+          className={
+            status === "loaded"
+              ? "lyra-mobile-cover-art__img lyra-mobile-cover-art__img--loaded"
+              : "lyra-mobile-cover-art__img"
+          }
+        />
+        <div className="lyra-mobile-cover-art__groove" />
+        <div className="lyra-mobile-cover-art__hole" />
+      </div>
     </div>
   );
 }
@@ -52,6 +131,7 @@ export function CoverArt({ url }: CoverBackgroundProps) {
  * Blurred album-cover backdrop, Apple-Music style: the cover fills the
  * screen under heavy blur, a warm mist keeps ink text readable, and the
  * ambient color underneath remains the fallback while loading / on error.
+ * Superseded by FlowingGlow + cover palette; kept for reference/fallback.
  */
 export function CoverBackground({ url }: CoverBackgroundProps) {
   const src = normalizeCoverUrl(url);

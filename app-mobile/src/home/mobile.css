@@ -80,6 +80,11 @@ body,
   display: flex;
   flex-direction: column;
   position: relative;
+  /* Create a stacking context so z-index:-1 effect layers (glow, light
+   * overlay) paint *above* this element's background instead of being
+   * handed up to the root context and buried beneath it — which is what
+   * strict compositors on real devices do. */
+  z-index: 0;
   transition: var(--lyra-transition-ambient);
 }
 
@@ -105,6 +110,128 @@ body,
       rgba(255, 255, 255, 0.06) 45%,
       rgba(28, 24, 20, 0.12) 100%
     );
+}
+
+/* ── Flowing glow backdrop ────────────────────────────────────────────── */
+
+/* Registered so blob colours can transition on track change. */
+@property --glow-c1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(35, 45%, 72%);
+}
+
+@property --glow-c2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: hsl(12, 42%, 58%);
+}
+
+.lyra-mobile-glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    --glow-c1 2.5s ease,
+    --glow-c2 2.5s ease;
+}
+
+.lyra-mobile-glow__blob {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+/* "transparent" keeps the hue (premultiplied interpolation) and works
+ * on every iOS version — no color-mix needed. */
+.lyra-mobile-glow__blob--a {
+  width: 135vw;
+  height: 135vw;
+  left: -45vw;
+  top: -30%;
+  background: radial-gradient(
+    circle,
+    var(--glow-c1) 0%,
+    transparent 62%
+  );
+  opacity: 0.55;
+  animation: lyra-glow-drift-a 18s ease-in-out infinite alternate;
+}
+
+.lyra-mobile-glow__blob--b {
+  width: 115vw;
+  height: 115vw;
+  right: -40vw;
+  bottom: -28%;
+  background: radial-gradient(
+    circle,
+    var(--glow-c2) 0%,
+    transparent 60%
+  );
+  opacity: 0.45;
+  animation: lyra-glow-drift-b 24s ease-in-out infinite alternate;
+}
+
+.lyra-mobile-glow__blob--c {
+  width: 70vw;
+  height: 70vw;
+  left: 8vw;
+  top: 32%;
+  background: radial-gradient(
+    circle,
+    var(--glow-c1) 0%,
+    transparent 58%
+  );
+  opacity: 0.3;
+  animation: lyra-glow-drift-c 14s ease-in-out infinite alternate;
+}
+
+.lyra-mobile-glow__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Keeps ink text legible over the drifting colour. */
+.lyra-mobile-glow__mist {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 252, 248, 0.2) 0%,
+    rgba(255, 252, 248, 0.38) 55%,
+    rgba(255, 252, 248, 0.62) 100%
+  );
+}
+
+@keyframes lyra-glow-drift-a {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(22vw, 12vh) scale(1.22);
+  }
+}
+
+@keyframes lyra-glow-drift-b {
+  from {
+    transform: translate(0, 0) scale(1.12);
+  }
+  to {
+    transform: translate(-18vw, -10vh) scale(0.92);
+  }
+}
+
+@keyframes lyra-glow-drift-c {
+  from {
+    transform: translate(0, 0) scale(0.95);
+  }
+  to {
+    transform: translate(-14vw, 12vh) scale(1.25);
+  }
 }
 
 /* ── Cover backdrop ───────────────────────────────────────────────────── */
@@ -144,16 +271,50 @@ body,
   );
 }
 
-/* ── Cover art card ───────────────────────────────────────────────────── */
+/* ── Cover art (card ↔ vinyl CD) ──────────────────────────────────────── */
 
+/* Outer shell: shadow + placeholder tint. Square card by default; morphs
+ * to a circle in immersive mode (border-radius transitions smoothly). */
 .lyra-mobile-cover-art {
   width: min(58vw, 230px);
   aspect-ratio: 1;
   margin: 0 auto;
   border-radius: 12px;
-  overflow: hidden;
-  background: rgba(28, 24, 20, 0.06);
+  background: rgba(28, 24, 20, 0.08);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition:
+    border-radius 560ms cubic-bezier(0.32, 0, 0.2, 1),
+    box-shadow 560ms cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+.lyra-mobile-cover-art--cd {
+  border-radius: 50%;
+  box-shadow:
+    0 14px 34px rgba(24, 18, 12, 0.2),
+    0 2px 8px rgba(24, 18, 12, 0.12);
+}
+
+.lyra-mobile-cover-art__disc {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-radius 560ms cubic-bezier(0.32, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.lyra-mobile-cover-art--cd .lyra-mobile-cover-art__disc {
+  border-radius: 50%;
+}
+
+/* First-frame mount guard — nothing transitions right after (re)mount. */
+.lyra-mobile-cover-art--no-anim,
+.lyra-mobile-cover-art--no-anim .lyra-mobile-cover-art__disc,
+.lyra-mobile-cover-art--no-anim .lyra-mobile-cover-art__groove,
+.lyra-mobile-cover-art--no-anim .lyra-mobile-cover-art__hole,
+.lyra-mobile-cover-art--no-anim .lyra-mobile-cover-art__img {
+  transition: none !important;
 }
 
 .lyra-mobile-cover-art__img {
@@ -167,6 +328,64 @@ body,
 
 .lyra-mobile-cover-art__img--loaded {
   opacity: 1;
+}
+
+/* Vinyl grooves + spindle hole — fade in with the CD morph. */
+.lyra-mobile-cover-art__groove,
+.lyra-mobile-cover-art__hole {
+  opacity: 0;
+  transition: opacity 560ms ease;
+}
+
+.lyra-mobile-cover-art--cd .lyra-mobile-cover-art__groove,
+.lyra-mobile-cover-art--cd .lyra-mobile-cover-art__hole {
+  opacity: 1;
+}
+
+.lyra-mobile-cover-art__groove {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-radial-gradient(
+    circle at center,
+    rgba(0, 0, 0, 0.05) 0px,
+    rgba(0, 0, 0, 0.05) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  pointer-events: none;
+}
+
+.lyra-mobile-cover-art__hole {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 15%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #faf8f5;
+  box-shadow:
+    inset 0 1px 4px rgba(24, 18, 12, 0.35),
+    0 0 0 1px rgba(24, 18, 12, 0.12);
+}
+
+.lyra-mobile-cover-art__hole::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(24, 18, 12, 0.5);
+}
+
+/* FLIP shell for the immersive center shift — carries translate/scale
+ * while the disc keeps its own spin transform. */
+.lyra-mobile-cover-shift {
+  transition: transform 560ms cubic-bezier(0.32, 0, 0.2, 1);
 }
 
 /* ── Main stage ───────────────────────────────────────────────────────── */
@@ -262,6 +481,31 @@ body,
 
 /* ── Progress ─────────────────────────────────────────────────────────── */
 
+/* Height-accordions open when duration arrives — no dock layout jump.
+ * Collapsed: zero height + negative margin cancelling the dock's 14px gap. */
+.lyra-mobile-progress-wrap {
+  max-height: 0;
+  margin-top: -14px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    max-height 420ms cubic-bezier(0.32, 0, 0.2, 1),
+    margin-top 420ms cubic-bezier(0.32, 0, 0.2, 1),
+    opacity 320ms ease,
+    transform 420ms cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+.lyra-mobile-progress-wrap--show {
+  max-height: 32px;
+  margin-top: 0;
+  opacity: 1;
+  transform: none;
+}
+
+.lyra-mobile-progress-wrap__inner {
+  overflow: hidden;
+}
+
 .lyra-mobile-progress {
   width: 100%;
   display: flex;
@@ -356,6 +600,38 @@ body,
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── Immersive mode ───────────────────────────────────────────────────── */
+
+/* Hidden with opacity/translate (never display:none) so the cover art
+ * doesn't jump — everything keeps its layout box while fading. */
+.lyra-mobile-song-info,
+.lyra-mobile-small-note,
+.lyra-mobile-dock {
+  transition:
+    opacity 480ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lyra-mobile-stage--immersive .lyra-mobile-song-info {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+
+.lyra-mobile-stage--immersive .lyra-mobile-small-note {
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition-delay: 40ms;
+}
+
+.lyra-mobile-stage--immersive .lyra-mobile-dock {
+  opacity: 0;
+  transform: translateY(28px);
+  pointer-events: none;
+  transition-delay: 70ms;
 }
 
 /* ── Input ────────────────────────────────────────────────────────────── */
