@@ -422,6 +422,88 @@ body,
   box-shadow: 0 8px 24px rgba(24, 18, 12, 0.06);
 }
 
+/* ── Boot screen (no glass capsule) ───────────────────────────────────── */
+
+.lyra-mobile-boot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.lyra-mobile-boot__brand {
+  color: var(--lyra-color-song-info);
+  font-family: var(--lyra-note-family);
+  font-style: italic;
+  font-size: 42px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.lyra-mobile-boot__caption {
+  color: var(--lyra-color-small-note);
+  font-family: var(--lyra-note-family);
+  font-style: italic;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  opacity: 0.72;
+  margin-bottom: 18px;
+}
+
+/* Soft elliptical bloom — shared boot / buffer language */
+.lyra-mobile-breath-glow {
+  display: block;
+  border-radius: 50%;
+  pointer-events: none;
+  transform-origin: center;
+}
+
+.lyra-mobile-breath-glow--lg {
+  width: 72px;
+  height: 28px;
+  margin-top: 4px;
+  filter: blur(6px);
+  animation: lyra-mobile-breath 2s ease-in-out infinite;
+}
+
+.lyra-mobile-breath-glow--sm {
+  width: 22px;
+  height: 10px;
+  filter: blur(3px);
+  animation: lyra-mobile-breath 1.2s ease-in-out infinite;
+}
+
+.lyra-mobile-breath-glow--warm {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 252, 248, 0.7) 0%,
+    rgba(255, 248, 238, 0.28) 42%,
+    rgba(255, 248, 238, 0) 72%
+  );
+}
+
+.lyra-mobile-breath-glow--light {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 252, 248, 0.95) 0%,
+    rgba(255, 252, 248, 0.35) 45%,
+    rgba(255, 252, 248, 0) 72%
+  );
+}
+
+@keyframes lyra-mobile-breath {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
 .lyra-mobile-content {
   flex: 1;
   display: flex;
@@ -462,6 +544,49 @@ body,
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.42);
   box-shadow: 0 10px 28px rgba(24, 18, 12, 0.05);
+}
+
+/* Thinking — plain copy + animated dots */
+.lyra-mobile-thinking {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.75em;
+  padding: 10px 22px;
+}
+
+.lyra-mobile-thinking__text {
+  color: var(--lyra-color-small-note);
+  font-size: var(--lyra-note-font-size);
+  font-family: var(--lyra-note-family);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  line-height: 1.75;
+}
+
+.lyra-mobile-thinking__dots span {
+  display: inline-block;
+  opacity: 0.25;
+  animation: lyra-mobile-dot-blink 1.2s ease-in-out infinite;
+}
+
+.lyra-mobile-thinking__dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.lyra-mobile-thinking__dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes lyra-mobile-dot-blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
 }
 
 /* ── Floating dock ────────────────────────────────────────────────────── */
@@ -585,21 +710,6 @@ body,
 
 .lyra-mobile-control-btn--primary:not(:disabled):active {
   transform: scale(0.96);
-}
-
-.lyra-mobile-control-spinner {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 252, 248, 0.35);
-  border-top-color: rgba(255, 252, 248, 0.96);
-  animation: lyra-mobile-spin 0.9s linear infinite;
-}
-
-@keyframes lyra-mobile-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* ── Immersive mode ───────────────────────────────────────────────────── */

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AmbientBackground } from "./AmbientBackground";
 import { CoverArt, normalizeCoverUrl } from "./CoverBackground";
 import { GlowCanvas } from "./GlowCanvas";
+import { ThinkingNote } from "./ThinkingNote";
 import { useCoverPalette } from "./coverPalette";
 import { SongInfo } from "./SongInfo";
 import { SmallNote } from "./SmallNote";
@@ -84,7 +85,7 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
       : state.kind === "idle"
         ? "Lyra 在等你说一句话"
         : state.kind === "thinking"
-          ? "…"
+          ? ""
           : state.kind === "playing"
             ? state.turn.agent_response.rationale
             : state.kind === "proactive-pending"
@@ -92,6 +93,8 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
               : state.kind === "error"
                 ? state.message
                 : "";
+
+  const isThinking = state.kind === "thinking";
 
   const noteColor: string | undefined =
     playbackError !== null || state.kind === "error"
@@ -168,7 +171,11 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
           />
           </div>
           <SongInfo title={title} artist={artist} />
-          <SmallNote text={noteText} color={noteColor} />
+          {isThinking ? (
+            <ThinkingNote />
+          ) : (
+            <SmallNote text={noteText} color={noteColor} />
+          )}
         </div>
 
         <div

@@ -6,6 +6,7 @@ import { createDefaultOrchestrator } from "@lyra/core";
 import type { Orchestrator } from "@lyra/core";
 import { MobileHomeView } from "./home/MobileHomeView";
 import { AmbientBackground } from "./home/AmbientBackground";
+import { BreathingGlow } from "./home/BreathingGlow";
 import "./home/mobile.css";
 
 const ZERO_PAD = { p: 0, a: 0, d: 0 };
@@ -29,6 +30,26 @@ function BuildStamp() {
     >
       {__LYRA_BUILD_TIME__}
     </div>
+  );
+}
+
+function BootScreen({
+  caption,
+  breathing = false,
+}: {
+  caption: string;
+  breathing?: boolean;
+}) {
+  return (
+    <AmbientBackground pad={ZERO_PAD}>
+      <div className="lyra-mobile-stage lyra-mobile-stage--centered">
+        <div className="lyra-mobile-boot" data-testid="boot-screen">
+          <div className="lyra-mobile-boot__brand">Lyra</div>
+          <div className="lyra-mobile-boot__caption">{caption}</div>
+          {breathing ? <BreathingGlow size="lg" tone="warm" /> : null}
+        </div>
+      </div>
+    </AmbientBackground>
   );
 }
 
@@ -58,17 +79,9 @@ export function App() {
   }, []);
 
   const content = !ready ? (
-    <AmbientBackground pad={ZERO_PAD}>
-      <div className="lyra-mobile-stage lyra-mobile-stage--centered">
-        <div className="lyra-mobile-idle-slogan">Lyra 在醒来的路上…</div>
-      </div>
-    </AmbientBackground>
+    <BootScreen caption="在醒来的路上" breathing />
   ) : !orchestrator ? (
-    <AmbientBackground pad={ZERO_PAD}>
-      <div className="lyra-mobile-stage lyra-mobile-stage--centered">
-        <div className="lyra-mobile-idle-slogan">Lyra 还没准备好</div>
-      </div>
-    </AmbientBackground>
+    <BootScreen caption="还没准备好" />
   ) : (
     <MobileHomeView orchestrator={orchestrator} />
   );

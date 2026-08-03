@@ -1,3 +1,4 @@
+import { BreathingGlow } from "./BreathingGlow";
 import { IconNext, IconPause, IconPlay, IconPrev } from "./icons";
 
 export type PlayerControlsProps = {
@@ -38,7 +39,7 @@ export function PlayerControls({
         data-testid="play-pause-btn"
       >
         {loading ? (
-          <span className="lyra-mobile-control-spinner" aria-hidden />
+          <BreathingGlow size="sm" tone="light" />
         ) : canControl && !paused ? (
           <IconPause />
         ) : (
