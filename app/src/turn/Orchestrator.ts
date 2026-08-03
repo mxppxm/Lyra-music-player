@@ -63,6 +63,9 @@ export type OrchestratorDeps = {
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 
+/** Max songs to try per turn when playback keeps failing before giving up. */
+const MAX_PLAY_ATTEMPTS = 3;
+
 export class Orchestrator {
   private state: OrchestratorState = { kind: "idle" };
   private subs = new Set<(s: OrchestratorState) => void>();
@@ -78,6 +81,8 @@ export class Orchestrator {
   private perceptionBias: PerceptionBias | null = null;
   /** Guard against concurrent fulfillProactive calls. */
   private proactiveInFlight = false;
+  /** Songs that failed to play this session — skipped in later selections. */
+  private failedSongIds = new Set<string>();
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
@@ -235,6 +240,16 @@ export class Orchestrator {
       return;
     }
 
+    // Skip songs that already failed to play this session. If every
+    // candidate failed before, clear the slate — failures are often
+    // transient (expired stream URLs, network hiccups) and worth retrying.
+    const playable = candidates.filter((c) => !this.failedSongIds.has(c.id));
+    if (playable.length > 0) {
+      candidates = playable;
+    } else {
+      this.failedSongIds.clear();
+    }
+
     // Load music profiles for all candidates (parallel batch)
     const profileMap = await musicProfileRepo.getBatch(candidates.map((c) => c.id));
 
@@ -251,42 +266,68 @@ export class Orchestrator {
       topFacts,
       recommendation: recCtx,
     });
-    const song = candidates.find((c) => c.id === chosen.song_id)!;
+    const chosenSong = candidates.find((c) => c.id === chosen.song_id)!;
 
-    const turn: DialogueTurn = {
-      id: idGen(),
-      timestamp: clock(),
-      current_emotion: emotion,
-      user_utterance: { modality, content: userUtterance },
-      agent_response: { song_id: chosen.song_id, rationale: chosen.rationale },
-      user_reaction: {
-        behavioral: {
-          listen_duration_ms: 0,
-          completed: false,
-          skipped: false,
-          repeated: 0,
-          volume_delta: 0,
+    // Auto-skip on playback failure: try the companion's pick first, then
+    // the remaining candidates in prefilter (best-match) order. Only a song
+    // that actually starts playing gets its turn persisted.
+    const attemptQueue = [
+      chosenSong,
+      ...candidates.filter((c) => c.id !== chosenSong.id),
+    ];
+
+    let lastErr: unknown = null;
+    for (const song of attemptQueue.slice(0, MAX_PLAY_ATTEMPTS)) {
+      const turn: DialogueTurn = {
+        id: idGen(),
+        timestamp: clock(),
+        current_emotion: emotion,
+        user_utterance: { modality, content: userUtterance },
+        agent_response: { song_id: song.id, rationale: chosen.rationale },
+        user_reaction: {
+          behavioral: {
+            listen_duration_ms: 0,
+            completed: false,
+            skipped: false,
+            repeated: 0,
+            volume_delta: 0,
+          },
+          silence_positive: false,
         },
-        silence_positive: false,
-      },
-      emotion_delta: ZERO_PAD,
-    };
+        emotion_delta: ZERO_PAD,
+      };
 
-    await turnRepo.insertTurn(turn);
-    await audio.playFile(song.path, song.duration_ms ?? null);
+      try {
+        await audio.playFile(song.path, song.duration_ms ?? null);
+      } catch (err) {
+        lastErr = err;
+        this.failedSongIds.add(song.id);
+        console.warn(`[lyra] playback failed for ${song.id}, auto-skipping:`, err);
+        continue;
+      }
 
-    // Sprint 11: fire-and-forget latency write. The chained UPDATE isn't in
-    // the critical path — user sees the song already; we just record the
-    // observation.
-    const turn_latency_ms = Math.round(performance.now() - t0);
-    if (turnRepo.setTurnLatency) {
-      void turnRepo.setTurnLatency(turn.id, turn_latency_ms).catch(() => {});
+      await turnRepo.insertTurn(turn);
+
+      // Sprint 11: fire-and-forget latency write. The chained UPDATE isn't in
+      // the critical path — user sees the song already; we just record the
+      // observation.
+      const turn_latency_ms = Math.round(performance.now() - t0);
+      if (turnRepo.setTurnLatency) {
+        void turnRepo.setTurnLatency(turn.id, turn_latency_ms).catch(() => {});
+      }
+
+      this.currentTurn = turn;
+      this.currentSong = song;
+      this.pendingEvents = [];
+      this.emit({ kind: "playing", turn, song });
+      return;
     }
 
-    this.currentTurn = turn;
-    this.currentSong = song;
-    this.pendingEvents = [];
-    this.emit({ kind: "playing", turn, song });
+    console.error("[lyra] all playback attempts failed:", lastErr);
+    this.emit({
+      kind: "error",
+      message: "连续几首都播放失败，检查下网络或音频设备？",
+    });
   }
 
   /**

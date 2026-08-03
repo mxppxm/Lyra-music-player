@@ -741,3 +741,112 @@ describe("Orchestrator Sprint 4: perception bias blending", () => {
     expect(inputEv.charCount).toBe("hello world".length);
   });
 });
+
+describe("Orchestrator playback-failure auto-skip", () => {
+  const trackOf = (id: string, path: string): LibraryTrack => ({
+    id,
+    path,
+    origin: "local",
+    added_at: 0,
+    title: id,
+  });
+
+  it("auto-plays the next candidate when the chosen song fails to play", async () => {
+    const t1 = trackOf("t1", "/x.mp3");
+    const t2 = trackOf("t2", "/y.mp3");
+    const deps = makeDeps({
+      library: { prefilter: vi.fn(async () => [t1, t2]) },
+    });
+    deps.audio.playFile.mockRejectedValueOnce(new Error("decode fail"));
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来首歌");
+
+    expect(deps.audio.playFile).toHaveBeenCalledTimes(2);
+    expect(deps.audio.playFile).toHaveBeenNthCalledWith(1, "/x.mp3", null);
+    expect(deps.audio.playFile).toHaveBeenNthCalledWith(2, "/y.mp3", null);
+    const state = orc.getState();
+    expect(state.kind).toBe("playing");
+    if (state.kind === "playing") {
+      expect(state.song.id).toBe("t2");
+      expect(state.turn.agent_response.song_id).toBe("t2");
+    }
+  });
+
+  it("stops after 3 failed attempts and emits an error state", async () => {
+    const tracks = [
+      trackOf("t1", "/a.mp3"),
+      trackOf("t2", "/b.mp3"),
+      trackOf("t3", "/c.mp3"),
+      trackOf("t4", "/d.mp3"),
+    ];
+    const deps = makeDeps({
+      library: { prefilter: vi.fn(async () => tracks) },
+    });
+    deps.audio.playFile.mockRejectedValue(new Error("stream dead"));
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来首歌");
+
+    expect(deps.audio.playFile).toHaveBeenCalledTimes(3);
+    expect(orc.getState().kind).toBe("error");
+  });
+
+  it("does not offer a previously failed song to the companion again in a later turn", async () => {
+    const t1 = trackOf("t1", "/x.mp3");
+    const t2 = trackOf("t2", "/y.mp3");
+    const choose = vi.fn(async (input: { candidates: LibraryTrack[] }) => ({
+      song_id: input.candidates[0].id,
+      target_profile: "x",
+      rationale: "y",
+      needed_shift: "接住" as const,
+    }));
+    const deps = makeDeps({
+      library: { prefilter: vi.fn(async () => [t1, t2]) },
+      companion: { choose },
+    });
+    deps.audio.playFile.mockRejectedValueOnce(new Error("io: not found"));
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来首歌");
+    expect(orc.getState().kind).toBe("playing");
+
+    await orc.onUserInput("再来一首");
+
+    const secondChoose = choose.mock.calls[1][0] as { candidates: LibraryTrack[] };
+    expect(secondChoose.candidates.map((c) => c.id)).toEqual(["t2"]);
+    const paths = deps.audio.playFile.mock.calls.map((c) => (c as unknown[])[0]);
+    expect(paths).toEqual(["/x.mp3", "/y.mp3", "/y.mp3"]);
+  });
+
+  it("auto-advance after completion also skips unplayable songs", async () => {
+    const t1 = trackOf("t1", "/a.mp3");
+    const t2 = trackOf("t2", "/b.mp3");
+    const t3 = trackOf("t3", "/c.mp3");
+    const deps = makeDeps();
+    deps.library.prefilter
+      .mockResolvedValueOnce([t1])
+      .mockResolvedValueOnce([t2, t3]);
+    deps.companion.choose
+      .mockResolvedValueOnce({ song_id: "t1", target_profile: "x", rationale: "y", needed_shift: "接住" as const })
+      .mockResolvedValueOnce({ song_id: "t2", target_profile: "x", rationale: "y", needed_shift: "接住" as const });
+    deps.audio.playFile
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("ffmpeg exited 1"))
+      .mockResolvedValueOnce(undefined);
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onUserInput("来首歌");
+    expect(orc.getState().kind).toBe("playing");
+
+    await orc.onSongComplete();
+
+    const state = orc.getState();
+    expect(state.kind).toBe("playing");
+    if (state.kind === "playing") {
+      expect(state.song.id).toBe("t3");
+    }
+    const paths = deps.audio.playFile.mock.calls.map((c) => (c as unknown[])[0]);
+    expect(paths).toEqual(["/a.mp3", "/b.mp3", "/c.mp3"]);
+  });
+});
