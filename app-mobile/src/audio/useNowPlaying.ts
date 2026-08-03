@@ -3,6 +3,7 @@ import { LyraAudio } from "@lyra/platform-ios";
 import type { Orchestrator } from "@lyra/core";
 import type { OrchestratorState } from "@lyra/core/turn/Orchestrator.ts";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
+import { normalizeCoverUrl } from "../home/CoverBackground";
 
 /**
  * Pushes the current track to the iOS lock screen / Dynamic Island and
@@ -19,10 +20,14 @@ export function useNowPlaying(
 
   useEffect(() => {
     if (state.kind !== "playing" && state.kind !== "proactive-pending") return;
+    const coverRaw = state.song.metadata?.cover;
     void LyraAudio.setNowPlaying({
       title: songDisplayTitle(state.song),
       artist: songDisplayArtist(state.song),
       durationMs: state.song.duration_ms ?? 0,
+      coverUrl:
+        normalizeCoverUrl(typeof coverRaw === "string" ? coverRaw : null) ??
+        undefined,
     }).catch((e) => console.warn("[lyra-ios] setNowPlaying:", e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [songId]);

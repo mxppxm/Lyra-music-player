@@ -1,6 +1,9 @@
 import { LyraAudio } from "./nativeAudio.ts";
 import type { LyraPlatform } from "@lyra/platform";
 
+/** iOS ATS blocks plain-HTTP streams; bilibili CDN mirrors all serve HTTPS. */
+const toHttps = (url: string): string => url.replace(/^http:\/\//i, "https://");
+
 export const iosAudio: Pick<
   LyraPlatform,
   | "playUrl"
@@ -15,7 +18,7 @@ export const iosAudio: Pick<
   async playUrl(url, durationMs) {
     await iosAudio.stop();
     const { playbackId } = await LyraAudio.playUrl({
-      url,
+      url: toHttps(url),
       durationMs: durationMs ?? 0,
     });
     return playbackId;

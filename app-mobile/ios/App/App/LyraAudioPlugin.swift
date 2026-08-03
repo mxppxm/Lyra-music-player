@@ -3,6 +3,7 @@ import Capacitor
 import AVFoundation
 import MediaPlayer
 import ActivityKit
+import UIKit
 
 private let bilibiliUserAgent =
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
@@ -25,11 +26,29 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     private var player: AVPlayer?
     private var currentPlaybackId: Int = 0
     private var endObserver: NSObjectProtocol?
+    private var failObserver: NSObjectProtocol?
+    private var statusObservation: NSKeyValueObservation?
+    private var timeControlObservation: NSKeyValueObservation?
+    /// Only one "failed" event per playback — KVO and the failed-to-end
+    /// notification can both fire for the same broken item.
+    private var didEmitFailure = false
+    /// Download-fallback state (see startDownloadFallback).
+    private var didStartFallback = false
+    private var currentRemoteUrl: URL?
+    private var stallWorkItem: DispatchWorkItem?
+    private var downloadTask: URLSessionDataTask?
+    /// Tracks a pause that happened while the fallback download was still
+    /// in flight, so the completed download doesn't start blaring anyway.
+    private var userPaused = false
+    /// Codec fourcc of the last downloaded fallback file (diagnostics).
+    private var lastDownloadedCodec: String?
 
     // Metadata shown on the lock screen / Dynamic Island.
     private var nowPlayingTitle: String = ""
     private var nowPlayingArtist: String = ""
     private var nowPlayingDurationSeconds: Double = 0
+    private var artworkUrl: String = ""
+    private var artwork: MPMediaItemArtwork?
 
     @available(iOS 16.1, *)
     private var liveActivity: Activity<LyraLiveActivityAttributes>? {
@@ -41,13 +60,9 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
     override public func load() {
         super.load()
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("[LyraAudio] audio session setup failed: \(error)")
-        }
+        activateAudioSession()
         setupRemoteCommands()
+        setupAudioSessionObservers()
         // Live Activity buttons (App Intents) run in this process and reach
         // the plugin through the shared bridge.
         LyraPlaybackBridge.shared.toggleHandler = { [weak self] in
@@ -55,6 +70,67 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         LyraPlaybackBridge.shared.skipHandler = { [weak self] in
             self?.emitRemoteCommand("next")
+        }
+    }
+
+    /// The session can be deactivated by interruptions (calls, Siri, alarms,
+    /// other apps). Every playback entry point must re-activate it — a dead
+    /// session is silent while the player itself looks perfectly healthy.
+    private func activateAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("[LyraAudio] audio session activation failed: \(error)")
+        }
+    }
+
+    private func setupAudioSessionObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInterruption(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleInterruption(_ note: Notification) {
+        guard
+            let info = note.userInfo,
+            let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+            let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+        else { return }
+        switch type {
+        case .began:
+            // Route through the web Orchestrator so UI/lock screen stay
+            // consistent with the actual (now silent) output.
+            emitRemoteCommand("pause")
+        case .ended:
+            let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            if AVAudioSession.InterruptionOptions(rawValue: optionsValue).contains(.shouldResume) {
+                activateAudioSession()
+                emitRemoteCommand("play")
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    @objc private func handleRouteChange(_ note: Notification) {
+        guard
+            let info = note.userInfo,
+            let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+            let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue)
+        else { return }
+        // Headphones / bluetooth disconnected — pause like the system player.
+        if reason == .oldDeviceUnavailable {
+            emitRemoteCommand("pause")
         }
     }
 
@@ -67,17 +143,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
         DispatchQueue.main.async {
             self.stopInternal()
-
-            let headers: [String: Any] = [
-                "User-Agent": bilibiliUserAgent,
-                "Referer": bilibiliReferer,
-                "Origin": "https://www.bilibili.com",
-            ]
-            let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
-            let item = AVPlayerItem(asset: asset)
-            let player = AVPlayer(playerItem: item)
-            player.automaticallyWaitsToMinimizeStalling = true
-            self.player = player
+            self.activateAudioSession()
 
             if self.nowPlayingDurationSeconds <= 0, durationMs > 0 {
                 self.nowPlayingDurationSeconds = Double(durationMs) / 1000.0
@@ -85,18 +151,13 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
             self.currentPlaybackId += 1
             let playbackId = self.currentPlaybackId
+            self.didEmitFailure = false
+            self.didStartFallback = false
+            self.userPaused = false
+            self.lastDownloadedCodec = nil
+            self.currentRemoteUrl = url
 
-            self.endObserver = NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: item,
-                queue: .main
-            ) { [weak self] _ in
-                self?.notifyListeners("ended", data: ["playbackId": playbackId])
-            }
-
-            player.play()
-            self.publishNowPlayingInfo()
-            self.syncLiveActivity()
+            self.startPlayer(url: url, playbackId: playbackId, isLocalFile: false)
             call.resolve(["playbackId": playbackId, "durationMs": durationMs])
         }
     }
@@ -111,6 +172,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func pause(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
+            self.userPaused = true
             self.player?.pause()
             self.publishNowPlayingInfo()
             self.syncLiveActivity()
@@ -120,6 +182,8 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func resume(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
+            self.userPaused = false
+            self.activateAudioSession()
             self.player?.play()
             self.publishNowPlayingInfo()
             self.syncLiveActivity()
@@ -129,8 +193,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func isPlaying(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            let playing = self.player?.rate ?? 0 > 0
-            call.resolve(["isPlaying": playing])
+            call.resolve(["isPlaying": self.isActuallyPlaying])
         }
     }
 
@@ -156,14 +219,192 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         let title = call.getString("title") ?? ""
         let artist = call.getString("artist") ?? ""
         let durationMs = call.getInt("durationMs") ?? 0
+        let coverUrl = call.getString("coverUrl") ?? ""
         DispatchQueue.main.async {
             self.nowPlayingTitle = title
             self.nowPlayingArtist = artist
             self.nowPlayingDurationSeconds = Double(durationMs) / 1000.0
+            self.updateArtwork(coverUrl: coverUrl)
             self.publishNowPlayingInfo()
             self.syncLiveActivity()
             call.resolve()
         }
+    }
+
+    // MARK: - Dual-mode playback
+
+    /// Mode A: AVPlayer streams the URL directly (fastest start).
+    /// Mode B (fallback): if the stream errors out or stays silent for 10s,
+    /// download the file with our own URLSession (fully controlled headers)
+    /// and play it from disk. Bilibili audio streams are only 2–5 MB.
+    private func startPlayer(url: URL, playbackId: Int, isLocalFile: Bool) {
+        let asset: AVURLAsset
+        if isLocalFile {
+            asset = AVURLAsset(url: url)
+        } else {
+            let headers: [String: Any] = [
+                "User-Agent": bilibiliUserAgent,
+                "Referer": bilibiliReferer,
+                "Origin": "https://www.bilibili.com",
+            ]
+            asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        }
+        let item = AVPlayerItem(asset: asset)
+        let player = AVPlayer(playerItem: item)
+        player.automaticallyWaitsToMinimizeStalling = true
+        self.player = player
+
+        self.endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            self?.notifyListeners("ended", data: ["playbackId": playbackId])
+        }
+
+        self.statusObservation = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+            guard let self = self, observedItem.status == .failed else { return }
+            let message = self.describe(observedItem.error)
+            DispatchQueue.main.async {
+                guard self.currentPlaybackId == playbackId else { return }
+                if isLocalFile || self.didStartFallback {
+                    let codec = self.lastDownloadedCodec.map { " codec=\($0)" } ?? ""
+                    self.emitFailedOnce(playbackId: playbackId, message: "\(message)\(codec)")
+                } else {
+                    print("[LyraAudio] stream failed (\(message)); falling back to download")
+                    self.startDownloadFallback(playbackId: playbackId)
+                }
+            }
+        }
+
+        self.failObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] note in
+            guard let self = self, self.currentPlaybackId == playbackId else { return }
+            let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            if isLocalFile || self.didStartFallback {
+                self.emitFailedOnce(
+                    playbackId: playbackId,
+                    message: self.describe(error)
+                )
+            } else {
+                self.startDownloadFallback(playbackId: playbackId)
+            }
+        }
+
+        self.timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if observed.timeControlStatus == .playing {
+                    self.stallWorkItem?.cancel()
+                }
+                self.publishNowPlayingInfo()
+                self.syncLiveActivity()
+            }
+        }
+
+        if !isLocalFile {
+            armStallTimer(playbackId: playbackId)
+        }
+
+        player.play()
+        publishNowPlayingInfo()
+        syncLiveActivity()
+    }
+
+    /// If the stream hasn't produced audible playback within 10s it's
+    /// effectively dead ("waiting to play" forever) — fall back to download.
+    private func armStallTimer(playbackId: Int) {
+        stallWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            guard
+                self.currentPlaybackId == playbackId,
+                self.player != nil,
+                !self.isActuallyPlaying,
+                !self.didStartFallback
+            else { return }
+            print("[LyraAudio] stream silent >10s; falling back to download")
+            self.startDownloadFallback(playbackId: playbackId)
+        }
+        stallWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+    }
+
+    private func startDownloadFallback(playbackId: Int) {
+        guard
+            let url = currentRemoteUrl,
+            currentPlaybackId == playbackId,
+            !didStartFallback
+        else { return }
+        didStartFallback = true
+        stallWorkItem?.cancel()
+
+        // Tear down the streaming player but keep Now Playing metadata —
+        // it's still the same song.
+        stopInternal()
+        activateAudioSession()
+
+        var request = URLRequest(url: url)
+        request.setValue(bilibiliUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(bilibiliReferer, forHTTPHeaderField: "Referer")
+        request.setValue("https://www.bilibili.com", forHTTPHeaderField: "Origin")
+        // Raw bytes only — a brotli/gzip-encoded body saved to disk is not a
+        // playable MP4, and some mirror nodes compress regardless.
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+
+        downloadTask = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self = self, self.currentPlaybackId == playbackId else { return }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                guard
+                    let data = data,
+                    statusCode == 200,
+                    error == nil,
+                    data.count > 1024
+                else {
+                    let reason = error != nil
+                        ? self.describe(error)
+                        : "http \(statusCode)"
+                    let host = self.currentRemoteUrl?.host ?? "unknown-host"
+                    self.emitFailedOnce(
+                        playbackId: playbackId,
+                        message: "download: \(reason) @ \(host)"
+                    )
+                    return
+                }
+                // A 200 doesn't mean audio — error pages and compressed bodies
+                // also come back 200. Every playable stream starts with an
+                // MP4 "ftyp" box; if it isn't there, show what the CDN
+                // actually sent instead of dying later with "Cannot Open".
+                guard Self.looksLikeMP4(data) else {
+                    let host = self.currentRemoteUrl?.host ?? "unknown-host"
+                    self.emitFailedOnce(
+                        playbackId: playbackId,
+                        message: "200 but not audio @ \(host): \(Self.sample(of: data))"
+                    )
+                    return
+                }
+                do {
+                    let tmp = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("lyra-\(playbackId).m4s")
+                    try data.write(to: tmp, options: .atomic)
+                    self.lastDownloadedCodec = Self.codecFourCC(in: data)
+                    print("[LyraAudio] fallback file codec=\(self.lastDownloadedCodec ?? "?") size=\(data.count)")
+                    self.startPlayer(url: tmp, playbackId: playbackId, isLocalFile: true)
+                    if self.userPaused {
+                        self.player?.pause()
+                        self.publishNowPlayingInfo()
+                        self.syncLiveActivity()
+                    }
+                } catch {
+                    self.emitFailedOnce(playbackId: playbackId, message: "failed to store downloaded audio")
+                }
+            }
+        }
+        downloadTask?.resume()
     }
 
     // MARK: - Internals
@@ -173,20 +414,120 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             NotificationCenter.default.removeObserver(observer)
             endObserver = nil
         }
+        if let observer = failObserver {
+            NotificationCenter.default.removeObserver(observer)
+            failObserver = nil
+        }
+        statusObservation?.invalidate()
+        statusObservation = nil
+        timeControlObservation?.invalidate()
+        timeControlObservation = nil
+        stallWorkItem?.cancel()
+        stallWorkItem = nil
+        downloadTask?.cancel()
+        downloadTask = nil
         player?.pause()
         player = nil
+    }
+
+    private func emitFailedOnce(playbackId: Int, message: String) {
+        guard currentPlaybackId == playbackId, !didEmitFailure else { return }
+        didEmitFailure = true
+        print("[LyraAudio] playback \(playbackId) failed: \(message)")
+        notifyListeners("failed", data: ["playbackId": playbackId, "message": message])
+    }
+
+    /// Reads the codec fourcc from the first stsd sample entry (mp4a, ac-3,
+    /// ec-3, …) — the smoking gun when a valid MP4 still won't play.
+    static func codecFourCC(in data: Data) -> String {
+        let window = data.prefix(8192)
+        guard let stsd = window.range(of: Data("stsd".utf8)) else { return "?" }
+        let entryStart = stsd.upperBound + 8 // version/flags + entry_count
+        guard window.count > entryStart + 8 else { return "?" }
+        let codec = window[(entryStart + 4)..<(entryStart + 8)]
+        return String(decoding: codec, as: UTF8.self)
+    }
+
+    /// MP4-family containers open with a box header whose type sits at bytes
+    /// 4–8 (ftyp / styp / moov). Anything else is not playable audio.
+    static func looksLikeMP4(_ data: Data) -> Bool {
+        guard data.count > 8 else { return false }
+        let type = data[4..<8]
+        return type == Data("ftyp".utf8)
+            || type == Data("styp".utf8)
+            || type == Data("moov".utf8)
+    }
+
+    /// Printable prefix of a non-audio payload, so the failure message shows
+    /// what the CDN actually returned (error XML, HTML, garbage…).
+    static func sample(of data: Data, limit: Int = 120) -> String {
+        let prefix = data.prefix(limit).map { byte -> Character in
+            (byte >= 0x20 && byte < 0x7f) ? Character(UnicodeScalar(byte)) : "."
+        }
+        return "\"\(String(prefix))\""
+    }
+
+    /// AVPlayer's localizedDescription is uselessly generic ("Cannot Open").
+    /// The diagnostic value lives in domain/code and the underlying error
+    /// chain, e.g. "CoreMediaErrorDomain -12642 ← NSURLErrorDomain -1002".
+    private func describe(_ error: Error?) -> String {
+        guard let nsError = error as NSError? else { return "unknown error" }
+        var parts = ["\(nsError.domain) \(nsError.code)"]
+        var underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
+        while let current = underlying {
+            parts.append("\(current.domain) \(current.code)")
+            underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        if let host = currentRemoteUrl?.host {
+            parts.append("@ \(host)")
+        }
+        return parts.joined(separator: " ← ")
     }
 
     private func clearNowPlaying() {
         nowPlayingTitle = ""
         nowPlayingArtist = ""
         nowPlayingDurationSeconds = 0
+        artworkUrl = ""
+        artwork = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         endLiveActivity()
     }
 
-    private var isPlayingNow: Bool {
-        (player?.rate ?? 0) > 0
+    /// Downloads the cover once per URL and republishes Now Playing info so
+    /// iOS can pick it up as the lock-screen artwork.
+    private func updateArtwork(coverUrl: String) {
+        guard coverUrl != artworkUrl else { return }
+        artworkUrl = coverUrl
+        artwork = nil
+        guard !coverUrl.isEmpty, let url = URL(string: coverUrl) else { return }
+        // hdslb.com runs a Referer allowlist — send the bilibili one explicitly.
+        var request = URLRequest(url: url)
+        request.setValue(bilibiliUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(bilibiliReferer, forHTTPHeaderField: "Referer")
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                // A newer track may have replaced this one while downloading.
+                guard self.artworkUrl == coverUrl,
+                      let data = data,
+                      let image = UIImage(data: data)
+                else { return }
+                self.artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                self.publishNowPlayingInfo()
+            }
+        }.resume()
+    }
+
+    /// rate stays 1 while AVPlayer is merely "waiting to play" (buffering) —
+    /// timeControlStatus is the only honest signal, and it's what keeps the
+    /// lock-screen scrubber from running while nothing is actually audible.
+    private var isActuallyPlaying: Bool {
+        player?.timeControlStatus == .playing
+    }
+
+    private func playbackRateForNowPlaying() -> Float {
+        isActuallyPlaying ? (player?.rate ?? 0) : 0
     }
 
     private func currentPositionSeconds() -> Double {
@@ -238,11 +579,14 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             MPMediaItemPropertyTitle: nowPlayingTitle,
             MPMediaItemPropertyArtist: nowPlayingArtist,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentPositionSeconds(),
-            MPNowPlayingInfoPropertyPlaybackRate: player?.rate ?? 0,
+            MPNowPlayingInfoPropertyPlaybackRate: playbackRateForNowPlaying(),
             MPNowPlayingInfoPropertyMediaType: NSNumber(value: MPMediaType.music.rawValue),
         ]
         if nowPlayingDurationSeconds > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = nowPlayingDurationSeconds
+        }
+        if let artwork = artwork {
+            info[MPMediaItemPropertyArtwork] = artwork
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
@@ -252,18 +596,25 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentPositionSeconds()
-        info[MPNowPlayingInfoPropertyPlaybackRate] = player?.rate ?? 0
+        info[MPNowPlayingInfoPropertyPlaybackRate] = playbackRateForNowPlaying()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     // MARK: - Live Activity (Dynamic Island)
 
+    /// Disabled: the Live Activity lock-screen banner duplicated the system
+    /// Now Playing controls, and ActivityKit cannot show a Dynamic Island
+    /// without the lock-screen banner — so the system surface wins.
+    /// Re-enable by removing the early return; endLiveActivity stays active
+    /// to clean up any activity started by older builds.
     private func syncLiveActivity() {
+        return
+        // swiftlint:disable:next unreachable_code
         guard #available(iOS 16.1, *) else { return }
         let state = LyraLiveActivityAttributes.ContentState(
             title: nowPlayingTitle,
             artist: nowPlayingArtist,
-            isPlaying: isPlayingNow,
+            isPlaying: isActuallyPlaying,
             durationSeconds: nowPlayingDurationSeconds,
             positionSeconds: currentPositionSeconds(),
             updatedAt: Date()

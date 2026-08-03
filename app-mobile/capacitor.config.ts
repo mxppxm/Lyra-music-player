@@ -6,7 +6,9 @@ const config: CapacitorConfig = {
   webDir: "dist",
   ios: {
     backgroundColor: "#faf8f5",
-    contentInset: "automatic",
+    // The page manages safe areas itself via env(safe-area-inset-*) — let the
+    // ambient background paint edge to edge (notch + home indicator).
+    contentInset: "never",
   },
   plugins: {},
 };

@@ -3,6 +3,8 @@ import { IconNext, IconPause, IconPlay, IconPrev } from "./icons";
 export type PlayerControlsProps = {
   canControl: boolean;
   paused: boolean;
+  /** Stream is still loading / buffering — nothing audible yet. */
+  loading?: boolean;
   onTogglePlay: () => void;
   onSkip: () => void;
 };
@@ -10,6 +12,7 @@ export type PlayerControlsProps = {
 export function PlayerControls({
   canControl,
   paused,
+  loading = false,
   onTogglePlay,
   onSkip,
 }: PlayerControlsProps) {
@@ -30,11 +33,17 @@ export function PlayerControls({
         className="lyra-mobile-control-btn lyra-mobile-control-btn--primary"
         disabled={!canControl}
         onClick={onTogglePlay}
-        title={canControl && !paused ? "暂停" : "播放"}
-        aria-label={canControl && !paused ? "暂停" : "播放"}
+        title={loading ? "加载中" : canControl && !paused ? "暂停" : "播放"}
+        aria-label={loading ? "加载中" : canControl && !paused ? "暂停" : "播放"}
         data-testid="play-pause-btn"
       >
-        {canControl && !paused ? <IconPause /> : <IconPlay />}
+        {loading ? (
+          <span className="lyra-mobile-control-spinner" aria-hidden />
+        ) : canControl && !paused ? (
+          <IconPause />
+        ) : (
+          <IconPlay />
+        )}
       </button>
 
       <button

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AmbientBackground } from "./AmbientBackground";
+import { CoverBackground, CoverArt } from "./CoverBackground";
 import { SongInfo } from "./SongInfo";
 import { SmallNote } from "./SmallNote";
 import { InputBox } from "./InputBox";
@@ -7,6 +8,7 @@ import { PlayerControls } from "./PlayerControls";
 import { ProgressBar, progressLabel } from "./ProgressBar";
 import { useProgress } from "../audio/useProgress";
 import { useNowPlaying } from "../audio/useNowPlaying";
+import { useAutoAdvance } from "../audio/useAutoAdvance";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "@lyra/core";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
@@ -23,6 +25,8 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   const playing = state.kind === "playing";
   const progress = useProgress(playing);
   useNowPlaying(orchestrator, state);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+  useAutoAdvance(orchestrator, setPlaybackError);
   const [dockExpanded, setDockExpanded] = useState(false);
 
   const title: string =
@@ -35,21 +39,35 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
       ? songDisplayArtist(state.song)
       : "";
 
+  // Surface native playback failures in the note area — the only way to see
+  // *why* a track won't play without attaching a debugger.
+  const currentSongId =
+    state.kind === "playing" || state.kind === "proactive-pending"
+      ? state.song.id
+      : null;
+  useEffect(() => {
+    setPlaybackError(null);
+  }, [currentSongId]);
+
   const noteText: string =
-    state.kind === "idle"
-      ? "Lyra 在等你说一句话"
-      : state.kind === "thinking"
-        ? "…"
-        : state.kind === "playing"
-          ? state.turn.agent_response.rationale
-          : state.kind === "proactive-pending"
-            ? state.rationale
-            : state.kind === "error"
-              ? state.message
-              : "";
+    playbackError !== null
+      ? `这首歌没能放出来：${playbackError}`
+      : state.kind === "idle"
+        ? "Lyra 在等你说一句话"
+        : state.kind === "thinking"
+          ? "…"
+          : state.kind === "playing"
+            ? state.turn.agent_response.rationale
+            : state.kind === "proactive-pending"
+              ? state.rationale
+              : state.kind === "error"
+                ? state.message
+                : "";
 
   const noteColor: string | undefined =
-    state.kind === "error" ? "rgba(200,80,80,0.75)" : undefined;
+    playbackError !== null || state.kind === "error"
+      ? "rgba(200,80,80,0.75)"
+      : undefined;
 
   const handleTogglePlay = () => {
     if (state.kind !== "playing") return;
@@ -67,6 +85,12 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
 
   const pad: PAD =
     state.kind === "playing" ? state.turn.current_emotion.pad : ZERO_PAD;
+
+  const coverRaw =
+    state.kind === "playing" || state.kind === "proactive-pending"
+      ? state.song.metadata?.cover
+      : null;
+  const coverUrl = typeof coverRaw === "string" ? coverRaw : null;
 
   const isSparseIdle = state.kind === "idle";
 
@@ -88,8 +112,10 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
 
   return (
     <AmbientBackground pad={pad}>
+      <CoverBackground url={coverUrl} />
       <div className="lyra-mobile-stage">
         <div className="lyra-mobile-content">
+          <CoverArt url={coverUrl} />
           <SongInfo title={title} artist={artist} />
           <SmallNote text={noteText} color={noteColor} />
         </div>
@@ -113,6 +139,9 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
           <PlayerControls
             canControl={playing}
             paused={state.kind === "playing" ? Boolean(state.paused) : true}
+            loading={
+              state.kind === "playing" && !state.paused && progress === null
+            }
             onTogglePlay={handleTogglePlay}
             onSkip={handleSkip}
           />

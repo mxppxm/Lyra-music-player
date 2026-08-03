@@ -17,10 +17,15 @@ export interface LyraAudioPlugin {
     title: string;
     artist: string;
     durationMs?: number;
+    coverUrl?: string;
   }): Promise<void>;
   addListener(
     eventName: "ended",
     listenerFunc: (data: { playbackId: number }) => void,
+  ): Promise<{ remove: () => void }>;
+  addListener(
+    eventName: "failed",
+    listenerFunc: (data: { playbackId: number; message: string }) => void,
   ): Promise<{ remove: () => void }>;
   addListener(
     eventName: "remoteCommand",
