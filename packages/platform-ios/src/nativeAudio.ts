@@ -19,6 +19,11 @@ export interface LyraAudioPlugin {
     durationMs?: number;
     coverUrl?: string;
   }): Promise<void>;
+  /** Clear a natural-completion the web layer has handled. */
+  acknowledgeEnded(): Promise<void>;
+  /** Returns a completion still waiting for JS (background suspend). */
+  getPendingEnded(): Promise<{ playbackId: number | null }>;
+  seek(options: { positionMs: number }): Promise<void>;
   addListener(
     eventName: "ended",
     listenerFunc: (data: { playbackId: number }) => void,

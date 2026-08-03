@@ -11,21 +11,23 @@ import "./home/mobile.css";
 
 const ZERO_PAD = { p: 0, a: 0, d: 0 };
 
-/** Corner stamp so any screenshot proves exactly which build is installed. */
+/** Build stamp centered at bottom — easy to read in screenshots. */
 function BuildStamp() {
   return (
     <div
       data-testid="build-stamp"
       style={{
         position: "fixed",
-        right: 8,
-        bottom: 4,
-        fontSize: 10,
+        left: "50%",
+        transform: "translateX(-50%)",
+        bottom: 6,
+        fontSize: 11,
         lineHeight: 1.2,
-        opacity: 0.35,
+        opacity: 0.45,
         zIndex: 50,
         pointerEvents: "none",
         fontFamily: "monospace",
+        textAlign: "center",
       }}
     >
       {__LYRA_BUILD_TIME__}

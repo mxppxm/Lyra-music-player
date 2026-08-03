@@ -633,7 +633,7 @@ button.lyra-mobile-idle-slogan:active {
 }
 
 .lyra-mobile-progress-wrap--show {
-  max-height: 32px;
+  max-height: 44px;
   margin-top: 0;
   opacity: 1;
   transform: none;
@@ -650,12 +650,27 @@ button.lyra-mobile-idle-slogan:active {
   gap: 8px;
 }
 
+.lyra-mobile-progress__hit {
+  width: 100%;
+  padding: 10px 0;
+  margin: -10px 0;
+}
+
+.lyra-mobile-progress__hit--seekable {
+  cursor: pointer;
+  touch-action: none;
+}
+
 .lyra-mobile-progress__track {
   width: 100%;
   height: 3px;
   border-radius: 999px;
   background: var(--lyra-progress-track-bg);
   overflow: hidden;
+}
+
+.lyra-mobile-progress__hit--dragging .lyra-mobile-progress__fill {
+  transition: none;
 }
 
 .lyra-mobile-progress__fill {
@@ -725,6 +740,12 @@ button.lyra-mobile-idle-slogan:active {
 }
 
 /* ── Immersive mode ───────────────────────────────────────────────────── */
+
+html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none;
+}
 
 /* Hidden with opacity/translate (never display:none) so the cover art
  * doesn't jump — everything keeps its layout box while fading. */

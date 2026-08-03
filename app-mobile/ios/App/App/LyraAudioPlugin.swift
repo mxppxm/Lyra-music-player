@@ -21,6 +21,9 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isPlaying", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPosition", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setNowPlaying", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "seek", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "acknowledgeEnded", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPendingEnded", returnType: CAPPluginReturnPromise),
     ]
 
     private var player: AVPlayer?
@@ -42,6 +45,18 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     private var userPaused = false
     /// Codec fourcc of the last downloaded fallback file (diagnostics).
     private var lastDownloadedCodec: String?
+    /// Natural completion the web layer hasn't acknowledged yet — WKWebView
+    /// JS is suspended in background, so we re-emit on foreground.
+    private var pendingEndedPlaybackId: Int?
+    private var endBackgroundTaskId: UIBackgroundTaskIdentifier = .invalid
+    /// Starts a background task ~20s before track end while backgrounded so
+    /// auto-advance has time to run LLM + start the next song.
+    private var endProximityObserver: Any?
+    /// Bilibili m4s streams often never fire DidPlayToEndTime — mirror the
+    /// desktop fallback timer (duration + 750ms slack).
+    private var fallbackEndWorkItem: DispatchWorkItem?
+    private var endedEmittedForPlaybackId: Int = -1
+    private var currentTrackDurationMs: Int = 0
 
     // Metadata shown on the lock screen / Dynamic Island.
     private var nowPlayingTitle: String = ""
@@ -71,6 +86,12 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         LyraPlaybackBridge.shared.skipHandler = { [weak self] in
             self?.emitRemoteCommand("next")
         }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
     }
 
     /// The session can be deactivated by interruptions (calls, Siri, alarms,
@@ -156,8 +177,11 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             self.userPaused = false
             self.lastDownloadedCodec = nil
             self.currentRemoteUrl = url
+            self.currentTrackDurationMs = durationMs
+            self.endedEmittedForPlaybackId = -1
 
             self.startPlayer(url: url, playbackId: playbackId, isLocalFile: false)
+            self.scheduleFallbackEnd(playbackId: playbackId)
             call.resolve(["playbackId": playbackId, "durationMs": durationMs])
         }
     }
@@ -215,6 +239,24 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func seek(_ call: CAPPluginCall) {
+        let positionMs = call.getInt("positionMs") ?? 0
+        DispatchQueue.main.async {
+            guard let player = self.player else {
+                call.reject("no player")
+                return
+            }
+            let playbackId = self.currentPlaybackId
+            let seconds = max(0, Double(positionMs) / 1000.0)
+            player.seek(to: CMTime(seconds: seconds, preferredTimescale: 1000)) { [weak self] _ in
+                guard let self = self else { return }
+                self.publishNowPlayingInfo()
+                self.scheduleFallbackEnd(playbackId: playbackId, fromPositionMs: positionMs)
+                call.resolve()
+            }
+        }
+    }
+
     @objc func setNowPlaying(_ call: CAPPluginCall) {
         let title = call.getString("title") ?? ""
         let artist = call.getString("artist") ?? ""
@@ -228,6 +270,24 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             self.publishNowPlayingInfo()
             self.syncLiveActivity()
             call.resolve()
+        }
+    }
+
+    @objc func acknowledgeEnded(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.pendingEndedPlaybackId = nil
+            self.endEndBackgroundTask()
+            call.resolve()
+        }
+    }
+
+    @objc func getPendingEnded(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            if let id = self.pendingEndedPlaybackId {
+                call.resolve(["playbackId": id])
+            } else {
+                call.resolve(["playbackId": NSNull()])
+            }
         }
     }
 
@@ -259,7 +319,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             object: item,
             queue: .main
         ) { [weak self] _ in
-            self?.notifyListeners("ended", data: ["playbackId": playbackId])
+            self?.handlePlaybackEnded(playbackId: playbackId)
         }
 
         self.statusObservation = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
@@ -310,6 +370,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         player.play()
+        installEndProximityObserver(playbackId: playbackId)
         publishNowPlayingInfo()
         syncLiveActivity()
     }
@@ -410,6 +471,11 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Internals
 
     private func stopInternal() {
+        removeEndProximityObserver()
+        fallbackEndWorkItem?.cancel()
+        fallbackEndWorkItem = nil
+        pendingEndedPlaybackId = nil
+        endEndBackgroundTask()
         if let observer = endObserver {
             NotificationCenter.default.removeObserver(observer)
             endObserver = nil
@@ -538,6 +604,94 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func emitRemoteCommand(_ command: String) {
         notifyListeners("remoteCommand", data: ["command": command])
+    }
+
+    @objc private func handleDidBecomeActive() {
+        guard let playbackId = pendingEndedPlaybackId else { return }
+        emitEnded(playbackId: playbackId)
+    }
+
+    private func handlePlaybackEnded(playbackId: Int) {
+        guard currentPlaybackId == playbackId else { return }
+        guard endedEmittedForPlaybackId != playbackId else { return }
+        endedEmittedForPlaybackId = playbackId
+        fallbackEndWorkItem?.cancel()
+        fallbackEndWorkItem = nil
+        pendingEndedPlaybackId = playbackId
+        beginEndBackgroundTask()
+        print("[LyraAudio] playback \(playbackId) ended")
+        emitEnded(playbackId: playbackId)
+    }
+
+    /// Fires handlePlaybackEnded when AVPlayer's end notification is missing.
+    private func scheduleFallbackEnd(playbackId: Int, fromPositionMs: Int = 0) {
+        fallbackEndWorkItem?.cancel()
+        guard endedEmittedForPlaybackId != playbackId else { return }
+        let durationMs = currentTrackDurationMs
+        guard durationMs > 0 else { return }
+        let remainingMs = max(0, durationMs - fromPositionMs)
+        if remainingMs <= 0 {
+            handlePlaybackEnded(playbackId: playbackId)
+            return
+        }
+        let slackMs = 750
+        let delay = Double(remainingMs + slackMs) / 1000.0
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, !self.userPaused else { return }
+            self.handlePlaybackEnded(playbackId: playbackId)
+        }
+        fallbackEndWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func emitEnded(playbackId: Int) {
+        notifyListeners("ended", data: ["playbackId": playbackId])
+    }
+
+    private func beginEndBackgroundTask() {
+        guard endBackgroundTaskId == .invalid else { return }
+        endBackgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "LyraAutoAdvance") { [weak self] in
+            self?.endEndBackgroundTask()
+        }
+    }
+
+    private func endEndBackgroundTask() {
+        guard endBackgroundTaskId != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(endBackgroundTaskId)
+        endBackgroundTaskId = .invalid
+    }
+
+    /// While backgrounded, start a background task shortly before the track
+    /// ends so the web Orchestrator can pick and start the next song.
+    private func installEndProximityObserver(playbackId: Int) {
+        removeEndProximityObserver()
+        guard let player = player else { return }
+        let interval = CMTime(seconds: 1, preferredTimescale: 1)
+        endProximityObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard
+                let self = self,
+                self.currentPlaybackId == playbackId,
+                !self.userPaused,
+                let item = self.player?.currentItem
+            else { return }
+            let durationSec = CMTimeGetSeconds(item.duration)
+            let elapsedSec = CMTimeGetSeconds(time)
+            let metaDuration = self.nowPlayingDurationSeconds
+            let effectiveDuration =
+                durationSec.isFinite && durationSec > 0 ? durationSec : metaDuration
+            guard effectiveDuration > 0, elapsedSec.isFinite else { return }
+            let remaining = effectiveDuration - elapsedSec
+            if remaining <= 20 && remaining > 0 && UIApplication.shared.applicationState != .active {
+                self.beginEndBackgroundTask()
+            }
+        }
+    }
+
+    private func removeEndProximityObserver() {
+        if let observer = endProximityObserver, let player = player {
+            player.removeTimeObserver(observer)
+        }
+        endProximityObserver = nil
     }
 
     // MARK: - Lock screen (Now Playing + remote commands)

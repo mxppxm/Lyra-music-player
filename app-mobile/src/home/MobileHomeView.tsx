@@ -17,6 +17,7 @@ import type { Orchestrator } from "@lyra/core";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
 import type { PAD } from "../lib/color";
 import { setImmersiveStatusBar } from "./immersiveStatusBar";
+import { LyraAudio } from "@lyra/platform-ios";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 const LYRA_START_LABEL = "让 Lyra 帮你启动";
@@ -31,7 +32,6 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   const progress = useProgress(playing);
   useNowPlaying(orchestrator, state);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
-  useAutoAdvance(orchestrator, setPlaybackError);
   const [dockExpanded, setDockExpanded] = useState(false);
   const [immersive, setImmersive] = useState(false);
   const coverShiftRef = useRef<HTMLDivElement>(null);
@@ -49,6 +49,17 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
     void setImmersiveStatusBar(immersive);
     return () => {
       void setImmersiveStatusBar(false);
+    };
+  }, [immersive]);
+
+  useEffect(() => {
+    if (immersive) {
+      document.documentElement.dataset.lyraImmersive = "true";
+    } else {
+      delete document.documentElement.dataset.lyraImmersive;
+    }
+    return () => {
+      delete document.documentElement.dataset.lyraImmersive;
     };
   }, [immersive]);
 
@@ -91,6 +102,13 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   useEffect(() => {
     setPlaybackError(null);
   }, [currentSongId]);
+
+  useAutoAdvance(orchestrator, setPlaybackError, {
+    songId: currentSongId,
+    playing: state.kind === "playing",
+    paused: state.kind === "playing" ? Boolean(state.paused) : true,
+    progress: progress?.progress ?? 0,
+  });
 
   const noteText: string =
     playbackError !== null
@@ -214,15 +232,23 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
               .filter(Boolean)
               .join(" ")}
             aria-hidden={!progress}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <div className="lyra-mobile-progress-wrap__inner">
               <ProgressBar
                 progress={progress?.progress ?? 0}
+                durationMs={progress?.durationMs ?? 0}
                 label={
                   progress
                     ? progressLabel(progress.elapsedMs, progress.durationMs)
                     : ""
                 }
+                onSeek={(positionMs) => {
+                  void LyraAudio.seek({ positionMs }).catch((err) => {
+                    console.warn("[lyra-ios] seek:", err);
+                  });
+                }}
               />
             </div>
           </div>
