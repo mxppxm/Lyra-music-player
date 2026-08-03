@@ -66,4 +66,39 @@ describe("DeepSeekProvider", () => {
     const p = new DeepSeekProvider({ apiKey: "x" });
     await expect(p.chat([{ role: "user", content: "hi" }])).rejects.toThrow(/429/);
   });
+
+  it("retries on 503 and succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock
+        .mockResolvedValueOnce({ ok: false, status: 503, text: async () => "busy" })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: "recovered" } }] }),
+        });
+      const p = new DeepSeekProvider({ apiKey: "x" });
+      const promise = p.chat([{ role: "user", content: "hi" }]);
+      await vi.advanceTimersByTimeAsync(1000);
+      const res = await promise;
+      expect(res.content).toBe("recovered");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("throws after exhausting 503 retries", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue({ ok: false, status: 503, text: async () => "busy" });
+      const p = new DeepSeekProvider({ apiKey: "x" });
+      const promise = p.chat([{ role: "user", content: "hi" }]);
+      const assertion = expect(promise).rejects.toThrow(/503/);
+      await vi.advanceTimersByTimeAsync(3000);
+      await assertion;
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

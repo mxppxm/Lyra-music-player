@@ -9,6 +9,7 @@ const DEFAULT_MODEL = "deepseek-chat";
 // Hard-coded to match the CSP connect-src allowlist in tauri.conf.json.
 // If this ever changes, update the CSP simultaneously.
 const ENDPOINT = "https://api.deepseek.com/v1/chat/completions";
+const MAX_ATTEMPTS = 3;
 
 export class DeepSeekProvider implements ModelProvider {
   readonly id = "deepseek" as const;
@@ -30,14 +31,7 @@ export class DeepSeekProvider implements ModelProvider {
     if (opts?.temperature != null) body.temperature = opts.temperature;
     if (opts?.response_format) body.response_format = opts.response_format;
 
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const res = await this.post(JSON.stringify(body));
 
     if (!res.ok) {
       const text = await res.text();
@@ -54,5 +48,22 @@ export class DeepSeekProvider implements ModelProvider {
       : undefined;
 
     return { content, model: opts?.model ?? this.defaultModel, usage, raw: data };
+  }
+
+  // DeepSeek load-sheds under pressure: 503s are transient, retry with backoff.
+  private async post(body: string, attempt = 1): Promise<Response> {
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.apiKey}`,
+        "content-type": "application/json",
+      },
+      body,
+    });
+    if (res.status === 503 && attempt < MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      return this.post(body, attempt + 1);
+    }
+    return res;
   }
 }
