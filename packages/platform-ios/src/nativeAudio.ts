@@ -24,9 +24,49 @@ export interface LyraAudioPlugin {
   /** Returns a completion still waiting for JS (background suspend). */
   getPendingEnded(): Promise<{ playbackId: number | null }>;
   seek(options: { positionMs: number }): Promise<void>;
+  /** Queue the next track for native seamless handoff (background auto-advance). */
+  setNextTrack(options: {
+    url: string;
+    songId: string;
+    title: string;
+    artist: string;
+    durationMs?: number;
+    coverUrl?: string;
+  }): Promise<{ count: number }>;
+  clearNextTrack(): Promise<void>;
+  appendToPlaybackQueue(options: {
+    tracks: Array<{
+      url: string;
+      songId: string;
+      title: string;
+      artist: string;
+      durationMs?: number;
+      coverUrl?: string;
+    }>;
+  }): Promise<{ count: number; appended: number }>;
+  getPlaybackQueueInfo(): Promise<{ count: number; songIds: string[] }>;
+  drainNativeAdvanced(): Promise<{
+    events: Array<{
+      songId: string;
+      playbackId: number;
+      previousPlaybackId: number;
+    }>;
+  }>;
   addListener(
     eventName: "ended",
     listenerFunc: (data: { playbackId: number }) => void,
+  ): Promise<{ remove: () => void }>;
+  addListener(
+    eventName: "nativeAdvanced",
+    listenerFunc: (data: {
+      playbackId: number;
+      songId: string;
+      previousPlaybackId: number;
+    }) => void,
+  ): Promise<{ remove: () => void }>;
+  addListener(
+    eventName: "refillQueue",
+    listenerFunc: (data: { remaining: number }) => void,
   ): Promise<{ remove: () => void }>;
   addListener(
     eventName: "failed",

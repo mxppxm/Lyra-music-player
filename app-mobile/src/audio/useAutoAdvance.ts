@@ -10,12 +10,13 @@ export type AutoAdvancePlayback = {
   paused: boolean;
   /** 0–1 from progress bar; JS fallback when native end event is missing. */
   progress: number;
+  elapsedMs?: number;
+  durationMs?: number;
 };
 
 /**
  * Natural completion → orchestrator.onSongComplete() → next song.
- * iOS suspends WKWebView JS in background; native keeps a pending-ended
- * flag and re-emits on foreground. We also poll pending on resume.
+ * Native queue path emits `nativeAdvanced` / drains unsynced events on resume.
  */
 export function useAutoAdvance(
   orchestrator: Orchestrator,
@@ -44,26 +45,64 @@ export function useAutoAdvance(
       return chain;
     };
 
+    const syncNativeAdvance = (songId: string): Promise<void> => {
+      if (chain) return chain;
+      chain = (async () => {
+        try {
+          await orchestrator.onNativeAutoAdvanced(songId);
+        } finally {
+          chain = null;
+        }
+      })();
+      return chain;
+    };
+
+    const drainUnsyncedNative = async () => {
+      try {
+        const { events } = await LyraAudio.drainNativeAdvanced();
+        for (const event of events) {
+          const songId = event.songId;
+          if (typeof songId === "string" && songId.length > 0) {
+            await syncNativeAdvance(songId);
+          }
+        }
+      } catch {
+        /* web preview / tests */
+      }
+    };
+
     const offComplete = getLyraPlatform().onComplete(() => {
       void advance();
+    });
+
+    let removeNative: (() => void) | undefined;
+    void LyraAudio.addListener("nativeAdvanced", ({ songId }) => {
+      void syncNativeAdvance(songId);
+    }).then((r) => {
+      removeNative = r.remove;
     });
 
     let removeApp: (() => void) | undefined;
     void App.addListener("appStateChange", ({ isActive }) => {
       if (!isActive) return;
-      void LyraAudio.getPendingEnded().then(({ playbackId }) => {
-        if (playbackId != null) void advance();
-      });
+      void drainUnsyncedNative().then(() =>
+        LyraAudio.getPendingEnded().then(({ playbackId }) => {
+          if (playbackId != null) void advance();
+        }),
+      );
     }).then((r) => {
       removeApp = r.remove;
     });
 
-    void LyraAudio.getPendingEnded().then(({ playbackId }) => {
-      if (playbackId != null) void advance();
-    });
+    void drainUnsyncedNative().then(() =>
+      LyraAudio.getPendingEnded().then(({ playbackId }) => {
+        if (playbackId != null) void advance();
+      }),
+    );
 
     return () => {
       offComplete();
+      removeNative?.();
       removeApp?.();
     };
   }, [orchestrator]);

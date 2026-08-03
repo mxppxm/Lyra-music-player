@@ -12,6 +12,7 @@ import { ProgressBar, progressLabel } from "./ProgressBar";
 import { useProgress } from "../audio/useProgress";
 import { useNowPlaying } from "../audio/useNowPlaying";
 import { useAutoAdvance } from "../audio/useAutoAdvance";
+import { usePrefetchNext } from "../audio/usePrefetchNext";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "@lyra/core";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
@@ -104,6 +105,15 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   }, [currentSongId]);
 
   useAutoAdvance(orchestrator, setPlaybackError, {
+    songId: currentSongId,
+    playing: state.kind === "playing",
+    paused: state.kind === "playing" ? Boolean(state.paused) : true,
+    progress: progress?.progress ?? 0,
+    elapsedMs: progress?.elapsedMs,
+    durationMs: progress?.durationMs,
+  });
+
+  usePrefetchNext(orchestrator, {
     songId: currentSongId,
     playing: state.kind === "playing",
     paused: state.kind === "playing" ? Boolean(state.paused) : true,

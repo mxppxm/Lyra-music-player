@@ -169,7 +169,7 @@ export function createDefaultOrchestrator(): Orchestrator | null {
   // Resolve the real DASH audio URL on first play. Bilibili DASH URLs
   // are temporary (hours), so we don't bother caching them — resolve fresh
   // every time.
-  const lazyPlayFile = async (rawPath: string, durationMs?: number | null) => {
+  const resolvePlayPath = async (rawPath: string): Promise<string | null> => {
     let path = rawPath;
     if (path.startsWith("bili:__pending__:")) {
       const bvid = path.slice("bili:__pending__:".length);
@@ -182,10 +182,21 @@ export function createDefaultOrchestrator(): Orchestrator | null {
           console.log(`[lyra] resolved ${bvid} → audio URL`);
         } else {
           console.warn(`[lyra] failed to resolve audio URL for ${bvid}`);
+          return null;
         }
       } catch (e) {
         console.warn(`[lyra] URL resolution error for ${bvid}:`, e);
+        return null;
       }
+    }
+    return path;
+  };
+
+  const lazyPlayFile = async (rawPath: string, durationMs?: number | null) => {
+    const path = await resolvePlayPath(rawPath);
+    if (!path) {
+      console.warn(`[lyra] could not resolve play path: ${rawPath}`);
+      return;
     }
     return audio.playFile(path, durationMs ?? null);
   };
@@ -235,5 +246,6 @@ export function createDefaultOrchestrator(): Orchestrator | null {
     },
     audio: orchestratorAudio,
     eventBus: perceptionBus,
+    resolvePlayUrl: resolvePlayPath,
   });
 }

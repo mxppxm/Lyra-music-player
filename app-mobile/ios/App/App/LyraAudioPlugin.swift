@@ -9,6 +9,15 @@ private let bilibiliUserAgent =
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
 private let bilibiliReferer = "https://www.bilibili.com/"
 
+private struct PendingNextTrack {
+    let url: URL
+    let durationMs: Int
+    let title: String
+    let artist: String
+    let coverUrl: String
+    let songId: String
+}
+
 @objc(LyraAudioPlugin)
 public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "LyraAudioPlugin"
@@ -24,6 +33,11 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "seek", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgeEnded", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPendingEnded", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setNextTrack", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearNextTrack", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "appendToPlaybackQueue", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPlaybackQueueInfo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "drainNativeAdvanced", returnType: CAPPluginReturnPromise),
     ]
 
     private var player: AVPlayer?
@@ -57,6 +71,11 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     private var fallbackEndWorkItem: DispatchWorkItem?
     private var endedEmittedForPlaybackId: Int = -1
     private var currentTrackDurationMs: Int = 0
+    /// Prefetched by JS while the current track plays — native plays through in order.
+    private var pendingNextTracks: [PendingNextTrack] = []
+    /// Native auto-advances that happened while JS was suspended.
+    private var unsyncedNativeAdvanced: [[String: Any]] = []
+    private var refillBackgroundTaskId: UIBackgroundTaskIdentifier = .invalid
 
     // Metadata shown on the lock screen / Dynamic Island.
     private var nowPlayingTitle: String = ""
@@ -90,6 +109,12 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             self,
             selector: #selector(handleDidBecomeActive),
             name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
     }
@@ -291,6 +316,78 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func setNextTrack(_ call: CAPPluginCall) {
+        guard let urlString = call.getString("url"), let url = URL(string: urlString) else {
+            call.reject("invalid url")
+            return
+        }
+        let track = PendingNextTrack(
+            url: url,
+            durationMs: call.getInt("durationMs") ?? 0,
+            title: call.getString("title") ?? "",
+            artist: call.getString("artist") ?? "",
+            coverUrl: call.getString("coverUrl") ?? "",
+            songId: call.getString("songId") ?? ""
+        )
+        DispatchQueue.main.async {
+            self.pendingNextTracks.append(track)
+            print("[LyraAudio] queued next track songId=\(track.songId) depth=\(self.pendingNextTracks.count)")
+            call.resolve(["count": self.pendingNextTracks.count])
+        }
+    }
+
+    @objc func clearNextTrack(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.pendingNextTracks.removeAll()
+            call.resolve()
+        }
+    }
+
+    @objc func appendToPlaybackQueue(_ call: CAPPluginCall) {
+        guard let rawTracks = call.getArray("tracks") else {
+            call.reject("tracks required")
+            return
+        }
+        DispatchQueue.main.async {
+            var appended = 0
+            for raw in rawTracks {
+                guard let obj = raw as? [String: Any],
+                      let urlString = obj["url"] as? String,
+                      let url = URL(string: urlString)
+                else { continue }
+                let track = PendingNextTrack(
+                    url: url,
+                    durationMs: obj["durationMs"] as? Int ?? 0,
+                    title: obj["title"] as? String ?? "",
+                    artist: obj["artist"] as? String ?? "",
+                    coverUrl: obj["coverUrl"] as? String ?? "",
+                    songId: obj["songId"] as? String ?? ""
+                )
+                self.pendingNextTracks.append(track)
+                appended += 1
+            }
+            print("[LyraAudio] appended \(appended) tracks, queue depth=\(self.pendingNextTracks.count)")
+            call.resolve(["count": self.pendingNextTracks.count, "appended": appended])
+        }
+    }
+
+    @objc func getPlaybackQueueInfo(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve([
+                "count": self.pendingNextTracks.count,
+                "songIds": self.pendingNextTracks.map { $0.songId },
+            ])
+        }
+    }
+
+    @objc func drainNativeAdvanced(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let events = self.unsyncedNativeAdvanced
+            self.unsyncedNativeAdvanced = []
+            call.resolve(["events": events])
+        }
+    }
+
     // MARK: - Dual-mode playback
 
     /// Mode A: AVPlayer streams the URL directly (fastest start).
@@ -475,6 +572,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         fallbackEndWorkItem?.cancel()
         fallbackEndWorkItem = nil
         pendingEndedPlaybackId = nil
+        pendingNextTracks.removeAll()
         endEndBackgroundTask()
         if let observer = endObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -614,6 +712,14 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     private func handlePlaybackEnded(playbackId: Int) {
         guard currentPlaybackId == playbackId else { return }
         guard endedEmittedForPlaybackId != playbackId else { return }
+
+        if !pendingNextTracks.isEmpty {
+            let next = pendingNextTracks.removeFirst()
+            playPrefetchedNext(next, fromPlaybackId: playbackId)
+            requestQueueRefill(remaining: pendingNextTracks.count)
+            return
+        }
+
         endedEmittedForPlaybackId = playbackId
         fallbackEndWorkItem?.cancel()
         fallbackEndWorkItem = nil
@@ -621,6 +727,91 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         beginEndBackgroundTask()
         print("[LyraAudio] playback \(playbackId) ended")
         emitEnded(playbackId: playbackId)
+    }
+
+    /// Seamless handoff — no JS required while backgrounded.
+    private func playPrefetchedNext(_ next: PendingNextTrack, fromPlaybackId: Int) {
+        endedEmittedForPlaybackId = fromPlaybackId
+        fallbackEndWorkItem?.cancel()
+        fallbackEndWorkItem = nil
+        endEndBackgroundTask()
+
+        if let observer = endObserver {
+            NotificationCenter.default.removeObserver(observer)
+            endObserver = nil
+        }
+        if let observer = failObserver {
+            NotificationCenter.default.removeObserver(observer)
+            failObserver = nil
+        }
+        statusObservation?.invalidate()
+        statusObservation = nil
+        timeControlObservation?.invalidate()
+        timeControlObservation = nil
+        stallWorkItem?.cancel()
+        stallWorkItem = nil
+        downloadTask?.cancel()
+        downloadTask = nil
+        removeEndProximityObserver()
+        player?.pause()
+        player = nil
+
+        activateAudioSession()
+
+        nowPlayingTitle = next.title
+        nowPlayingArtist = next.artist
+        nowPlayingDurationSeconds = Double(next.durationMs) / 1000.0
+        artworkUrl = ""
+        artwork = nil
+        updateArtwork(coverUrl: next.coverUrl)
+
+        currentPlaybackId += 1
+        let playbackId = currentPlaybackId
+        didEmitFailure = false
+        didStartFallback = false
+        userPaused = false
+        lastDownloadedCodec = nil
+        currentRemoteUrl = next.url
+        currentTrackDurationMs = next.durationMs
+        endedEmittedForPlaybackId = -1
+
+        startPlayer(url: next.url, playbackId: playbackId, isLocalFile: false)
+        scheduleFallbackEnd(playbackId: playbackId)
+        print("[LyraAudio] native auto-advanced → songId=\(next.songId) playbackId=\(playbackId)")
+        unsyncedNativeAdvanced.append([
+            "songId": next.songId,
+            "playbackId": playbackId,
+            "previousPlaybackId": fromPlaybackId,
+        ])
+        notifyListeners("nativeAdvanced", data: [
+            "playbackId": playbackId,
+            "songId": next.songId,
+            "previousPlaybackId": fromPlaybackId,
+        ])
+    }
+
+    /// Ask JS to top up the native queue — runs during background tasks too.
+    private func requestQueueRefill(remaining: Int) {
+        beginRefillBackgroundTask()
+        notifyListeners("refillQueue", data: ["remaining": remaining])
+    }
+
+    private func beginRefillBackgroundTask() {
+        guard refillBackgroundTaskId == .invalid else { return }
+        refillBackgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "LyraQueueRefill") { [weak self] in
+            self?.endRefillBackgroundTask()
+        }
+    }
+
+    private func endRefillBackgroundTask() {
+        guard refillBackgroundTaskId != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(refillBackgroundTaskId)
+        refillBackgroundTaskId = .invalid
+    }
+
+    @objc private func handleDidEnterBackground() {
+        guard !pendingNextTracks.isEmpty || player != nil else { return }
+        requestQueueRefill(remaining: pendingNextTracks.count)
     }
 
     /// Fires handlePlaybackEnded when AVPlayer's end notification is missing.

@@ -17,6 +17,16 @@ import type { EventBus } from "../perception/events";
 import * as musicProfileRepo from "../db/repo/musicProfileRepo";
 import type { TrackFeedback } from "../types/musicProfile";
 import { buildRecommendationContext } from "../recommendation";
+import * as libraryRepo from "../db/repo/libraryRepo";
+
+export type PrefetchNextResult = {
+  url: string;
+  songId: string;
+  title: string;
+  artist: string;
+  durationMs: number;
+  coverUrl?: string;
+};
 
 export type SoulStoreLike = {
   load(): Promise<SoulState>;
@@ -54,6 +64,8 @@ export type OrchestratorDeps = {
     pause(): Promise<void>;
     resume(): Promise<void>;
   };
+  /** Resolve library path → playable URL (Bilibili DASH, etc.). iOS prefetch. */
+  resolvePlayUrl?: (path: string) => Promise<string | null>;
   /** Optional perception event bus — if provided, Orchestrator emits
    * input_submit / skip / complete events for the aggregator. */
   eventBus?: EventBus;
@@ -78,6 +90,12 @@ export class Orchestrator {
   private perceptionBias: PerceptionBias | null = null;
   /** Guard against concurrent fulfillProactive calls. */
   private proactiveInFlight = false;
+  /** Ordered plan for native queue — head plays after the current track. */
+  private nativeQueuePlan: Array<{
+    song: LibraryTrack;
+    baseEmotion: import("../types").CurrentEmotion;
+    rationale: string;
+  }> = [];
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
@@ -199,20 +217,43 @@ export class Orchestrator {
    * Does NOT emit `thinking` — the caller emits it (to preserve the correct
    * `user_utterance` in the state).
    */
-  private async runTurnWithEmotion(
+  private buildTurn(
     emotion: import("../types").CurrentEmotion,
     userUtterance: string,
     modality: "text" | "voice" | "proactive-open",
-    pseudoTargetOverride?: string,
-  ): Promise<void> {
-    const { companion, library, soulStore, turnRepo, audio } = this.deps;
+    song: LibraryTrack,
+    rationale: string,
+  ): DialogueTurn {
     const clock = this.deps.clock ?? Date.now;
     const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
+    return {
+      id: idGen(),
+      timestamp: clock(),
+      current_emotion: emotion,
+      user_utterance: { modality, content: userUtterance },
+      agent_response: { song_id: song.id, rationale },
+      user_reaction: {
+        behavioral: {
+          listen_duration_ms: 0,
+          completed: false,
+          skipped: false,
+          repeated: 0,
+          volume_delta: 0,
+        },
+        silence_positive: false,
+      },
+      emotion_delta: ZERO_PAD,
+    };
+  }
 
-    const t0 = performance.now();
-
+  private async pickNextSong(
+    emotion: import("../types").CurrentEmotion,
+    userUtterance: string,
+    pseudoTargetOverride?: string,
+    extraExcludeIds?: Iterable<string>,
+  ): Promise<{ song: LibraryTrack; rationale: string } | null> {
+    const { companion, library, soulStore } = this.deps;
     const soul = await soulStore.load();
-
     const pseudoTarget =
       pseudoTargetOverride ??
       `${userUtterance} ${emotion.labels.join(" ")}`.trim();
@@ -220,24 +261,27 @@ export class Orchestrator {
     const recCtx = await buildRecommendationContext(soul, {
       emotionLabels: emotion.labels,
     });
+    const excludeIds = new Set(recCtx.excludeIds);
+    if (extraExcludeIds) {
+      for (const id of extraExcludeIds) excludeIds.add(id);
+    }
+    const scopedCtx = { ...recCtx, excludeIds };
 
-    let candidates = await library.prefilter(
+    const candidates = await library.prefilter(
       pseudoTarget,
       emotion.pad,
       30,
-      recCtx,
+      scopedCtx,
     );
     if (candidates.length === 0) {
       this.emit({
         kind: "error",
         message: "B 站上暂时没搜到合适的歌，换种心情说说看？",
       });
-      return;
+      return null;
     }
 
-    // Load music profiles for all candidates (parallel batch)
     const profileMap = await musicProfileRepo.getBatch(candidates.map((c) => c.id));
-
     const { livingPortrait, topFacts } = getMemoryContext();
     const chosen = await companion.choose({
       userUtterance,
@@ -251,42 +295,84 @@ export class Orchestrator {
       topFacts,
       recommendation: recCtx,
     });
-    const song = candidates.find((c) => c.id === chosen.song_id)!;
+    const song = candidates.find((c) => c.id === chosen.song_id);
+    if (!song) return null;
+    return { song, rationale: chosen.rationale };
+  }
 
-    const turn: DialogueTurn = {
-      id: idGen(),
-      timestamp: clock(),
-      current_emotion: emotion,
-      user_utterance: { modality, content: userUtterance },
-      agent_response: { song_id: chosen.song_id, rationale: chosen.rationale },
-      user_reaction: {
-        behavioral: {
-          listen_duration_ms: 0,
-          completed: false,
-          skipped: false,
-          repeated: 0,
-          volume_delta: 0,
-        },
-        silence_positive: false,
-      },
-      emotion_delta: ZERO_PAD,
+  private computeAutoAdvanceBaseEmotion(
+    turnTimestamp: number,
+    endedEmotion: import("../types").CurrentEmotion,
+  ): import("../types").CurrentEmotion {
+    const clock = this.deps.clock ?? Date.now;
+    const elapsed_min = (clock() - turnTimestamp) / 60_000;
+    const pt = endedEmotion.predicted_trajectory;
+    if (pt !== undefined && elapsed_min >= 3 && elapsed_min <= pt.horizon_min) {
+      return {
+        pad: pt.predicted_pad,
+        labels: endedEmotion.labels,
+        confidence: endedEmotion.confidence,
+        source: "emotion-agent-inferred",
+      };
+    }
+    return endedEmotion;
+  }
+
+  private prefetchPayload(
+    song: LibraryTrack,
+    url: string,
+  ): PrefetchNextResult {
+    const coverRaw = song.metadata?.cover;
+    return {
+      url,
+      songId: song.id,
+      title: song.title?.trim() ?? song.id,
+      artist: song.artist?.trim() ?? "",
+      durationMs: song.duration_ms ?? 0,
+      coverUrl: typeof coverRaw === "string" ? coverRaw : undefined,
     };
+  }
+
+  private async runTurnWithEmotion(
+    emotion: import("../types").CurrentEmotion,
+    userUtterance: string,
+    modality: "text" | "voice" | "proactive-open",
+    pseudoTargetOverride?: string,
+    options?: { skipPlay?: boolean },
+  ): Promise<void> {
+    const { turnRepo, audio } = this.deps;
+    const t0 = performance.now();
+
+    const picked = await this.pickNextSong(
+      emotion,
+      userUtterance,
+      pseudoTargetOverride,
+    );
+    if (!picked) return;
+
+    const turn = this.buildTurn(
+      emotion,
+      userUtterance,
+      modality,
+      picked.song,
+      picked.rationale,
+    );
 
     await turnRepo.insertTurn(turn);
-    await audio.playFile(song.path, song.duration_ms ?? null);
+    if (!options?.skipPlay) {
+      await audio.playFile(picked.song.path, picked.song.duration_ms ?? null);
+    }
 
-    // Sprint 11: fire-and-forget latency write. The chained UPDATE isn't in
-    // the critical path — user sees the song already; we just record the
-    // observation.
     const turn_latency_ms = Math.round(performance.now() - t0);
     if (turnRepo.setTurnLatency) {
       void turnRepo.setTurnLatency(turn.id, turn_latency_ms).catch(() => {});
     }
 
     this.currentTurn = turn;
-    this.currentSong = song;
+    this.currentSong = picked.song;
     this.pendingEvents = [];
-    this.emit({ kind: "playing", turn, song });
+    this.nativeQueuePlan = [];
+    this.emit({ kind: "playing", turn, song: picked.song });
   }
 
   /**
@@ -523,6 +609,7 @@ export class Orchestrator {
 
     // Stop audio immediately
     await this.deps.audio.stop();
+    this.nativeQueuePlan = [];
 
     // Fold skip event into current turn
     this.pendingEvents.push({ kind: "skip" });
@@ -563,6 +650,140 @@ export class Orchestrator {
     if (this.state.kind !== "playing" || !this.state.paused) return;
     await this.deps.audio.resume();
     this.emit({ ...this.state, paused: false });
+  }
+
+  /**
+   * Pick and resolve up to `count` upcoming tracks while the current song
+   * plays. Only selects — native AVPlayer plays them when each ends.
+   */
+  async prefetchMore(
+    count: number,
+    alreadyQueuedSongIds: string[] = [],
+  ): Promise<PrefetchNextResult[]> {
+    if (!this.currentTurn || !this.currentSong || count <= 0) return [];
+    if (this.state.kind !== "playing" || this.state.paused) return [];
+    const resolve = this.deps.resolvePlayUrl;
+    if (!resolve) return [];
+
+    const endedEmotion = this.currentTurn.current_emotion;
+    const baseEmotion = this.computeAutoAdvanceBaseEmotion(
+      this.currentTurn.timestamp,
+      endedEmotion,
+    );
+    const pseudoTarget = `${baseEmotion.labels.join(" ")} 延续`.trim();
+
+    const exclude = new Set<string>([
+      this.currentSong.id,
+      ...alreadyQueuedSongIds,
+      ...this.nativeQueuePlan.map((e) => e.song.id),
+    ]);
+
+    const results: PrefetchNextResult[] = [];
+    for (let i = 0; i < count; i++) {
+      const picked = await this.pickNextSong(
+        baseEmotion,
+        "",
+        pseudoTarget,
+        exclude,
+      );
+      if (!picked) break;
+
+      const url = await resolve(picked.song.path);
+      if (!url) break;
+
+      this.nativeQueuePlan.push({
+        song: picked.song,
+        baseEmotion,
+        rationale: picked.rationale,
+      });
+      exclude.add(picked.song.id);
+      results.push(this.prefetchPayload(picked.song, url));
+    }
+
+    return results;
+  }
+
+  /** @deprecated Prefer prefetchMore — kept for single-track callers. */
+  async prefetchNext(): Promise<PrefetchNextResult | null> {
+    const batch = await this.prefetchMore(1);
+    return batch[0] ?? null;
+  }
+
+  clearPrefetchedNext(): void {
+    this.nativeQueuePlan = [];
+  }
+
+  /**
+   * Native AVPlayer already started the prefetched next track (background).
+   * Fold the completed turn and sync Orchestrator state without calling play.
+   */
+  async onNativeAutoAdvanced(songId: string): Promise<void> {
+    if (!this.currentTurn) return;
+    if (this.state.kind === "playing" && this.state.paused) return;
+
+    try {
+      const clockFn = this.deps.clock ?? Date.now;
+      this.deps.eventBus?.emit({
+        kind: "complete",
+        at: clockFn(),
+        turnId: this.currentTurn.id,
+      });
+    } catch {
+      /* bus errors are non-fatal */
+    }
+
+    this.pendingEvents.push({ kind: "complete" });
+    this.currentTurn = foldReactionEvents(this.currentTurn, this.pendingEvents);
+    this.pendingEvents = [];
+
+    const endedEmotion = this.currentTurn.current_emotion;
+    const turnTimestamp = this.currentTurn.timestamp;
+
+    try {
+      await this.finalisePreviousTurn(undefined, endedEmotion.pad);
+
+      const planEntry =
+        this.nativeQueuePlan[0]?.song.id === songId
+          ? this.nativeQueuePlan.shift()
+          : null;
+
+      let song: LibraryTrack | null = null;
+      let baseEmotion = this.computeAutoAdvanceBaseEmotion(
+        turnTimestamp,
+        endedEmotion,
+      );
+      let rationale = `${baseEmotion.labels.join(" ")} 延续`.trim();
+
+      if (planEntry) {
+        song = planEntry.song;
+        baseEmotion = planEntry.baseEmotion;
+        rationale = planEntry.rationale;
+      } else {
+        song = await libraryRepo.getTrack(songId);
+        if (!song) {
+          console.warn("[lyra] native auto-advanced but song not in library:", songId);
+          return;
+        }
+      }
+
+      const turn = this.buildTurn(
+        baseEmotion,
+        "",
+        "proactive-open",
+        song,
+        rationale,
+      );
+
+      await this.deps.turnRepo.insertTurn(turn);
+      this.currentTurn = turn;
+      this.currentSong = song;
+      this.pendingEvents = [];
+      this.emit({ kind: "playing", turn, song });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[lyra] native auto-advance sync error:", err);
+      this.emit({ kind: "error", message: msg });
+    }
   }
 
   /**
@@ -610,23 +831,10 @@ export class Orchestrator {
       // Finalise: no verbal (user is silent), no emotion shift (no new signal)
       await this.finalisePreviousTurn(undefined, endedEmotion.pad);
 
-      // If endedEmotion carries a predicted_trajectory and the elapsed time
-      // since the turn started falls within the prediction window, use the
-      // predicted_pad as the baseline emotion for the next turn.
-      const clock = this.deps.clock ?? Date.now;
-      const now = clock();
-      const elapsed_min = (now - turnTimestamp) / 60_000;
-      const pt = endedEmotion.predicted_trajectory;
-      const baseEmotion: import("../types").CurrentEmotion =
-        pt !== undefined && elapsed_min >= 3 && elapsed_min <= pt.horizon_min
-          ? {
-              pad: pt.predicted_pad,
-              labels: endedEmotion.labels,
-              confidence: endedEmotion.confidence,
-              source: "emotion-agent-inferred",
-              // predicted_trajectory intentionally omitted — it is stale after use
-            }
-          : endedEmotion;
+      const baseEmotion = this.computeAutoAdvanceBaseEmotion(
+        turnTimestamp,
+        endedEmotion,
+      );
 
       // Continue the flow: play history excludes recent songs automatically
       await this.runTurnWithEmotion(
