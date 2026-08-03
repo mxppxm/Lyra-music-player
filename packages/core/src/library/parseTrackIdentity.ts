@@ -85,6 +85,22 @@ export function parseTrackIdentity(
   // Drop trailing | channel suffix
   working = working.split("|")[0].trim();
 
+  const artistBook = working.match(/^([^《]+)《([^》]+)》/u);
+  if (artistBook) {
+    const artist = artistBook[1].replace(/百万豪装.*$/u, "").trim();
+    const songTitle = artistBook[2].trim();
+    if (songTitle && artist && !isUploaderLike(artist, uploader)) {
+      return {
+        songTitle,
+        artist,
+        rawTitle: raw,
+        uploader,
+        isStudioCover,
+        bilibiliTag: opts.tag,
+      };
+    }
+  }
+
   const { song: bookSong, rest } = unwrapBookTitle(working);
   if (bookSong) {
     const artist = rest.replace(/^[-—–·]\s*/, "").trim();

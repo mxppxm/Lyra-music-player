@@ -52,20 +52,25 @@ async function biliGet(path: string, params: Record<string, string>): Promise<an
  * 从海外也能正常访问。
  */
 export async function searchBilibili(
-  _query: string,
+  query: string,
   limit = 200,
 ): Promise<BilibiliSearchResult> {
   const seen = new Set<string>();
   const tracks: BilibiliTrack[] = [];
 
-  // 用"百万豪装录音棚"锁定 JLRS-LeoFM 的高品质音源
-  // 不做关键词拼接 — 用户的情绪描述和视频标题不匹配，
-  // 全量拉取后由 LibraryAgent 的 PAD 打分做精选
-  const searchKeyword = "百万豪装录音棚";
+  // Default: JLRS-LeoFM studio channel. When query is a short hint (e.g. artist
+  // name from an artist session), narrow the Bilibili search.
+  const hint = query.replace(/\s+/g, " ").trim();
+  const useHint =
+    hint.length >= 2 &&
+    hint.length <= 12 &&
+    !hint.includes(" ") &&
+    !/有点|累|烦|延续|lyra/i.test(hint);
+  const searchKeyword = useHint ? `百万豪装录音棚 ${hint}` : "百万豪装录音棚";
 
   // 10 页 ≈ 200 个视频，扩大曲库减少重复
   const MAX_PAGES = 10;
-  const pageDatas = await Promise.all(
+  const pageResults = await Promise.allSettled(
     Array.from({ length: MAX_PAGES }, (_, i) =>
       biliGet("/x/web-interface/search/type", {
         search_type: "video",
@@ -76,7 +81,12 @@ export async function searchBilibili(
     ),
   );
 
-  for (const data of pageDatas) {
+  for (const page of pageResults) {
+    if (page.status !== "fulfilled") {
+      console.warn("[bilibili] search page failed:", page.reason);
+      continue;
+    }
+    const data = page.value;
     const results: any[] = data?.result ?? [];
     for (const r of results) {
       const bvid = String(r.bvid ?? "");

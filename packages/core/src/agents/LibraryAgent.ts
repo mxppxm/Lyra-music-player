@@ -16,6 +16,7 @@ import {
   tokenize,
   keywordScoreFromHaystack,
 } from "../recommendation";
+import { trackMatchesArtist } from "../library/parseArtistIntent";
 
 const DEFAULT_LIMIT = 30;
 
@@ -185,12 +186,49 @@ export class LibraryAgent {
     audioPadMap?: Map<string, PADProfile>,
   ): Promise<LibraryTrack[]> {
     const all = await this.repo.listAll();
-    const excludeIds = recCtx?.excludeIds;
-    const filtered = excludeIds ? all.filter((t) => !excludeIds.has(t.id)) : all;
+    const artistFilter = recCtx?.artistFilter?.trim();
+
+    let filtered: LibraryTrack[];
+    let profileMap: Map<string, MusicProfile>;
+
+    if (artistFilter) {
+      profileMap = await this.profileRepo.getBatch(all.map((t) => t.id));
+      const artistPool = all.filter((t) =>
+        trackMatchesArtist(t, profileMap.get(t.id) ?? null, artistFilter),
+      );
+      if (artistPool.length === 0) return [];
+
+      const sessionPlayed = recCtx?.artistSessionPlayedIds;
+      const unplayedInSession = sessionPlayed?.size
+        ? artistPool.filter((t) => !sessionPlayed.has(t.id))
+        : artistPool;
+
+      if (unplayedInSession.length > 0) {
+        filtered = unplayedInSession;
+        const excludeIds = recCtx?.excludeIds;
+        if (excludeIds?.size) {
+          const afterExclude = filtered.filter((t) => !excludeIds.has(t.id));
+          // Prefer fresh songs, but never empty the pool while session still has unplayed tracks.
+          if (afterExclude.length > 0) filtered = afterExclude;
+        }
+      } else {
+        // Artist pool exhausted this session — cycle, avoiding only current/queued.
+        filtered = artistPool;
+        const immediate = recCtx?.immediateExcludeIds;
+        if (immediate?.size) {
+          const afterImmediate = filtered.filter((t) => !immediate.has(t.id));
+          if (afterImmediate.length > 0) filtered = afterImmediate;
+        }
+      }
+    } else {
+      const excludeIds = recCtx?.excludeIds;
+      filtered = excludeIds ? all.filter((t) => !excludeIds.has(t.id)) : all;
+      if (filtered.length === 0) return [];
+      profileMap = await this.profileRepo.getBatch(filtered.map((t) => t.id));
+    }
 
     if (filtered.length === 0) return [];
 
-    const profileMap = await this.profileRepo.getBatch(filtered.map((t) => t.id));
     const emotionLabels = recCtx?.emotionLabels ?? [];
     const queryTokens = tokenize(target);
     const nowHour = new Date().getHours();

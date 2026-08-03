@@ -37,6 +37,12 @@ export type RecommendationContext = {
   soul: SoulState;
   /** Labels from EmotionAgent (e.g. 疲惫, 孤独) — used in prefilter mood match. */
   emotionLabels: readonly string[];
+  /** When set, candidate pool is restricted to this artist until the user says otherwise. */
+  artistFilter?: string;
+  /** Song ids already played in the current artist session — no repeat until pool exhausted. */
+  artistSessionPlayedIds?: ReadonlySet<string>;
+  /** Current + queued ids — used in artist cycle mode to avoid immediate repeats only. */
+  immediateExcludeIds?: ReadonlySet<string>;
 };
 
 export const RECOMMENDATION_DEFAULTS = {

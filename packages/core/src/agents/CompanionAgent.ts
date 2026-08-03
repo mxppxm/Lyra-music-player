@@ -159,6 +159,17 @@ function buildBrief(i: CompanionInput): string {
     parts.push(recentPlaysBlock);
   }
 
+  const artistFilter = i.recommendation?.artistFilter?.trim();
+  if (artistFilter) {
+    parts.push("");
+    parts.push(
+      `【歌手会话】用户指定只听「${artistFilter}」。候选池已全部是该歌手；在此范围内按情绪选歌，直到用户输入别的话。`,
+    );
+    parts.push(
+      "歌手会话内优先播尚未在本会话听过的歌；该歌手曲库都听过后才允许循环，且避免连着两首同一首。",
+    );
+  }
+
   parts.push("");
   parts.push(`候选歌单(${i.candidates.length} 首):`);
   parts.push(candidateBlock);

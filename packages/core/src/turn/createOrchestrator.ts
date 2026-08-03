@@ -12,6 +12,7 @@ import type { TargetProfile } from "../agents/types";
 import type { RecommendationContext } from "../recommendation";
 import { bilibiliTrackToLibrary } from "../library/bilibiliTrackToLibrary";
 import { scheduleBackgroundProfiling } from "../recommendation";
+import { trackMatchesArtist } from "../library/parseArtistIntent";
 
 const audio = {
   playFile: (path: string, ms?: number | null) =>
@@ -62,6 +63,68 @@ export function createDefaultOrchestrator(): Orchestrator | null {
   let bilibiliSynced = false;
 
   const originalPrefilter = library.prefilter.bind(library);
+
+  async function enrichArtistTracksForPlayback(
+    matching: import("../bilibili/api").BilibiliTrack[],
+    limit: number,
+    recCtx: RecommendationContext | undefined,
+    featureCache: Record<string, unknown>,
+  ): Promise<LibraryTrack[]> {
+    const { enrichTracksWithAudio } = await import("../bilibili/api");
+    const toEnrich = matching.slice(0, Math.min(matching.length, limit));
+    const enriched = await enrichTracksWithAudio(toEnrich);
+    const excludeIds = recCtx?.excludeIds;
+    return enriched
+      .filter((t) => t.audioUrl !== null)
+      .filter((t) => !excludeIds?.has(`bili:${t.bvid}`))
+      .map((t) => ({
+        ...bilibiliTrackToLibrary(t, featureCache),
+        path: t.audioUrl!,
+      }));
+  }
+
+  async function importArtistTracksFromBilibili(
+    artistFilter: string,
+    target: TargetProfile,
+    currentPAD: PAD,
+    limit: number,
+    recCtx: RecommendationContext | undefined,
+    audioPadMap: Map<string, import("../bilibili/audioFeatures").PADProfile> | undefined,
+  ): Promise<LibraryTrack[]> {
+    const { searchBilibili } = await import("../bilibili/api");
+    const { readFeatureCache } = await import("../bilibili/audioFeatures");
+    const featureCache = await readFeatureCache();
+
+    const { tracks } = await searchBilibili(artistFilter, 9999);
+    if (tracks.length === 0) return [];
+
+    const matching = tracks.filter((t) =>
+      trackMatchesArtist(bilibiliTrackToLibrary(t, featureCache), null, artistFilter),
+    );
+    if (matching.length === 0) return [];
+
+    const { batchInsertTracks } = await import("../db/repo/libraryRepo");
+    const metadata = matching.map((t) => bilibiliTrackToLibrary(t, featureCache));
+    await batchInsertTracks(metadata);
+
+    const rescored = await originalPrefilter(
+      target,
+      currentPAD,
+      limit,
+      recCtx,
+      audioPadMap,
+    );
+    if (rescored.length > 0) {
+      scheduleBackgroundProfiling({
+        priorityTrackIds: rescored.map((t) => t.id),
+        limit: 8,
+      });
+      return rescored;
+    }
+
+    return enrichArtistTracksForPlayback(matching, limit, recCtx, featureCache);
+  }
+
   library.prefilter = async function (
     target: TargetProfile,
     currentPAD: PAD,
@@ -82,7 +145,9 @@ export function createDefaultOrchestrator(): Orchestrator | null {
       // feature cache unavailable — fall through without audio PAD
     }
 
-    // Try local first (with audio PAD injected)
+    const artistFilter = recCtx?.artistFilter?.trim();
+
+    // Local first (artist filter applied inside LibraryAgent).
     const local = await originalPrefilter(target, currentPAD, limit, recCtx, audioPadMap);
     if (local.length > 0) {
       scheduleBackgroundProfiling({
@@ -92,7 +157,24 @@ export function createDefaultOrchestrator(): Orchestrator | null {
       return local;
     }
 
-    // Empty — search Bilibili
+    if (artistFilter) {
+      try {
+        const artistLocal = await importArtistTracksFromBilibili(
+          artistFilter,
+          target,
+          currentPAD,
+          limit,
+          recCtx,
+          audioPadMap,
+        );
+        if (artistLocal.length > 0) return artistLocal;
+      } catch (err) {
+        console.warn("[lyra] artist Bilibili import failed:", err);
+      }
+      return [];
+    }
+
+    // Empty — search Bilibili (generic mood / cold-start)
     try {
       console.log("[lyra] Bilibili fallback: searching for", String(target).slice(0, 40));
       const { searchBilibili, enrichTracksWithAudio } =

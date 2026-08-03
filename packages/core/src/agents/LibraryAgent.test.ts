@@ -215,4 +215,78 @@ describe("LibraryAgent.prefilter (profile-based)", () => {
     const out = await a.prefilter("test", neutralPAD, 2);
     expect(out[0].id).toBe("a");
   });
+
+  it("hard-filters by artistFilter in recommendation context", async () => {
+    const tracks = [
+      track("a", "男孩", "梁博"),
+      track("b", "生如夏花", "朴树"),
+      track("c", "出现又离开", "梁博"),
+    ];
+    const a = new LibraryAgent({ repo: stubRepo(tracks) });
+    const recCtx = {
+      excludeIds: new Set<string>(),
+      fatigueByTrack: new Map(),
+      recentPlays: [],
+      noveltySeeking: 0.5,
+      feedbackStats: new Map(),
+      soul: {} as any,
+      emotionLabels: [],
+      artistFilter: "梁博",
+    } satisfies RecommendationContext;
+
+    const out = await a.prefilter("延续", neutralPAD, 10, recCtx);
+    expect(out.map((t) => t.id).sort()).toEqual(["a", "c"]);
+  });
+
+  it("does not repeat artist songs until session pool is exhausted", async () => {
+    const tracks = [
+      track("a", "男孩", "梁博"),
+      track("b", "出现又离开", "梁博"),
+      track("c", "我不知道", "梁博"),
+    ];
+    const a = new LibraryAgent({ repo: stubRepo(tracks) });
+    const baseCtx = {
+      excludeIds: new Set<string>(),
+      fatigueByTrack: new Map(),
+      recentPlays: [],
+      noveltySeeking: 0.5,
+      feedbackStats: new Map(),
+      soul: {} as any,
+      emotionLabels: [],
+      artistFilter: "梁博",
+    } satisfies RecommendationContext;
+
+    const first = await a.prefilter("延续", neutralPAD, 10, {
+      ...baseCtx,
+      artistSessionPlayedIds: new Set(["a"]),
+    });
+    expect(first.map((t) => t.id).sort()).toEqual(["b", "c"]);
+
+    const second = await a.prefilter("延续", neutralPAD, 10, {
+      ...baseCtx,
+      artistSessionPlayedIds: new Set(["a", "b", "c"]),
+    });
+    expect(second.map((t) => t.id).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("in artist cycle mode only avoids immediate current/queued repeats", async () => {
+    const tracks = [
+      track("a", "男孩", "梁博"),
+      track("b", "出现又离开", "梁博"),
+    ];
+    const a = new LibraryAgent({ repo: stubRepo(tracks) });
+    const out = await a.prefilter("延续", neutralPAD, 10, {
+      excludeIds: new Set(["a", "b"]),
+      immediateExcludeIds: new Set(["a"]),
+      fatigueByTrack: new Map(),
+      recentPlays: [],
+      noveltySeeking: 0.5,
+      feedbackStats: new Map(),
+      soul: {} as any,
+      emotionLabels: [],
+      artistFilter: "梁博",
+      artistSessionPlayedIds: new Set(["a", "b"]),
+    });
+    expect(out.map((t) => t.id)).toEqual(["b"]);
+  });
 });

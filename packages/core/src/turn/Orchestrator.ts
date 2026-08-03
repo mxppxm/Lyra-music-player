@@ -18,6 +18,7 @@ import * as musicProfileRepo from "../db/repo/musicProfileRepo";
 import type { TrackFeedback } from "../types/musicProfile";
 import { buildRecommendationContext } from "../recommendation";
 import * as libraryRepo from "../db/repo/libraryRepo";
+import { parseArtistIntent } from "../library/parseArtistIntent";
 
 export type PrefetchNextResult = {
   url: string;
@@ -96,6 +97,10 @@ export class Orchestrator {
     baseEmotion: import("../types").CurrentEmotion;
     rationale: string;
   }> = [];
+  /** Persists across auto-advance until the user submits new input in the text box. */
+  private activeArtistFilter: string | null = null;
+  /** Tracks which artist-pool songs were played in the current artist session. */
+  private artistSessionPlayedIds = new Set<string>();
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
@@ -108,6 +113,48 @@ export class Orchestrator {
    */
   setPerceptionBias(bias: PerceptionBias | null): void {
     this.perceptionBias = bias;
+  }
+
+  /** Active artist-only session, if any. Cleared when user sends non-artist input. */
+  getActiveArtistFilter(): string | null {
+    return this.activeArtistFilter;
+  }
+
+  private updateArtistFilterFromUserInput(text: string): void {
+    const artist = parseArtistIntent(text);
+    if (artist) {
+      if (this.activeArtistFilter !== artist) {
+        this.nativeQueuePlan = [];
+        this.artistSessionPlayedIds.clear();
+      }
+      this.activeArtistFilter = artist;
+      console.log(`[lyra] artist session: ${artist}`);
+      return;
+    }
+    if (text.trim() && this.activeArtistFilter) {
+      console.log("[lyra] artist session cleared");
+      this.activeArtistFilter = null;
+      this.nativeQueuePlan = [];
+      this.artistSessionPlayedIds.clear();
+    }
+  }
+
+  private recordArtistSessionPlay(songId: string): void {
+    if (!this.activeArtistFilter) return;
+    this.artistSessionPlayedIds.add(songId);
+  }
+
+  private withArtistScopedContext<T extends { artistFilter?: string }>(
+    recCtx: T,
+  ): T {
+    if (!this.activeArtistFilter) return recCtx;
+    return { ...recCtx, artistFilter: this.activeArtistFilter };
+  }
+
+  private pseudoTargetWithArtist(base: string): string {
+    const trimmed = base.trim();
+    if (!this.activeArtistFilter) return trimmed;
+    return `${this.activeArtistFilter} ${trimmed}`.trim();
   }
 
   getState(): OrchestratorState {
@@ -254,29 +301,43 @@ export class Orchestrator {
   ): Promise<{ song: LibraryTrack; rationale: string } | null> {
     const { companion, library, soulStore } = this.deps;
     const soul = await soulStore.load();
-    const pseudoTarget =
-      pseudoTargetOverride ??
-      `${userUtterance} ${emotion.labels.join(" ")}`.trim();
 
     const recCtx = await buildRecommendationContext(soul, {
       emotionLabels: emotion.labels,
     });
     const excludeIds = new Set(recCtx.excludeIds);
+    const immediateExcludeIds = new Set<string>();
     if (extraExcludeIds) {
-      for (const id of extraExcludeIds) excludeIds.add(id);
+      for (const id of extraExcludeIds) {
+        excludeIds.add(id);
+        immediateExcludeIds.add(id);
+      }
     }
-    const scopedCtx = { ...recCtx, excludeIds };
+    const scopedCtx = this.withArtistScopedContext({
+      ...recCtx,
+      excludeIds,
+      immediateExcludeIds:
+        immediateExcludeIds.size > 0 ? immediateExcludeIds : undefined,
+      artistSessionPlayedIds: this.artistSessionPlayedIds,
+    });
+    const target = this.pseudoTargetWithArtist(
+      pseudoTargetOverride ??
+        `${userUtterance} ${emotion.labels.join(" ")}`.trim(),
+    );
 
     const candidates = await library.prefilter(
-      pseudoTarget,
+      target,
       emotion.pad,
       30,
       scopedCtx,
     );
     if (candidates.length === 0) {
+      const artist = this.activeArtistFilter;
       this.emit({
         kind: "error",
-        message: "B 站上暂时没搜到合适的歌，换种心情说说看？",
+        message: artist
+          ? `曲库里暂时没有${artist}的歌，换个歌手或说说心情？`
+          : "B 站上暂时没搜到合适的歌，换种心情说说看？",
       });
       return null;
     }
@@ -370,6 +431,7 @@ export class Orchestrator {
 
     this.currentTurn = turn;
     this.currentSong = picked.song;
+    this.recordArtistSessionPlay(picked.song.id);
     this.pendingEvents = [];
     this.nativeQueuePlan = [];
     this.emit({ kind: "playing", turn, song: picked.song });
@@ -523,6 +585,8 @@ export class Orchestrator {
 
     this.emit({ kind: "thinking", user_utterance: text });
 
+    this.updateArtistFilterFromUserInput(text);
+
     // Emit input_submit event for perception aggregator (best-effort, optional).
     try {
       const clock = this.deps.clock ?? Date.now;
@@ -670,7 +734,9 @@ export class Orchestrator {
       this.currentTurn.timestamp,
       endedEmotion,
     );
-    const pseudoTarget = `${baseEmotion.labels.join(" ")} 延续`.trim();
+    const pseudoTarget = this.pseudoTargetWithArtist(
+      `${baseEmotion.labels.join(" ")} 延续`.trim(),
+    );
 
     const exclude = new Set<string>([
       this.currentSong.id,
@@ -777,6 +843,7 @@ export class Orchestrator {
       await this.deps.turnRepo.insertTurn(turn);
       this.currentTurn = turn;
       this.currentSong = song;
+      this.recordArtistSessionPlay(song.id);
       this.pendingEvents = [];
       this.emit({ kind: "playing", turn, song });
     } catch (err) {

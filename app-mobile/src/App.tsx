@@ -7,6 +7,7 @@ import type { Orchestrator } from "@lyra/core";
 import { MobileHomeView } from "./home/MobileHomeView";
 import { AmbientBackground } from "./home/AmbientBackground";
 import { BreathingGlow } from "./home/BreathingGlow";
+import { seedMobileLibraryIfNeeded } from "./db/seedLibrary";
 import "./home/mobile.css";
 
 const ZERO_PAD = { p: 0, a: 0, d: 0 };
@@ -67,6 +68,8 @@ export function App() {
         .catch((e) => console.warn("[lyra-ios] db copy:", e))
         .then(() => getLyraPlatform().ensureMigrations())
         .catch((e) => console.warn("[lyra-ios] migrations:", e))
+        .then(() => seedMobileLibraryIfNeeded())
+        .catch((e) => console.warn("[lyra-ios] library seed:", e))
         .then(() => bootProviders())
         .then((report) => {
           console.log("[lyra-ios] providers registered:", report.registered);
