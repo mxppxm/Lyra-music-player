@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AmbientBackground } from "./AmbientBackground";
 import { BackgroundPhoto } from "./BackgroundPhoto";
 import { ShanShuiCanvas } from "./ShanShuiCanvas";
+import { GlowCanvas } from "./GlowCanvas";
 import { EmotionLightBand } from "./EmotionLightBand";
 import { SongInfo } from "./SongInfo";
 import { SmallNote } from "./SmallNote";
@@ -83,12 +84,16 @@ function LiveHomeView({
   const [inputDimmed, setInputDimmed] = useState(false);
 
   const isPlayback = state.kind === "playing";
+  // Song-to-song transitions pass through "thinking" — treat it as part of
+  // the playback session so immersive mode doesn't collapse and re-expand
+  // between songs.
+  const playbackActive = isPlayback || state.kind === "thinking";
   const dockExpanded = dockHovered || inputFocused;
-  const immersivePlayback = isPlayback && !dockExpanded;
+  const immersivePlayback = playbackActive && !dockExpanded;
 
   /** After dock chrome + extras finish collapsing, dim the input. */
   useEffect(() => {
-    if (!isPlayback) {
+    if (!playbackActive) {
       setInputDimmed(false);
       return;
     }
@@ -98,7 +103,7 @@ function LiveHomeView({
     }
     const t = window.setTimeout(() => setInputDimmed(true), 300);
     return () => clearTimeout(t);
-  }, [dockExpanded, isPlayback]);
+  }, [dockExpanded, playbackActive]);
 
   // Refresh trace + emotion history whenever state transitions to playing
   useEffect(() => {
@@ -202,6 +207,7 @@ function LiveHomeView({
     >
       <BackgroundPhoto />
       <ShanShuiCanvas pad={pad} playing={state.kind === "playing"} />
+      <GlowCanvas pad={pad} active={playbackActive} />
       <div
         className={[
           "lyra-stage",
@@ -226,9 +232,9 @@ function LiveHomeView({
       </div>
 
       <GlassBar
-        immersive={isPlayback}
+        immersive={playbackActive}
         expanded={dockExpanded}
-        inputDimmed={isPlayback && inputDimmed}
+        inputDimmed={playbackActive && inputDimmed}
         onExpandedChange={setDockHovered}
       >
         <div className="lyra-dock__extras">

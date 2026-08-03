@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import { HomeView } from "./HomeView";
 import type { Orchestrator, OrchestratorState } from "../turn/Orchestrator";
 
@@ -129,6 +129,83 @@ describe("HomeView — playing state", () => {
     const orc = makeStubOrchestrator(playingState);
     render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
     expect(screen.queryByTestId("emotion-light-band")).not.toBeInTheDocument();
+  });
+});
+
+describe("HomeView — immersive playback across song transitions", () => {
+  /** Stub orchestrator that lets the test push state changes. */
+  function makeEmittingStub(initial: OrchestratorState) {
+    let current = initial;
+    const subs = new Set<(s: OrchestratorState) => void>();
+    const orc = {
+      getState: () => current,
+      subscribe: (cb: (s: OrchestratorState) => void) => {
+        subs.add(cb);
+        return () => subs.delete(cb);
+      },
+      onUserInput: vi.fn(async () => {}),
+      onListenProgress: vi.fn(),
+      onSkip: vi.fn(async () => {}),
+      onSongComplete: vi.fn(async () => {}),
+    } as unknown as Orchestrator;
+    const emit = (s: OrchestratorState) => {
+      current = s;
+      for (const cb of subs) cb(s);
+    };
+    return { orc, emit };
+  }
+
+  const playingState: OrchestratorState = {
+    kind: "playing",
+    turn: {
+      id: "turn-1",
+      timestamp: Date.now(),
+      current_emotion: {
+        pad: { p: 0.3, a: 0.1, d: 0.2 },
+        labels: ["calm"],
+        confidence: 0.8,
+        source: "emotion-agent-inferred",
+      },
+      user_utterance: { modality: "text", content: "最近有点累" },
+      agent_response: { song_id: "track-1", rationale: "r" },
+      user_reaction: {
+        behavioral: { listen_duration_ms: 0, completed: false, skipped: false, repeated: 0, volume_delta: 0 },
+        silence_positive: false,
+      },
+      emotion_delta: { p: 0, a: 0, d: 0 },
+    },
+    song: {
+      id: "track-1",
+      path: "/music/test.flac",
+      title: "T",
+      artist: "A",
+      album: undefined,
+      duration_ms: undefined,
+      added_at: Date.now(),
+      origin: "local",
+    },
+  };
+
+  it("stays immersive through the playing → thinking song switch", () => {
+    const { orc, emit } = makeEmittingStub(playingState);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
+
+    expect(screen.getByTestId("ambient-surface").className).toContain("lyra-ambient--immersive");
+
+    act(() => emit({ kind: "thinking", user_utterance: "" }));
+
+    expect(screen.getByTestId("ambient-surface").className).toContain("lyra-ambient--immersive");
+    expect(screen.getByTestId("glass-dock-wrap").className).toContain("lyra-dock-wrap--immersive");
+  });
+
+  it("exits immersive when the session ends in error instead of a new song", () => {
+    const { orc, emit } = makeEmittingStub(playingState);
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
+
+    act(() => emit({ kind: "thinking", user_utterance: "" }));
+    act(() => emit({ kind: "error", message: "boom" }));
+
+    expect(screen.getByTestId("ambient-surface").className).not.toContain("lyra-ambient--immersive");
   });
 });
 
