@@ -28,6 +28,7 @@ import type {
   UsageAggregate,
 } from "../db/repo/llmUsageRepo";
 import { readMemoryFile } from "../memory/fileIO";
+import { AnimatedMount } from "./motion/AnimatedMount";
 
 type TabId =
   | "turns"
@@ -93,11 +94,10 @@ export function DataExplorer({
     return () => window.removeEventListener("keydown", h);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   return (
-    <div
-      data-testid="data-explorer"
+    <AnimatedMount open={open} zIndex={8500} variant="fullscreen">
+      <div
+        data-testid="data-explorer"
       style={{
         position: "fixed",
         inset: 0,
@@ -219,7 +219,8 @@ export function DataExplorer({
         )}
         {tab === "memory_md" && <MemoryMdPanel />}
       </div>
-    </div>
+      </div>
+    </AnimatedMount>
   );
 }
 
