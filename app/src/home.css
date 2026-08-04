@@ -509,3 +509,129 @@ button.lyra-idle-slogan:active {
 .lyra-cover-breath {
   animation: lyra-cover-breath 8s ease-in-out infinite;
 }
+
+/* ── Motion (追加区域 — 请勿修改上方既有规则) ───────────────────────── */
+
+:root {
+  --lyra-duration-enter: 420ms;
+  --lyra-duration-exit: 300ms;
+  --lyra-ease-zen: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.lyra-motion-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lyra-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.lyra-motion-panel {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lyra-motion-panel > * {
+  pointer-events: auto;
+}
+
+.lyra-motion--entering .lyra-modal-backdrop {
+  animation: lyra-fade-in 320ms var(--lyra-ease-zen) both;
+}
+
+.lyra-motion--leaving .lyra-modal-backdrop {
+  animation: lyra-fade-out 320ms var(--lyra-ease-zen) both;
+  animation-delay: 150ms;
+}
+
+.lyra-motion--entering .lyra-motion-panel--center {
+  animation: lyra-fade-up var(--lyra-duration-enter) var(--lyra-ease-zen) both;
+}
+
+.lyra-motion--leaving .lyra-motion-panel--center {
+  animation: lyra-panel-out var(--lyra-duration-exit) var(--lyra-ease-zen) both;
+}
+
+.lyra-motion--entering .lyra-motion-panel--fullscreen {
+  animation: lyra-fade-in var(--lyra-duration-enter) var(--lyra-ease-zen) both;
+}
+
+.lyra-motion--leaving .lyra-motion-panel--fullscreen {
+  animation: lyra-fade-out var(--lyra-duration-exit) var(--lyra-ease-zen) both;
+}
+
+/* Home 状态切换（sparse-idle ↔ 主视图、启动 → 主视图）挂载淡入 */
+.lyra-stage {
+  animation: lyra-fade-up var(--lyra-duration-enter) var(--lyra-ease-zen) both;
+}
+
+.lyra-text-in {
+  display: inline-block;
+  animation: lyra-text-in 160ms var(--lyra-ease-zen) both;
+}
+
+@keyframes lyra-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes lyra-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes lyra-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes lyra-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes lyra-text-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-motion-root,
+  .lyra-motion-root *,
+  .lyra-stage,
+  .lyra-text-in {
+    animation: none !important;
+    transition: none !important;
+  }
+}
