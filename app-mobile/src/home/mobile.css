@@ -406,6 +406,13 @@ body,
   text-align: center;
 }
 
+/* Idle home — same single stage as playback; the dock is its only child, so
+ * centering it here vertically is what anchors the slogan + input at the
+ * middle of the screen before the FLIP glide carries it down to the bottom. */
+.lyra-mobile-stage--idle {
+  justify-content: center;
+}
+
 .lyra-mobile-idle-slogan {
   color: var(--lyra-color-song-info);
   font-size: var(--lyra-song-font-size);
@@ -432,6 +439,13 @@ button.lyra-mobile-idle-slogan:hover {
 
 button.lyra-mobile-idle-slogan:active {
   transform: translateY(1px);
+}
+
+/* Slogan lives inside the dock capsule now; the dock's own gap owns the
+ * spacing, so the old 24px margin (meant for the bare centered stage) is
+ * dropped before it doubles the pill → input distance. */
+.lyra-mobile-dock--idle .lyra-mobile-idle-slogan {
+  margin-bottom: 0;
 }
 
 /* ── Boot screen (no glass capsule) ───────────────────────────────────── */
@@ -543,7 +557,6 @@ button.lyra-mobile-idle-slogan:active {
   color: var(--lyra-color-small-note);
   font-size: var(--lyra-note-font-size);
   font-family: var(--lyra-note-family);
-  font-style: italic;
   text-align: center;
   max-width: 34em;
   margin: 0 auto;
@@ -750,11 +763,19 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 /* Hidden with opacity/translate (never display:none) so the cover art
  * doesn't jump — everything keeps its layout box while fading. */
 .lyra-mobile-song-info,
-.lyra-mobile-small-note,
-.lyra-mobile-dock {
+.lyra-mobile-small-note {
   transition:
     opacity 480ms cubic-bezier(0.4, 0, 0.2, 1),
     transform 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The dock's transform doubles as the FLIP glide that carries the input
+ * module from the centered idle position down to the bottom on scene
+ * change — longer and decelerating so the slide reads as one motion. */
+.lyra-mobile-dock {
+  transition:
+    opacity 480ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 560ms cubic-bezier(0.32, 0, 0.2, 1);
 }
 
 .lyra-mobile-stage--immersive .lyra-mobile-song-info {
@@ -839,7 +860,7 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
  * selector. */
 
 :root {
-  --lyra-duration-enter: 420ms;
+  --lyra-duration-enter: 600ms;
   --lyra-duration-exit: 300ms;
   --lyra-ease-zen: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
@@ -887,9 +908,114 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   }
 }
 
+/* Home modules stagger in — song info, note, then dock. On the idle→active
+ * scene change the content mounts fresh (it is only rendered outside idle),
+ * which is what makes the "let Lyra start" tap feel like a scene change; the
+ * delays below time that entrance to follow the dock's FLIP glide. The cover
+ * is excluded: its transform is driven by the immersive FLIP, and an
+ * animation fill would pin a transform over it. `backwards` (not `both`)
+ * keeps the pre-animation state during the stagger delay without locking
+ * the end state, so immersive's own opacity/transform transitions keep
+ * working afterwards. */
+.lyra-mobile-content > *:not(.lyra-mobile-cover-shift),
+.lyra-mobile-dock,
+.lyra-mobile-idle-slogan {
+  animation: lyra-mobile-module-in 420ms var(--lyra-ease-zen) backwards;
+}
+
+/* Scene-change stagger: the dock's FLIP glide takes 560ms, so content waits
+ * for it to settle before appearing instead of playing on top of it. */
+.lyra-mobile-content > :nth-child(2) {
+  animation-delay: 520ms;
+}
+
+.lyra-mobile-content > :nth-child(3) {
+  animation-delay: 600ms;
+}
+
+.lyra-mobile-dock {
+  animation-delay: 160ms;
+}
+
+@keyframes lyra-mobile-module-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dock controls appear only after the idle→active scene change — they wait
+ * for the FLIP glide to finish, then fade up into the settled dock. */
+.lyra-mobile-dock:not(.lyra-mobile-dock--idle) .lyra-mobile-player-controls {
+  animation: lyra-mobile-controls-in 340ms var(--lyra-ease-zen) 620ms backwards;
+}
+
+@keyframes lyra-mobile-controls-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Song title marquee — MarqueeText measures overflow, sets --lyra-marquee-dx
+ * to the pixel distance, and toggles --active; the track pauses briefly at
+ * both ends so the whole line stays readable. */
+.lyra-marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.lyra-marquee__track {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.lyra-marquee--active .lyra-marquee__track {
+  animation: lyra-marquee-slide var(--lyra-marquee-duration, 12s) linear
+    infinite;
+}
+
+@keyframes lyra-marquee-slide {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(calc(-1 * var(--lyra-marquee-dx, 0px)));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Scene changes (idle → active) are handled without View Transitions: the
+ * dock FLIP glides the input module from center to bottom (see the dock
+ * transition and the useLayoutEffect in MobileHomeView), then content and
+ * controls stagger in above it. View Transition was dropped because on real
+ * devices the swap flashed the input box instead of morphing it. */
+
 @media (prefers-reduced-motion: reduce) {
   .lyra-text-in,
-  .lyra-mobile-stage {
+  .lyra-mobile-stage,
+  .lyra-mobile-content > *:not(.lyra-mobile-cover-shift),
+  .lyra-mobile-dock,
+  .lyra-mobile-idle-slogan,
+  .lyra-mobile-dock:not(.lyra-mobile-dock--idle) .lyra-mobile-player-controls,
+  .lyra-marquee--active .lyra-marquee__track {
     animation: none !important;
+  }
+
+  /* No FLIP glide, no immersive glide — the dock just jumps into place. */
+  .lyra-mobile-dock {
+    transition: none !important;
   }
 }

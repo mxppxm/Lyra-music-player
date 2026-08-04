@@ -156,6 +156,42 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
     void orchestrator.onSkip();
   };
 
+  const isSparseIdle = state.kind === "idle";
+  const dockRef = useRef<HTMLDivElement | null>(null);
+  const dockFromRectRef = useRef<DOMRect | null>(null);
+  const prevIdleRef = useRef(isSparseIdle);
+
+  // FLIP: leaving idle relocates the dock from the centered slogan position
+  // to the bottom. Right after layout, offset it back to where it was and
+  // let the CSS transform transition glide it down — the input module slides
+  // down instead of jumping.
+  useLayoutEffect(() => {
+    const wasIdle = prevIdleRef.current;
+    prevIdleRef.current = isSparseIdle;
+    if (wasIdle || isSparseIdle) return;
+    const dock = dockRef.current;
+    const from = dockFromRectRef.current;
+    if (!dock || !from) return;
+    const dy = from.top - dock.getBoundingClientRect().top;
+    dockFromRectRef.current = null;
+    if (Math.abs(dy) < 1) return;
+    dock.style.transition = "none";
+    dock.style.transform = `translateY(${dy}px)`;
+    void dock.offsetHeight;
+    dock.style.transition = "";
+    dock.style.transform = "";
+  }, [isSparseIdle]);
+
+  const handleLyraStart = () => {
+    dockFromRectRef.current = dockRef.current?.getBoundingClientRect() ?? null;
+    void orchestrator.onLyraStart();
+  };
+
+  const handleSubmit = (text: string) => {
+    dockFromRectRef.current = dockRef.current?.getBoundingClientRect() ?? null;
+    void submit(text);
+  };
+
   const pad: PAD =
     state.kind === "playing" ? state.turn.current_emotion.pad : ZERO_PAD;
 
@@ -166,33 +202,13 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   const coverUrl = typeof coverRaw === "string" ? coverRaw : null;
   const palette = useCoverPalette(normalizeCoverUrl(coverUrl), pad);
 
-  const isSparseIdle = state.kind === "idle";
-
-  if (isSparseIdle) {
-    return (
-      <AmbientBackground pad={pad}>
-        <GlowCanvas palette={palette} />
-        <div className="lyra-mobile-stage lyra-mobile-stage--centered">
-          <button
-            type="button"
-            className="lyra-mobile-idle-slogan"
-            data-testid="lyra-idle-slogan"
-            onClick={() => void orchestrator.onLyraStart()}
-          >
-            {LYRA_START_LABEL}
-          </button>
-          <InputBox onSubmit={submit} />
-        </div>
-      </AmbientBackground>
-    );
-  }
-
   return (
     <AmbientBackground pad={pad}>
       <GlowCanvas palette={palette} />
       <div
         className={[
           "lyra-mobile-stage",
+          isSparseIdle ? "lyra-mobile-stage--idle" : "",
           immersive ? "lyra-mobile-stage--immersive" : "",
         ]
           .filter(Boolean)
@@ -201,29 +217,33 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
           if (playing) setImmersive((v) => !v);
         }}
       >
-        <div className="lyra-mobile-content">
-          <div
-            ref={coverShiftRef}
-            className="lyra-mobile-cover-shift"
-            style={{ transform: coverTransform }}
-          >
-            <CoverArt
-            url={coverUrl}
-            cd={immersive}
-            spinning={immersive && actuallyPlaying}
-          />
+        {!isSparseIdle && (
+          <div className="lyra-mobile-content">
+            <div
+              ref={coverShiftRef}
+              className="lyra-mobile-cover-shift"
+              style={{ transform: coverTransform }}
+            >
+              <CoverArt
+                url={coverUrl}
+                cd={immersive}
+                spinning={immersive && actuallyPlaying}
+              />
+            </div>
+            <SongInfo title={title} artist={artist} />
+            {isThinking ? (
+              <ThinkingNote />
+            ) : (
+              <SmallNote text={noteText} color={noteColor} />
+            )}
           </div>
-          <SongInfo title={title} artist={artist} />
-          {isThinking ? (
-            <ThinkingNote />
-          ) : (
-            <SmallNote text={noteText} color={noteColor} />
-          )}
-        </div>
+        )}
 
         <div
+          ref={dockRef}
           className={[
             "lyra-mobile-dock",
+            isSparseIdle ? "lyra-mobile-dock--idle" : "",
             playing ? "lyra-mobile-dock--playing" : "",
             dockExpanded ? "lyra-mobile-dock--expanded" : "",
           ]
@@ -231,48 +251,61 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
             .join(" ")}
           onClick={(e) => {
             e.stopPropagation();
-            setDockExpanded((v) => !v);
+            if (!isSparseIdle) setDockExpanded((v) => !v);
           }}
         >
-          <div
-            className={[
-              "lyra-mobile-progress-wrap",
-              progress ? "lyra-mobile-progress-wrap--show" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            aria-hidden={!progress}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <div className="lyra-mobile-progress-wrap__inner">
-              <ProgressBar
-                progress={progress?.progress ?? 0}
-                durationMs={progress?.durationMs ?? 0}
-                label={
-                  progress
-                    ? progressLabel(progress.elapsedMs, progress.durationMs)
-                    : ""
+          {isSparseIdle ? (
+            <button
+              type="button"
+              className="lyra-mobile-idle-slogan"
+              data-testid="lyra-idle-slogan"
+              onClick={handleLyraStart}
+            >
+              {LYRA_START_LABEL}
+            </button>
+          ) : (
+            <>
+              <div
+                className={[
+                  "lyra-mobile-progress-wrap",
+                  progress ? "lyra-mobile-progress-wrap--show" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-hidden={!progress}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <div className="lyra-mobile-progress-wrap__inner">
+                  <ProgressBar
+                    progress={progress?.progress ?? 0}
+                    durationMs={progress?.durationMs ?? 0}
+                    label={
+                      progress
+                        ? progressLabel(progress.elapsedMs, progress.durationMs)
+                        : ""
+                    }
+                    onSeek={(positionMs) => {
+                      void LyraAudio.seek({ positionMs }).catch((err) => {
+                        console.warn("[lyra-ios] seek:", err);
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+              <PlayerControls
+                canControl={playing}
+                paused={state.kind === "playing" ? Boolean(state.paused) : true}
+                loading={
+                  state.kind === "playing" && !state.paused && progress === null
                 }
-                onSeek={(positionMs) => {
-                  void LyraAudio.seek({ positionMs }).catch((err) => {
-                    console.warn("[lyra-ios] seek:", err);
-                  });
-                }}
+                onTogglePlay={handleTogglePlay}
+                onSkip={handleSkip}
               />
-            </div>
-          </div>
-          <PlayerControls
-            canControl={playing}
-            paused={state.kind === "playing" ? Boolean(state.paused) : true}
-            loading={
-              state.kind === "playing" && !state.paused && progress === null
-            }
-            onTogglePlay={handleTogglePlay}
-            onSkip={handleSkip}
-          />
+            </>
+          )}
           <div onClick={(e) => e.stopPropagation()}>
-            <InputBox onSubmit={submit} />
+            <InputBox onSubmit={handleSubmit} />
           </div>
         </div>
       </div>
