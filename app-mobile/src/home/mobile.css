@@ -831,3 +831,65 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   opacity: 0.28;
   box-shadow: none;
 }
+
+/* ── Motion ─────────────────────────────────────────────────────────────
+ * Ported from app/src/home.css Motion region so the iOS surface shares the
+ * same tokens, keyframes and reduced-motion fallback as the Mac desktop.
+ * Only new rules are appended here — nothing below modifies an existing
+ * selector. */
+
+:root {
+  --lyra-duration-enter: 420ms;
+  --lyra-duration-exit: 300ms;
+  --lyra-ease-zen: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Text swap crossfade — Crossfade remounts a keyed span per text change. */
+.lyra-text-in {
+  display: inline-block;
+  animation: lyra-mobile-text-in 160ms var(--lyra-ease-zen) both;
+}
+
+/* The inline-block span escapes the parent's text-overflow, so long song
+ * titles hard-clip instead of ellipsizing; clip inside the span instead. */
+.lyra-mobile-song-info .lyra-text-in {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Home mount transition — replays on fresh mounts (boot → home, and any
+ * future state tree that remounts the stage), not on reconciled updates. */
+.lyra-mobile-stage {
+  animation: lyra-mobile-fade-up var(--lyra-duration-enter) var(--lyra-ease-zen) both;
+}
+
+@keyframes lyra-mobile-text-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes lyra-mobile-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-text-in,
+  .lyra-mobile-stage {
+    animation: none !important;
+  }
+}
