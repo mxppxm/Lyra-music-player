@@ -3,6 +3,7 @@ import {
   profileQualityMultiplier,
   tagOverlap,
   profileSearchHaystack,
+  tokenize,
 } from "./profileScoring";
 import type { MusicProfile } from "../types/musicProfile";
 
@@ -28,5 +29,38 @@ describe("profileScoring", () => {
     );
     expect(hay).toContain("mandopop");
     expect(hay).toContain("思念");
+  });
+
+  describe("tokenize", () => {
+    it("splits on spaces and punctuation", () => {
+      expect(tokenize("hello world")).toEqual(["hello", "world"]);
+    });
+
+    it("generates bigrams for CJK segments longer than 2 chars", () => {
+      const tokens = tokenize("深夜下班");
+      expect(tokens).toContain("深夜");
+      expect(tokens).toContain("夜下");
+      expect(tokens).toContain("下班");
+      expect(tokens).toContain("深夜下班"); // whole segment kept
+    });
+
+    it("keeps 2-char CJK segments as-is", () => {
+      expect(tokenize("无聊")).toEqual(["无聊"]);
+    });
+
+    it("bigrams enable partial match against profile tags", () => {
+      // "深夜下班" bigrams include "深夜" → "深夜独处".includes("深夜") === true
+      const tokens = tokenize("深夜下班");
+      const hay = "深夜独处";
+      const hit = tokens.some((t) => hay.includes(t));
+      expect(hit).toBe(true);
+    });
+
+    it("handles mixed CJK and Latin input", () => {
+      const tokens = tokenize("想听 rock 深夜下班");
+      expect(tokens).toContain("rock");
+      expect(tokens).toContain("深夜");
+      expect(tokens).toContain("下班");
+    });
   });
 });

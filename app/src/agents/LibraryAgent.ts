@@ -2,6 +2,8 @@ import type { LibraryTrack, PAD } from "../types";
 import type { MusicProfile } from "../types/musicProfile";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import * as musicProfileRepo from "../db/repo/musicProfileRepo";
+import * as lyricsEmbeddingsRepo from "../db/repo/lyricsEmbeddingsRepo";
+import { createEmbeddingProvider, type EmbeddingProvider } from "../providers/embeddingProvider";
 import type { PADProfile } from "../bilibili/audioFeatures";
 import type { RecommendationContext } from "../recommendation";
 import {
@@ -18,6 +20,19 @@ import {
 } from "../recommendation";
 
 const DEFAULT_LIMIT = 30;
+
+/** Cosine similarity between two Float32Arrays. Returns 0 if either is empty. */
+function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
 
 type LibraryRepoLike = { listAll(): Promise<LibraryTrack[]> };
 type MusicProfileRepoLike = {
@@ -100,19 +115,25 @@ function profileScore(
   recCtx: RecommendationContext | undefined,
   audioPad?: PADProfile,
   noveltySeeking = 0.5,
+  semanticSim = 0,
 ): number {
   const effectivePad = audioPad ?? profile?.pad_estimate;
 
   if (!profile && !effectivePad) {
     const hay = profileSearchHaystack(track, null);
     const maxHits = Math.max(queryTokens.length, 1);
-    return (keywordScoreFromHaystack(hay, queryTokens) / maxHits) * 0.25;
+    const kwBase = (keywordScoreFromHaystack(hay, queryTokens) / maxHits) * 0.25;
+    // Semantic score can rescue tracks with no profile
+    const semBoost = semanticSim * 0.15;
+    return kwBase + semBoost;
   }
 
   if (profile?.llm_unknown && !effectivePad) {
     const hay = profileSearchHaystack(track, profile);
     const maxHits = Math.max(queryTokens.length, 1);
-    return (keywordScoreFromHaystack(hay, queryTokens) / maxHits) * 0.22;
+    const kwBase = (keywordScoreFromHaystack(hay, queryTokens) / maxHits) * 0.22;
+    const semBoost = semanticSim * 0.12;
+    return kwBase + semBoost;
   }
 
   let padScore = 0;
@@ -127,12 +148,14 @@ function profileScore(
   const energyScore = energyMatchScore(profile, pad.a) * 0.07;
   const timeScore = timeColorScore(nowHour, profile?.time_color ?? "") * 0.1;
   const scenario = scenarioScore(queryTokens, profile?.best_for ?? []) * 0.1;
+  // Semantic similarity from lyrics embeddings — captures meaning beyond keywords
+  const semScore = semanticSim * 0.15;
 
   const jitterMax = 0.08 + noveltySeeking * 0.18;
   const jitter = Math.random() * jitterMax;
 
   let total =
-    padScore + moodScore + themeScore + genreScore + energyScore + timeScore + scenario + jitter;
+    padScore + moodScore + themeScore + genreScore + energyScore + timeScore + scenario + semScore + jitter;
 
   total *= profileQualityMultiplier(profile);
 
@@ -196,10 +219,35 @@ export class LibraryAgent {
     const nowHour = new Date().getHours();
     const noveltySeeking = recCtx?.noveltySeeking ?? 0.5;
 
+    // ── Semantic search via lyrics embeddings ──
+    // Embed the query, load all track embeddings, compute cosine similarity.
+    // Graceful degradation: if embedding provider is unavailable or no
+    // embeddings exist, semanticSim defaults to 0 for all tracks.
+    const semanticMap = new Map<string, number>();
+    try {
+      const provider = await createEmbeddingProvider();
+      if (provider) {
+        const queryEmbedding = await provider.embed(target);
+        if (queryEmbedding.length > 0) {
+          const embMap = await lyricsEmbeddingsRepo.getBatch(filtered.map((t) => t.id));
+          for (const track of filtered) {
+            const emb = embMap.get(track.id);
+            if (emb && emb.embedding.length === queryEmbedding.length) {
+              semanticMap.set(track.id, cosineSimilarity(queryEmbedding, emb.embedding));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Embedding provider or DB failure — degrade silently
+      console.warn("[lyra] semantic search unavailable, falling back to keyword+pad:", e);
+    }
+
     const scored = filtered.map((track) => {
       const bvid = track.id.startsWith("bili:") ? track.id.slice(5) : null;
       const audioPad = bvid ? audioPadMap?.get(bvid) : undefined;
       const profile = profileMap.get(track.id) ?? null;
+      const semanticSim = semanticMap.get(track.id) ?? 0;
       const base = profileScore(
         track,
         profile,
@@ -210,6 +258,7 @@ export class LibraryAgent {
         recCtx,
         audioPad,
         noveltySeeking,
+        semanticSim,
       );
       return {
         track,

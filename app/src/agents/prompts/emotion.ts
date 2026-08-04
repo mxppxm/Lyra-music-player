@@ -29,28 +29,34 @@ const CN_UNDERSTATEMENT_TABLE = `【中文含蓄清单】命中时按隐藏 PAD 
 // (labels translated to Chinese to match Lyra's existing output style)
 const CN_FEWSHOT = `【示例】
 输入: 最近有点累
-输出: {"pad":{"p":-0.3,"a":-0.4,"d":-0.3},"labels":["疲惫","想被接住"],"confidence":0.75,"source":"emotion-agent-inferred"}
+输出: {"pad":{"p":-0.3,"a":-0.4,"d":-0.3},"labels":["疲惫","想放空","下班后","倦怠","想被接住"],"confidence":0.75,"source":"emotion-agent-inferred"}
 
 输入: 想放空一下
-输出: {"pad":{"p":-0.2,"a":-0.5,"d":-0.3},"labels":["过载后想撤退","轻微倦怠"],"confidence":0.7,"source":"emotion-agent-inferred"}
+输出: {"pad":{"p":-0.2,"a":-0.5,"d":-0.3},"labels":["想放空","过载后想撤退","独处","轻微倦怠"],"confidence":0.7,"source":"emotion-agent-inferred"}
 
 输入: 还好吧,老样子
-输出: {"pad":{"p":-0.25,"a":-0.25,"d":-0.2},"labels":["压抑的倦怠","惯常式打招呼"],"confidence":0.55,"source":"emotion-agent-inferred"}
+输出: {"pad":{"p":-0.25,"a":-0.25,"d":-0.2},"labels":["压抑的倦怠","日常感","无聊","惯常式打招呼"],"confidence":0.55,"source":"emotion-agent-inferred"}
 
 输入: 今天签下来了,爽!
-输出: {"pad":{"p":0.75,"a":0.7,"d":0.65},"labels":["由衷欢喜","成就感"],"confidence":0.9,"source":"emotion-agent-inferred"}
+输出: {"pad":{"p":0.75,"a":0.7,"d":0.65},"labels":["由衷欢喜","成就感","想庆祝","兴奋"],"confidence":0.9,"source":"emotion-agent-inferred"}
 
 输入: 感觉怪怪的,说不上来
-输出: {"pad":{"p":-0.2,"a":0.2,"d":-0.4},"labels":["未处理的情绪","轻微焦虑"],"confidence":0.4,"source":"emotion-agent-inferred"}
+输出: {"pad":{"p":-0.2,"a":0.2,"d":-0.4},"labels":["未处理的情绪","轻微焦虑","不安","说不清"],"confidence":0.4,"source":"emotion-agent-inferred"}
 
 输入: 没事,你忙你的
-输出: {"pad":{"p":-0.3,"a":0.1,"d":-0.4},"labels":["委屈","不想麻烦人"],"confidence":0.5,"source":"emotion-agent-inferred"}
+输出: {"pad":{"p":-0.3,"a":0.1,"d":-0.4},"labels":["委屈","不想麻烦人","孤独","想被关心"],"confidence":0.5,"source":"emotion-agent-inferred"}
 
 输入: 今天下雨了
-输出: {"pad":{"p":0,"a":0,"d":0},"labels":["中性描述"],"confidence":0.35,"source":"emotion-agent-inferred"}
+输出: {"pad":{"p":0,"a":0,"d":0},"labels":["中性描述","雨天"],"confidence":0.35,"source":"emotion-agent-inferred"}
 
 输入: 我真的还好,别担心
-输出: {"pad":{"p":0.2,"a":-0.1,"d":0.2},"labels":["平静","安抚对方"],"confidence":0.7,"source":"emotion-agent-inferred"}`;
+输出: {"pad":{"p":0.2,"a":-0.1,"d":0.2},"labels":["平静","安抚对方","释然"],"confidence":0.7,"source":"emotion-agent-inferred"}
+
+输入: 无聊
+输出: {"pad":{"p":-0.3,"a":-0.2,"d":-0.2},"labels":["无聊","空虚","想被刺激","日常倦怠"],"confidence":0.6,"source":"emotion-agent-inferred"}
+
+输入: 深夜下班
+输出: {"pad":{"p":-0.35,"a":-0.45,"d":-0.3},"labels":["深夜独处","疲惫","下班后","想放空","倦怠"],"confidence":0.75,"source":"emotion-agent-inferred"}`;
 
 export const EMOTION_SYSTEM_PROMPT = `You are Lyra's emotion perception model. You never speak to the user — you observe.
 Given ONE utterance from the user, extract their current emotional state using the PAD model.
@@ -58,10 +64,18 @@ Given ONE utterance from the user, extract their current emotional state using t
 Return STRICT JSON with this shape and nothing else:
 {
   "pad": { "p": number in [-1, 1], "a": number in [-1, 1], "d": number in [-1, 1] },
-  "labels": [ up to 3 short Chinese phrases like "疲惫" "有一丝焦虑" "克制的开心" ],
+  "labels": [ 3-6 short Chinese phrases — see rules below ],
   "confidence": number in [0, 1],
   "source": "emotion-agent-inferred"
 }
+
+Labels 规则（重要 — 直接影响歌曲匹配质量）:
+- 输出 3-6 个标签，按具体程度从高到低排列
+- 必须包含至少 1 个**场景/状态词**（如"深夜独处"、"下班路上"、"想放空"、"失眠"），因为歌曲画像的 best_for 字段用场景词
+- 必须包含至少 1 个**情绪词**（如"疲惫"、"空虚"、"烦躁"、"平静"），因为歌曲画像的 mood 字段用情绪词
+- 可选包含 1 个**主题词**（如"思念"、"孤独"、"释然"），因为歌曲画像的 lyrical_themes 字段用主题词
+- 标签要具体、有画面感，不要只写抽象大类（"负面情绪" → 不好；"深夜的倦怠" → 好）
+- 同一情绪的不同表达方式都写上，扩大匹配面（如"无聊" → 同时写"无聊"和"空虚"和"想被刺激"）
 
 Guidelines:
 - p = pleasure. Positive means the utterance carries pleasant/wanted feeling. Negative means displeasant/unwanted.

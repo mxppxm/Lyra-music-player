@@ -96,11 +96,41 @@ export function profileSearchHaystack(
   return parts.filter(Boolean).join(" ").toLowerCase();
 }
 
+/** Detect whether a string contains CJK ideographs (Chinese/Japanese kanji). */
+const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf]/;
+
+/**
+ * Extract Chinese bigram tokens from a CJK segment.
+ * "深夜下班" → ["深夜", "夜下", "下班"]
+ * Segments of length 1 are kept as-is; segments of length 2 are kept whole.
+ */
+function chineseBigrams(segment: string): string[] {
+  if (segment.length <= 2) return [segment];
+  const out: string[] = [];
+  for (let i = 0; i < segment.length - 1; i++) {
+    out.push(segment.slice(i, i + 2));
+  }
+  return out;
+}
+
 export function tokenize(target: string): string[] {
-  return target
+  const raw = target
     .toLowerCase()
     .split(/[\s,，。.！!?？:：;；\-—()（）\[\]"']+/u)
-    .filter((s) => s.length > 1);
+    .filter((s) => s.length > 0);
+
+  const tokens: string[] = [];
+  for (const seg of raw) {
+    if (CJK_RE.test(seg) && seg.length > 2) {
+      // CJK segment longer than 2 chars: emit bigrams + the whole segment
+      // (whole segment helps exact-match scenarios like "深夜下班" ↔ "深夜下班")
+      tokens.push(...chineseBigrams(seg));
+      tokens.push(seg);
+    } else if (seg.length > 1) {
+      tokens.push(seg);
+    }
+  }
+  return tokens;
 }
 
 export function keywordScoreFromHaystack(hay: string, tokens: string[]): number {
