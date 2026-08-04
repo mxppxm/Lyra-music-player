@@ -157,6 +157,7 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   };
 
   const isSparseIdle = state.kind === "idle";
+  const [idleLeaving, setIdleLeaving] = useState(false);
   const dockRef = useRef<HTMLDivElement | null>(null);
   const dockFromRectRef = useRef<DOMRect | null>(null);
   const prevIdleRef = useRef(isSparseIdle);
@@ -182,13 +183,29 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
     dock.style.transform = "";
   }, [isSparseIdle]);
 
+  // The slogan stays mounted for the duration of its exit glide (see
+  // .lyra-mobile-idle-slogan--leaving) and is torn down once that has
+  // finished; returning to idle resets it so the next idle shows a fresh
+  // slogan instead of a leaving one.
+  useEffect(() => {
+    if (isSparseIdle) {
+      setIdleLeaving(false);
+      return;
+    }
+    if (!idleLeaving) return;
+    const t = window.setTimeout(() => setIdleLeaving(false), 800);
+    return () => window.clearTimeout(t);
+  }, [isSparseIdle, idleLeaving]);
+
   const handleLyraStart = () => {
     dockFromRectRef.current = dockRef.current?.getBoundingClientRect() ?? null;
+    setIdleLeaving(true);
     void orchestrator.onLyraStart();
   };
 
   const handleSubmit = (text: string) => {
     dockFromRectRef.current = dockRef.current?.getBoundingClientRect() ?? null;
+    if (isSparseIdle) setIdleLeaving(true);
     void submit(text);
   };
 
@@ -240,6 +257,18 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
         )}
 
         <div
+          className={[
+            "lyra-mobile-idle-brand",
+            isSparseIdle ? "" : "lyra-mobile-idle-brand--hidden",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-hidden="true"
+        >
+          Lyra
+        </div>
+
+        <div
           ref={dockRef}
           className={[
             "lyra-mobile-dock",
@@ -265,6 +294,17 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
             </button>
           ) : (
             <>
+              {idleLeaving && (
+                <button
+                  type="button"
+                  className="lyra-mobile-idle-slogan lyra-mobile-idle-slogan--leaving"
+                  data-testid="lyra-idle-slogan"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                >
+                  {LYRA_START_LABEL}
+                </button>
+              )}
               <div
                 className={[
                   "lyra-mobile-progress-wrap",
