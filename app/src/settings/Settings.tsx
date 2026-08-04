@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { SECRET_KEYS, setSecret, getSecret } from "./secrets";
 import { lyricsRefill } from "../library/lyricsRefill";
 import { reflectNow } from "../reflect/trigger";
+import { AnimatedMount } from "../ui/motion/AnimatedMount";
 
 type EmbeddingChoice = "" | "zhipu" | "openai";
 
@@ -17,6 +18,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   const [anthropic, setAnthropic] = useState("");
   const [deepseek, setDeepseek] = useState("");
   const [zhipu, setZhipu] = useState("");
+  const [fxb, setFxb] = useState("");
   const [dreamDailyTime, setDreamDailyTime] = useState("03:14");
   const [dreamIdleMinutes, setDreamIdleMinutes] = useState("30");
   const [perceptionEnabled, setPerceptionEnabled] = useState(true);
@@ -37,10 +39,11 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [a, d, z, dt, dim, pe, pm, ep, zek, ok, wd, wa, we, wlat, wlon] = await Promise.all([
+      const [a, d, z, f, dt, dim, pe, pm, ep, zek, ok, wd, wa, we, wlat, wlon] = await Promise.all([
         getSecret(SECRET_KEYS.anthropicApiKey),
         getSecret(SECRET_KEYS.deepseekApiKey),
         getSecret(SECRET_KEYS.zhipuApiKey),
+        getSecret(SECRET_KEYS.fxbApiKey),
         getSecret(SECRET_KEYS.dreamDailyTime),
         getSecret(SECRET_KEYS.dreamIdleMinutes),
         getSecret(SECRET_KEYS.perceptionEnabled),
@@ -58,6 +61,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       setAnthropic(a ?? "");
       setDeepseek(d ?? "");
       setZhipu(z ?? "");
+      setFxb(f ?? "");
       setDreamDailyTime(dt ?? "03:14");
       setDreamIdleMinutes(dim ?? "30");
       // Default to enabled; only disable when explicitly stored as "false"
@@ -79,8 +83,6 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     };
   }, [open]);
 
-  if (!open) return null;
-
   const onSave = async () => {
     setSaving(true);
     try {
@@ -92,6 +94,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
       await setSecret(SECRET_KEYS.anthropicApiKey, anthropic);
       await setSecret(SECRET_KEYS.deepseekApiKey, deepseek);
       await setSecret(SECRET_KEYS.zhipuApiKey, zhipu);
+      await setSecret(SECRET_KEYS.fxbApiKey, fxb);
       await setSecret(SECRET_KEYS.dreamDailyTime, dreamDailyTime);
       await setSecret(SECRET_KEYS.dreamIdleMinutes, dreamIdleMinutes);
       await setSecret(SECRET_KEYS.perceptionEnabled, perceptionEnabled ? "true" : "false");
@@ -141,7 +144,8 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   };
 
   return (
-    <div role="dialog" aria-label="设置" className="settings-modal">
+    <AnimatedMount open={open} zIndex={10000}>
+      <div role="dialog" aria-label="设置" className="settings-modal">
       <h2>⚙️ 设置</h2>
       {scanStatus && (
         <p style={{ opacity: 0.7, fontSize: "0.85em" }}>{scanStatus}</p>
@@ -170,6 +174,15 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           type="password"
           value={zhipu}
           onChange={(e) => setZhipu(e.target.value)}
+          disabled={!loaded}
+        />
+      </label>
+      <label>
+        fxb (SupaNet) API 密钥
+        <input
+          type="password"
+          value={fxb}
+          onChange={(e) => setFxb(e.target.value)}
           disabled={!loaded}
         />
       </label>
@@ -338,6 +351,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           保存
         </button>
       </div>
-    </div>
+      </div>
+    </AnimatedMount>
   );
 }

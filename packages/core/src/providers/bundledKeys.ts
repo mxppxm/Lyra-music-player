@@ -8,6 +8,7 @@ const BUNDLED: Partial<Record<SecretKey, string | undefined>> = {
   [SECRET_KEYS.anthropicApiKey]: import.meta.env.VITE_ANTHROPIC_API_KEY,
   [SECRET_KEYS.deepseekApiKey]: import.meta.env.VITE_DEEPSEEK_API_KEY,
   [SECRET_KEYS.zhipuApiKey]: import.meta.env.VITE_ZHIPU_API_KEY,
+  [SECRET_KEYS.fxbApiKey]: import.meta.env.VITE_FXB_API_KEY,
   [SECRET_KEYS.zhipuEmbeddingApiKey]: import.meta.env.VITE_ZHIPU_EMBEDDING_API_KEY,
   [SECRET_KEYS.openaiApiKey]: import.meta.env.VITE_OPENAI_API_KEY,
 };
@@ -16,6 +17,7 @@ const PROVIDER_KEYS: SecretKey[] = [
   SECRET_KEYS.anthropicApiKey,
   SECRET_KEYS.deepseekApiKey,
   SECRET_KEYS.zhipuApiKey,
+  SECRET_KEYS.fxbApiKey,
 ];
 
 export function getBundledSecret(key: string): string | null {

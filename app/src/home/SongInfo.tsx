@@ -1,3 +1,5 @@
+import { Crossfade } from "../ui/motion/Crossfade";
+
 export type SongInfoProps = {
   title: string;
   artist: string;
@@ -13,7 +15,7 @@ export function SongInfo({ title, artist }: SongInfoProps) {
     : "";
   return (
     <div data-testid="song-info" className="lyra-song-info">
-      {text}
+      <Crossfade text={text}>{text}</Crossfade>
     </div>
   );
 }

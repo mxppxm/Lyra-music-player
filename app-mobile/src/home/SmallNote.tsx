@@ -1,3 +1,5 @@
+import { Crossfade } from "../ui/motion/Crossfade";
+
 export type SmallNoteProps = {
   text: string;
   color?: string;
@@ -11,7 +13,7 @@ export function SmallNote({ text, color }: SmallNoteProps) {
       className="lyra-mobile-small-note"
       style={color ? { color } : undefined}
     >
-      {text}
+      <Crossfade text={text}>{text}</Crossfade>
     </div>
   );
 }

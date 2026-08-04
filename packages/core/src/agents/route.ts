@@ -4,10 +4,10 @@ import { registry as defaultRegistry, ProviderRegistry } from "../providers/regi
 export type AgentKind = "emotion" | "companion" | "perception" | "music-profile";
 
 export const PRIMARY_FOR: Record<AgentKind, ProviderId> = {
-  emotion: "zhipu",
-  companion: "anthropic",
-  perception: "zhipu",
-  "music-profile": "zhipu",
+  emotion: "fxb",
+  companion: "fxb",
+  perception: "fxb",
+  "music-profile": "fxb",
 };
 
 export const FALLBACK_FOR: Record<AgentKind, ProviderId[]> = {

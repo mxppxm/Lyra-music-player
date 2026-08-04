@@ -5,6 +5,7 @@ import type { RoadmapItem, RoadmapItemStatus } from "../engineer/types";
 import { listAll, updateStatus } from "../db/repo/roadmapRepo";
 import { insertEntry } from "../db/repo/engineerAuditRepo";
 import { EngineerAgent } from "../engineer/EngineerAgent";
+import { AnimatedMount } from "./motion/AnimatedMount";
 
 const FILTER_TABS: { label: string; status: RoadmapItemStatus | "all" }[] = [
   { label: "Proposed", status: "proposed" },
@@ -178,8 +179,6 @@ export function RoadmapBoard({ open, onClose }: RoadmapBoardProps) {
     }
   }, [reload]);
 
-  if (!open) return null;
-
   const filtered =
     activeTab === "all" ? items : items.filter((i) => i.status === activeTab);
 
@@ -187,8 +186,9 @@ export function RoadmapBoard({ open, onClose }: RoadmapBoardProps) {
     status === "all" ? items.length : items.filter((i) => i.status === status).length;
 
   return (
-    <div
-      data-testid="roadmap-board"
+    <AnimatedMount open={open} zIndex={8000} variant="fullscreen">
+      <div
+        data-testid="roadmap-board"
       style={{
         position: "fixed",
         inset: 0,
@@ -301,6 +301,7 @@ export function RoadmapBoard({ open, onClose }: RoadmapBoardProps) {
           ))
         )}
       </div>
-    </div>
+      </div>
+    </AnimatedMount>
   );
 }

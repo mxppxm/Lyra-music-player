@@ -74,6 +74,13 @@ export type OrchestratorDeps = {
   idGen?: () => string;
 };
 
+/** Context from the song that just ended, so the next rationale can make a
+ *  natural DJ-like transition instead of repeating a template. */
+export type AutoAdvanceContext = {
+  previousRationale: string;
+  previousSong: { title: string; artist?: string };
+};
+
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 
 export class Orchestrator {
@@ -169,6 +176,15 @@ export class Orchestrator {
     const trimmed = base.trim();
     if (!this.activeArtistFilter) return trimmed;
     return `${this.activeArtistFilter} ${trimmed}`.trim();
+  }
+
+  private captureAutoAdvanceContext(): AutoAdvanceContext | undefined {
+    const prevRationale = this.currentTurn?.agent_response.rationale ?? "";
+    const prevSong = this.currentSong
+      ? { title: this.currentSong.title ?? "", artist: this.currentSong.artist }
+      : undefined;
+    if (!prevRationale || !prevSong?.title) return undefined;
+    return { previousRationale: prevRationale, previousSong: prevSong };
   }
 
   getState(): OrchestratorState {
@@ -312,6 +328,7 @@ export class Orchestrator {
     userUtterance: string,
     pseudoTargetOverride?: string,
     extraExcludeIds?: Iterable<string>,
+    autoAdvanceContext?: AutoAdvanceContext,
   ): Promise<{ song: LibraryTrack; rationale: string } | null> {
     const { companion, library, soulStore } = this.deps;
     const soul = await soulStore.load();
@@ -369,6 +386,8 @@ export class Orchestrator {
       livingPortrait,
       topFacts,
       recommendation: recCtx,
+      previousRationale: autoAdvanceContext?.previousRationale,
+      previousSong: autoAdvanceContext?.previousSong,
     });
     const song = candidates.find((c) => c.id === chosen.song_id);
     if (!song) return null;
@@ -414,6 +433,7 @@ export class Orchestrator {
     modality: "text" | "voice" | "proactive-open",
     pseudoTargetOverride?: string,
     options?: { skipPlay?: boolean },
+    autoAdvanceContext?: AutoAdvanceContext,
   ): Promise<void> {
     const { turnRepo, audio } = this.deps;
     const t0 = performance.now();
@@ -422,6 +442,8 @@ export class Orchestrator {
       emotion,
       userUtterance,
       pseudoTargetOverride,
+      undefined,
+      autoAdvanceContext,
     );
     if (!picked) return;
 
@@ -709,6 +731,7 @@ export class Orchestrator {
 
     // Remember what emotion we were on
     const endedEmotion = this.currentTurn.current_emotion;
+    const autoCtx = this.captureAutoAdvanceContext();
 
     // Emit thinking so UI shows "…" while we pick the next song
     this.emit({ kind: "thinking", user_utterance: "" });
@@ -722,7 +745,9 @@ export class Orchestrator {
         endedEmotion,
         "",
         "proactive-open",
-        `${endedEmotion.labels.join(" ")} 延续`.trim(),
+        endedEmotion.labels.join(" ").trim() || undefined,
+        undefined,
+        autoCtx,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -761,9 +786,9 @@ export class Orchestrator {
       this.currentTurn.timestamp,
       endedEmotion,
     );
-    const pseudoTarget = this.pseudoTargetWithArtist(
-      `${baseEmotion.labels.join(" ")} 延续`.trim(),
-    );
+    const autoCtx = this.captureAutoAdvanceContext();
+    const pseudoTarget =
+      baseEmotion.labels.join(" ").trim() || undefined;
 
     const exclude = new Set<string>([
       this.currentSong.id,
@@ -778,6 +803,7 @@ export class Orchestrator {
         "",
         pseudoTarget,
         exclude,
+        autoCtx,
       );
       if (!picked) break;
 
@@ -831,6 +857,7 @@ export class Orchestrator {
 
     const endedEmotion = this.currentTurn.current_emotion;
     const turnTimestamp = this.currentTurn.timestamp;
+    const autoCtx = this.captureAutoAdvanceContext();
 
     try {
       await this.finalisePreviousTurn(undefined, endedEmotion.pad);
@@ -845,7 +872,7 @@ export class Orchestrator {
         turnTimestamp,
         endedEmotion,
       );
-      let rationale = `${baseEmotion.labels.join(" ")} 延续`.trim();
+      let rationale = autoAdvanceFallbackNote(baseEmotion, autoCtx);
 
       if (planEntry) {
         song = planEntry.song;
@@ -917,6 +944,7 @@ export class Orchestrator {
     const endedEmotion = this.currentTurn.current_emotion;
     // Capture timestamp before finalisePreviousTurn clears currentTurn
     const turnTimestamp = this.currentTurn.timestamp;
+    const autoCtx = this.captureAutoAdvanceContext();
 
     // Emit thinking so UI shows "…" while we pick the next song
     this.emit({ kind: "thinking", user_utterance: "" });
@@ -935,7 +963,9 @@ export class Orchestrator {
         baseEmotion,
         "",
         "proactive-open",
-        `${baseEmotion.labels.join(" ")} 延续`.trim(),
+        baseEmotion.labels.join(" ").trim() || undefined,
+        undefined,
+        autoCtx,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -967,6 +997,26 @@ export function blendEmotionWithBias(
 
 function clampPad(v: number): number {
   return Math.max(-1, Math.min(1, v));
+}
+
+// ── Auto-advance fallback note ──────────────────────────────────────────────
+
+const AUTO_ADVANCE_NOTES = [
+  "这首先顶上，耳朵别打盹。",
+  "刚那首的余温还没散，这首就来接棒。",
+  "鼓点已经热好了，听就是了。",
+  "让这首把房间的空气换一遍。",
+  "这一拍踩进来，就别想停下来了。",
+] as const;
+
+function autoAdvanceFallbackNote(
+  baseEmotion: import("../types").CurrentEmotion,
+  autoCtx: AutoAdvanceContext | undefined,
+): string {
+  const seed =
+    Math.round((baseEmotion.pad.p + 1) * 31 + (baseEmotion.pad.a + 1) * 17 + (baseEmotion.pad.d + 1) * 7) +
+    (autoCtx ? [...autoCtx.previousSong.title].reduce((n, ch) => n + ch.charCodeAt(0), 0) : 0);
+  return AUTO_ADVANCE_NOTES[Math.abs(seed) % AUTO_ADVANCE_NOTES.length];
 }
 
 // ── Track Feedback helper ───────────────────────────────────────────────────

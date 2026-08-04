@@ -31,25 +31,27 @@ describe("bootProviders", () => {
     expect(report.registered).toEqual(["anthropic"]);
     expect(report.skipped).toEqual([
       { id: "deepseek", reason: "no-key" },
+      { id: "fxb", reason: "no-key" },
       { id: "zhipu", reason: "no-key" },
     ]);
     expect(registerMock).toHaveBeenCalledOnce();
     expect(registerMock.mock.calls[0][0].id).toBe("anthropic");
   });
 
-  it("registers all three providers when all keys are present", async () => {
+  it("registers all four providers when all keys are present", async () => {
     resolveSecretMock.mockImplementation((key: string) => {
       if (key === "provider.anthropic.apiKey") return Promise.resolve("sk-ant-abc");
       if (key === "provider.deepseek.apiKey") return Promise.resolve("ds-xyz");
       if (key === "provider.zhipu.apiKey") return Promise.resolve("zp-abc");
+      if (key === "provider.fxb.apiKey") return Promise.resolve("fxb-abc");
       return Promise.resolve(null);
     });
 
     const report = await bootProviders();
 
-    expect(report.registered).toEqual(["anthropic", "deepseek", "zhipu"]);
+    expect(report.registered).toEqual(["anthropic", "deepseek", "fxb", "zhipu"]);
     expect(report.skipped).toEqual([]);
-    expect(registerMock).toHaveBeenCalledTimes(3);
+    expect(registerMock).toHaveBeenCalledTimes(4);
   });
 
   it("returns empty registered when no keys exist", async () => {
@@ -58,7 +60,7 @@ describe("bootProviders", () => {
     const report = await bootProviders();
 
     expect(report.registered).toEqual([]);
-    expect(report.skipped).toHaveLength(3);
+    expect(report.skipped).toHaveLength(4);
     expect(registerMock).not.toHaveBeenCalled();
   });
 });

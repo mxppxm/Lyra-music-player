@@ -406,32 +406,80 @@ body,
   text-align: center;
 }
 
+/* Idle home — same single stage as playback; the dock is its only child, so
+ * centering it here vertically is what anchors the slogan + input at the
+ * middle of the screen before the FLIP glide carries it down to the bottom. */
+.lyra-mobile-stage--idle {
+  justify-content: center;
+}
+
 .lyra-mobile-idle-slogan {
   color: var(--lyra-color-song-info);
-  font-size: var(--lyra-song-font-size);
   font-family: var(--lyra-note-family);
   font-style: italic;
-  letter-spacing: 0.06em;
-  margin-bottom: 24px;
-  padding: 10px 24px;
-  border-radius: 999px;
-  background: var(--lyra-note-glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--lyra-glass-border);
-  box-shadow: 0 8px 24px rgba(24, 18, 12, 0.06);
+  font-size: 21px;
+  letter-spacing: 0.05em;
+  margin-bottom: 0;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 button.lyra-mobile-idle-slogan:hover {
-  border-color: rgba(24, 18, 12, 0.18);
-  box-shadow: 0 10px 28px rgba(24, 18, 12, 0.10);
+  opacity: 0.7;
 }
 
-button.lyra-mobile-idle-slogan:active {
-  transform: translateY(1px);
+/* Slogan lives inside the dock capsule now; the dock's own gap owns the
+ * spacing, so the old 24px margin (meant for the bare centered stage) is
+ * dropped before it doubles the pill → input distance. */
+.lyra-mobile-dock--idle .lyra-mobile-idle-slogan {
+  margin-bottom: 0;
+}
+
+/* The Lyra wordmark is ONE always-mounted element (rendered in App as a
+ * fixed layer, never inside either screen). Before this, boot and home each
+ * rendered their own "Lyra" at the same spot, and the boot dissolve
+ * crossfaded one glyph over the other — identical antialiased text on two
+ * layers double-exposes and reads as a flash. The fixed layer mirrors the
+ * stage's padding so `bottom: 50% + 54px` lands on the same pixels in every
+ * phase, and the mark simply hides (fade + gentle upward glide) once a
+ * session starts, never remounting. */
+.lyra-mobile-brand-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  padding: env(safe-area-inset-top) 16px
+    calc(env(safe-area-inset-bottom) + 16px);
+  pointer-events: none;
+}
+
+.lyra-mobile-brand {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(50% + 54px);
+  color: var(--lyra-color-song-info);
+  font-family: var(--lyra-note-family);
+  font-style: italic;
+  font-size: 42px;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-align: center;
+  transition:
+    opacity 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lyra-mobile-brand--hidden {
+  opacity: 0;
+  transform: translateY(-14px);
 }
 
 /* ── Boot screen (no glass capsule) ───────────────────────────────────── */
@@ -441,16 +489,6 @@ button.lyra-mobile-idle-slogan:active {
   flex-direction: column;
   align-items: center;
   gap: 10px;
-}
-
-.lyra-mobile-boot__brand {
-  color: var(--lyra-color-song-info);
-  font-family: var(--lyra-note-family);
-  font-style: italic;
-  font-size: 42px;
-  font-weight: 400;
-  letter-spacing: 0.04em;
-  line-height: 1.1;
 }
 
 .lyra-mobile-boot__caption {
@@ -543,7 +581,6 @@ button.lyra-mobile-idle-slogan:active {
   color: var(--lyra-color-small-note);
   font-size: var(--lyra-note-font-size);
   font-family: var(--lyra-note-family);
-  font-style: italic;
   text-align: center;
   max-width: 34em;
   margin: 0 auto;
@@ -604,6 +641,7 @@ button.lyra-mobile-idle-slogan:active {
 /* ── Floating dock ────────────────────────────────────────────────────── */
 
 .lyra-mobile-dock {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -750,11 +788,19 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 /* Hidden with opacity/translate (never display:none) so the cover art
  * doesn't jump — everything keeps its layout box while fading. */
 .lyra-mobile-song-info,
-.lyra-mobile-small-note,
-.lyra-mobile-dock {
+.lyra-mobile-small-note {
   transition:
     opacity 480ms cubic-bezier(0.4, 0, 0.2, 1),
     transform 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The dock's transform doubles as the FLIP glide that carries the input
+ * module from the centered idle position down to the bottom on scene
+ * change — longer and decelerating so the slide reads as one motion. */
+.lyra-mobile-dock {
+  transition:
+    opacity 480ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 560ms cubic-bezier(0.32, 0, 0.2, 1);
 }
 
 .lyra-mobile-stage--immersive .lyra-mobile-song-info {
@@ -831,3 +877,370 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   opacity: 0.28;
   box-shadow: none;
 }
+
+/* ── Motion ─────────────────────────────────────────────────────────────
+ * Ported from app/src/home.css Motion region so the iOS surface shares the
+ * same tokens, keyframes and reduced-motion fallback as the Mac desktop.
+ * Only new rules are appended here — nothing below modifies an existing
+ * selector. */
+
+:root {
+  --lyra-duration-enter: 600ms;
+  --lyra-duration-exit: 300ms;
+  --lyra-ease-zen: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Text swap crossfade — Crossfade remounts a keyed span per text change. */
+.lyra-text-in {
+  display: inline-block;
+  animation: lyra-mobile-text-in 160ms var(--lyra-ease-zen) both;
+}
+
+/* The inline-block span escapes the parent's text-overflow, so long song
+ * titles hard-clip instead of ellipsizing; clip inside the span instead. */
+.lyra-mobile-song-info .lyra-text-in {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Home mount — the stage mounts already at rest (no translate), so the Lyra
+ * wordmark is pixel-exact at its canonical anchor the instant the home
+ * mounts and stays still while the boot layer dissolves over it and the
+ * modules appear beneath (lyra-mobile-module-in). The rule is empty by
+ * design: any stage-level animation would translate the brand away from its
+ * anchor during the boot → home handoff. */
+.lyra-mobile-stage {
+  animation: none;
+}
+
+@keyframes lyra-mobile-text-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Home modules stagger in — song info, note, then dock. On the idle→active
+ * scene change the content mounts fresh (it is only rendered outside idle),
+ * which is what makes the "let Lyra start" tap feel like a scene change; the
+ * delays below time that entrance to follow the dock's FLIP glide. The cover
+ * is excluded: its transform is driven by the immersive FLIP, and an
+ * animation fill would pin a transform over it. `backwards` (not `both`)
+ * keeps the pre-animation state during the stagger delay without locking
+ * the end state, so immersive's own opacity/transform transitions keep
+ * working afterwards. */
+.lyra-mobile-content > *:not(.lyra-mobile-cover-shift),
+.lyra-mobile-dock,
+.lyra-mobile-idle-slogan {
+  animation: lyra-mobile-module-in 420ms var(--lyra-ease-zen) backwards;
+}
+
+/* Scene-change stagger: the dock's FLIP glide takes 560ms, so content waits
+ * for it to settle before appearing instead of playing on top of it. */
+.lyra-mobile-content > :nth-child(2) {
+  animation-delay: 520ms;
+}
+
+.lyra-mobile-content > :nth-child(3) {
+  animation-delay: 600ms;
+}
+
+/* The dock capsule fades in with the slogan on first mount (boot → home);
+ * the brand above it is already visible, so there is no delay needed. */
+.lyra-mobile-dock {
+  animation-delay: 0ms;
+}
+
+@keyframes lyra-mobile-module-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dock controls appear only after the idle→active scene change — they wait
+ * for the FLIP glide to mostly settle, then rise into the slot as the
+ * slogan (which starts leaving at 420ms) is still dissolving above them.
+ * The 220ms+ crossfade overlap is what keeps the swap from ever reading as
+ * a blank flash. */
+.lyra-mobile-dock:not(.lyra-mobile-dock--idle) .lyra-mobile-player-controls {
+  animation: lyra-mobile-controls-in 440ms var(--lyra-ease-zen) 480ms backwards;
+}
+
+@keyframes lyra-mobile-controls-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The slogan rides inside the dock during the FLIP glide, then detaches
+ * (absolute, anchored to the dock) and dissolves upward while the player
+ * controls rise into the same slot beneath it. The 300ms exit is long
+ * enough to read as motion rather than a vanish; `forwards` keeps it
+ * invisible until the leaving state unmounts it. */
+.lyra-mobile-idle-slogan--leaving {
+  position: absolute;
+  margin: 0;
+  pointer-events: none;
+  animation: lyra-mobile-slogan-out 300ms var(--lyra-ease-zen) 420ms forwards;
+}
+
+@keyframes lyra-mobile-slogan-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+}
+
+/* Song title marquee — MarqueeText measures overflow, sets --lyra-marquee-dx
+ * to the pixel distance, and toggles --active; the track pauses briefly at
+ * both ends so the whole line stays readable. */
+.lyra-marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.lyra-marquee__track {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.lyra-marquee--active .lyra-marquee__track {
+  animation: lyra-marquee-slide var(--lyra-marquee-duration, 12s) linear
+    infinite;
+}
+
+@keyframes lyra-marquee-slide {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(calc(-1 * var(--lyra-marquee-dx, 0px)));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Scene changes (idle → active) are handled without View Transitions: the
+ * dock FLIP glides the input module from center to bottom (see the dock
+ * transition and the useLayoutEffect in MobileHomeView), the brand glides up
+ * out of the way, and the slogan detaches to slide up + fade while the
+ * controls fade in beneath it (lyra-mobile-idle-slogan--leaving). View
+ * Transition was dropped because on real devices the swap flashed the input
+ * box instead of morphing it. */
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-text-in,
+  .lyra-mobile-stage,
+  .lyra-mobile-content > *:not(.lyra-mobile-cover-shift),
+  .lyra-mobile-dock,
+  .lyra-mobile-idle-slogan,
+  .lyra-mobile-idle-slogan--leaving,
+  .lyra-mobile-dock:not(.lyra-mobile-dock--idle) .lyra-mobile-player-controls,
+  .lyra-marquee--active .lyra-marquee__track {
+    animation: none !important;
+  }
+
+  /* No FLIP glide, no immersive glide — the dock just jumps into place. */
+  .lyra-mobile-dock {
+    transition: none !important;
+  }
+
+  /* The leaving slogan must not linger over the controls, and the brand
+   * snaps out instead of gliding away. */
+  .lyra-mobile-idle-slogan--leaving {
+    opacity: 0 !important;
+  }
+
+  .lyra-mobile-brand {
+    transition: none !important;
+  }
+}
+
+/* ── Device-feedback polish (appended) ───────────────────────────────────
+ * Three follow-ups from on-device review: the first-screen glass capsule
+ * should bloom from a point instead of the nested double-translate that
+ * read as a shake, the leaving slogan must stay centered over the dock
+ * (absolute positioning otherwise drops it to the flex start edge), and
+ * the dock rides 10px higher during playback. Nothing above is modified. */
+
+/* The glass capsule waits out the boot handoff, then unfolds from a
+ * horizontal line (scaleY) into the full pill — the 600ms delay covers the
+ * 300ms boot dissolve (BOOT_LEAVE_MS) plus a beat, so the bloom never
+ * competes with the boot layer still fading over the brand. `backwards`
+ * keeps the dock invisible during that wait, then releases the transform
+ * when done so the dock's FLIP, --playing and immersive transforms keep
+ * working afterwards. */
+.lyra-mobile-dock {
+  animation: lyra-mobile-pill-in 700ms var(--lyra-ease-zen) 600ms backwards;
+  transform-origin: center;
+}
+
+/* The idle slogan rides the capsule's bloom — its own translate-based
+ * module-in would fight the grow and re-introduce the shake. */
+.lyra-mobile-dock--idle .lyra-mobile-idle-slogan {
+  animation: none;
+}
+
+@keyframes lyra-mobile-pill-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.02);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+/* Leaving slogan: it is absolutely positioned inside the dock for the
+ * handoff, and without offsets it snaps to the flex start (left) edge.
+ * Pin it horizontally centered so it dissolves in place above the
+ * controls (translateY-only keyframes, so no transform clash). */
+.lyra-mobile-idle-slogan--leaving {
+  left: 0;
+  right: 0;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+/* Playback raise: the control module floats 20px higher than its resting
+ * bottom position (10px on top of the first on-device bump). The idle→
+ * active FLIP runs while kind is "thinking" (playing is false), so this
+ * never fights the inline FLIP transform; thinking→playing crosses over
+ * on the dock's own 560ms transition. In immersive the higher-specificity
+ * stage rule keeps it hidden. */
+.lyra-mobile-dock--playing {
+  transform: translateY(-20px);
+}
+
+/* ── Second device-feedback round (appended) ────────────────────────────
+ * (1) The idle capsule now unfolds from a horizontal line (scaleY) instead
+ *     of the scale(0.7) bloom that felt too fast. (2) The Lyra wordmark
+ *     must not drop below the content when leaving idle — it is anchored
+ *     to its idle spot and fades in place, with a same-height slot keeping
+ *     the dock's settled position. (3) The dock rides 20px higher while
+ *     playing (above). (4) The cover's <img> gets its own radius so the
+ *     square corners can never flash when the card is composited. */
+
+/* Same box the brand would occupy (46px line-height), so the dock's rest
+ * position — centered on the stage as if the mark were still in flow —
+ * doesn't shift now that the mark lives in the fixed layer. */
+.lyra-mobile-idle-brand-slot {
+  height: 46px;
+  flex-shrink: 0;
+}
+
+/* Cover <img> self-rounds: while the image is composited (opacity fade,
+ * FLIP scale, will-change on the disc) WebKit can fail to clip it with
+ * the parent's overflow + border-radius, flashing square corners. Give the
+ * img its own radius — 12px in the card, 50% in CD mode — so the corners
+ * are correct even if the parent clip drops out. */
+.lyra-mobile-cover-art__img {
+  border-radius: 12px;
+  transition:
+    opacity 600ms ease,
+    border-radius 560ms cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+.lyra-mobile-cover-art--cd .lyra-mobile-cover-art__img {
+  border-radius: 50%;
+}
+
+/* ── Third device-feedback round (appended) ─────────────────────────────
+ * The boot caption "在醒来的路上" must not flash: it rises in gently, the
+ * app holds the boot screen for a readable minimum before swapping (see
+ * MIN_BOOT_DWELL_MS in App.tsx), and the boot layer detaches from flow and
+ * dissolves over the freshly mounted home — the ambient surfaces are the
+ * same ZERO_PAD color, so the crossfade never blanks. */
+
+/* Caption rises in with the boot — `backwards` keeps it hidden during the
+ * short delay, and the keyframe ends at the base opacity (0.72) so nothing
+ * snaps when the animation releases. It is anchored just beneath the single
+ * fixed Lyra mark (both resolve `bottom` against the same stage-style
+ * padding box, so the caption rides 30px under the mark), and dissolves
+ * away with the boot layer while the mark stays frozen in place. */
+.lyra-mobile-boot__caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(50% + 24px);
+  margin-bottom: 0;
+  text-align: center;
+  animation: lyra-mobile-caption-in 500ms var(--lyra-ease-zen) 200ms backwards;
+}
+
+@keyframes lyra-mobile-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 0.72;
+    transform: translateY(0);
+  }
+}
+
+/* The boot layer floats above the home during the handoff and dissolves —
+ * `forwards` keeps it invisible until it unmounts (BOOT_LEAVE_MS in App.tsx
+ * matches the --lyra-duration-exit used below). pointer-events are released
+ * immediately so the home beneath is tappable mid-fade. Painted over the
+ * home because it comes later in the DOM at the same stacking level. */
+.lyra-mobile-ambient--boot-leaving {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: lyra-mobile-boot-dissolve var(--lyra-duration-exit)
+    var(--lyra-ease-zen) forwards;
+}
+
+@keyframes lyra-mobile-boot-dissolve {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-mobile-boot__caption,
+  .lyra-mobile-ambient--boot-leaving {
+    animation: none !important;
+  }
+
+  /* Reduced motion: the swap is a hard cut, not a dissolve. */
+  .lyra-mobile-ambient--boot-leaving {
+    opacity: 0;
+  }
+}
+
+/* ── Fourth device-feedback round (appended) ────────────────────────────
+ * The Lyra wordmark must not wander: before this round it lived at three
+ * different vertical spots (boot in-flow, home idle in-flow, home hidden
+ * absolute), so the swap read as the logo jumping. Round four pinned it to
+ * one canonical anchor — `bottom: calc(50% + 54px)` — and the follow-up
+ * hoisted it into a single always-mounted fixed layer (.lyra-mobile-brand-
+ * layer above), so boot and home no longer render separate marks that
+ * crossfade over one another during the dissolve. The in-flow slot keeps
+ * the dock's position stable regardless (see MobileHomeView). */
+

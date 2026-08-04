@@ -3,6 +3,7 @@
 // click / 「关」 button close it. The HTML itself is a standalone document
 // with inline CSS/SVG produced by weeklyRenderer.render().
 import { useEffect } from "react";
+import { AnimatedMount } from "../ui/motion/AnimatedMount";
 
 export type WeeklyReaderProps = {
   html: string | null;
@@ -22,22 +23,25 @@ export function WeeklyReader({ html, onClose }: WeeklyReaderProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [html, onClose]);
 
-  if (html === null) return null;
-
   return (
-    <>
-      <div
-        data-testid="weekly-reader-backdrop"
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.55)",
-          zIndex: 9998,
-          backdropFilter: "blur(6px)",
-          WebkitBackdropFilter: "blur(6px)",
-        }}
-      />
+    <AnimatedMount
+      open={html !== null}
+      zIndex={9998}
+      variant="fullscreen"
+      backdrop={
+        <div
+          data-testid="weekly-reader-backdrop"
+          onClick={onClose}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+          }}
+        />
+      }
+    >
       <div
         role="dialog"
         aria-label="Weekly letter"
@@ -57,7 +61,7 @@ export function WeeklyReader({ html, onClose }: WeeklyReaderProps) {
         <iframe
           data-testid="weekly-reader-iframe"
           title="weekly letter"
-          srcDoc={html}
+          srcDoc={html ?? ""}
           sandbox=""
           style={{
             flex: 1,
@@ -89,6 +93,6 @@ export function WeeklyReader({ html, onClose }: WeeklyReaderProps) {
           ×
         </button>
       </div>
-    </>
+    </AnimatedMount>
   );
 }
