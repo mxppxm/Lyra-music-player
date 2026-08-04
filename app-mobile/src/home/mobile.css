@@ -1094,7 +1094,7 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
  * the moment it finishes, so the dock's FLIP, --playing and immersive
  * transforms keep working afterwards. */
 .lyra-mobile-dock {
-  animation: lyra-mobile-pill-in 520ms var(--lyra-ease-zen) backwards;
+  animation: lyra-mobile-pill-in 600ms var(--lyra-ease-zen) backwards;
   transform-origin: center;
 }
 
@@ -1107,11 +1107,11 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 @keyframes lyra-mobile-pill-in {
   from {
     opacity: 0;
-    transform: scale(0.7);
+    transform: scaleY(0.02);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: scaleY(1);
   }
 }
 
@@ -1126,11 +1126,65 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   margin: 0 auto;
 }
 
-/* Playback raise: the control module floats 10px higher than its resting
- * bottom position. The idle→active FLIP runs while kind is "thinking"
- * (playing is false), so this never fights the inline FLIP transform;
- * thinking→playing crosses over on the dock's own 560ms transition. In
- * immersive the higher-specificity stage rule keeps it hidden. */
+/* Playback raise: the control module floats 20px higher than its resting
+ * bottom position (10px on top of the first on-device bump). The idle→
+ * active FLIP runs while kind is "thinking" (playing is false), so this
+ * never fights the inline FLIP transform; thinking→playing crosses over
+ * on the dock's own 560ms transition. In immersive the higher-specificity
+ * stage rule keeps it hidden. */
 .lyra-mobile-dock--playing {
-  transform: translateY(-10px);
+  transform: translateY(-20px);
+}
+
+/* ── Second device-feedback round (appended) ────────────────────────────
+ * (1) The idle capsule now unfolds from a horizontal line (scaleY) instead
+ *     of the scale(0.7) bloom that felt too fast. (2) The Lyra wordmark
+ *     must not drop below the content when leaving idle — it is anchored
+ *     to its idle spot and fades in place, with a same-height slot keeping
+ *     the dock's settled position. (3) The dock rides 20px higher while
+ *     playing (above). (4) The cover's <img> gets its own radius so the
+ *     square corners can never flash when the card is composited. */
+
+/* Brand anchored instead of relocated: once the centered idle layout goes
+ * away, the flex stage would push the wordmark down past the content block
+ * (reads as the logo falling to the bottom before vanishing). Pin it to
+ * its idle spot — the capsule group is centered, and the brand sits
+ * ~54px above the vertical center — and let only opacity fade it out.
+ * The base rule's translateY(-14px) is neutralized (transform: none). */
+.lyra-mobile-idle-brand--hidden {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(50% + 54px);
+  transform: none;
+  opacity: 0;
+}
+
+/* Same box the brand occupied in flow (46px line-height + the two stage
+ * gaps cancel the slot's own gaps), so the dock's rest position doesn't
+ * shift when the brand detaches. */
+.lyra-mobile-idle-brand-slot {
+  height: 46px;
+  flex-shrink: 0;
+}
+
+/* The stage is the positioning context for the detached brand. */
+.lyra-mobile-stage {
+  position: relative;
+}
+
+/* Cover <img> self-rounds: while the image is composited (opacity fade,
+ * FLIP scale, will-change on the disc) WebKit can fail to clip it with
+ * the parent's overflow + border-radius, flashing square corners. Give the
+ * img its own radius — 12px in the card, 50% in CD mode — so the corners
+ * are correct even if the parent clip drops out. */
+.lyra-mobile-cover-art__img {
+  border-radius: 12px;
+  transition:
+    opacity 600ms ease,
+    border-radius 560ms cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+.lyra-mobile-cover-art--cd .lyra-mobile-cover-art__img {
+  border-radius: 50%;
 }
