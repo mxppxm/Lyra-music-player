@@ -8,20 +8,20 @@ function fakeProvider(id: any): ModelProvider {
 }
 
 describe("routeProvider", () => {
-  it("PRIMARY_FOR maps emotion→zhipu and companion→anthropic per spec §3.5", () => {
-    expect(PRIMARY_FOR.emotion).toBe("zhipu");
-    expect(PRIMARY_FOR.companion).toBe("anthropic");
+  it("PRIMARY_FOR maps every agent→fxb per routing §3.5", () => {
+    expect(PRIMARY_FOR.emotion).toBe("fxb");
+    expect(PRIMARY_FOR.companion).toBe("fxb");
   });
 
-  it("FALLBACK_FOR maps emotion→deepseek and companion→zhipu per spec §3.5", () => {
-    expect(FALLBACK_FOR.emotion).toBe("deepseek");
-    expect(FALLBACK_FOR.companion).toBe("zhipu");
+  it("FALLBACK_FOR keeps deepseek as the fallback per routing §3.5", () => {
+    expect(FALLBACK_FOR.emotion).toEqual(["deepseek"]);
+    expect(FALLBACK_FOR.companion).toEqual(["zhipu", "deepseek"]);
   });
 
   it("returns the primary when registered", () => {
     const registry = new ProviderRegistry();
-    registry.register(fakeProvider("zhipu"));
-    expect(routeProvider("emotion", registry).id).toBe("zhipu");
+    registry.register(fakeProvider("fxb"));
+    expect(routeProvider("emotion", registry).id).toBe("fxb");
   });
 
   it("returns the fallback when primary is not registered but fallback is", () => {

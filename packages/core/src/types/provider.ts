@@ -39,6 +39,7 @@ export type ProviderId =
   | "anthropic"
   | "deepseek"
   | "zhipu"
+  | "fxb"
   | "doubao"
   | "openai"
   | "local-ollama";

@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_ANTHROPIC_API_KEY?: string;
   readonly VITE_DEEPSEEK_API_KEY?: string;
   readonly VITE_ZHIPU_API_KEY?: string;
+  readonly VITE_FXB_API_KEY?: string;
   readonly VITE_ZHIPU_EMBEDDING_API_KEY?: string;
   readonly VITE_OPENAI_API_KEY?: string;
 }
