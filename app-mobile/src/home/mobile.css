@@ -427,15 +427,13 @@ body,
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  transition: opacity 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 button.lyra-mobile-idle-slogan:hover {
   opacity: 0.7;
-}
-
-button.lyra-mobile-idle-slogan:active {
-  opacity: 0.5;
 }
 
 /* Slogan lives inside the dock capsule now; the dock's own gap owns the
@@ -974,17 +972,18 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 }
 
 /* Dock controls appear only after the idle→active scene change — they wait
- * for the FLIP glide to settle, then fade up into the dock as the slogan
- * (which starts leaving at 520ms) exits above them, so the handoff never
- * leaves the slot empty. */
+ * for the FLIP glide to mostly settle, then rise into the slot as the
+ * slogan (which starts leaving at 420ms) is still dissolving above them.
+ * The 220ms+ crossfade overlap is what keeps the swap from ever reading as
+ * a blank flash. */
 .lyra-mobile-dock:not(.lyra-mobile-dock--idle) .lyra-mobile-player-controls {
-  animation: lyra-mobile-controls-in 340ms var(--lyra-ease-zen) 560ms backwards;
+  animation: lyra-mobile-controls-in 440ms var(--lyra-ease-zen) 480ms backwards;
 }
 
 @keyframes lyra-mobile-controls-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(14px);
   }
   to {
     opacity: 1;
@@ -993,16 +992,15 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 }
 
 /* The slogan rides inside the dock during the FLIP glide, then detaches
- * (absolute, anchored to the dock) and slides up out of the way as the
- * player controls take over the same slot. The delayed start makes it exit
- * right as the dock settles; the delayed 520ms matches controls-in, so the
- * two overlap instead of leaving a blank gap between them. `forwards` keeps
- * it invisible until the leaving state unmounts it. */
+ * (absolute, anchored to the dock) and dissolves upward while the player
+ * controls rise into the same slot beneath it. The 300ms exit is long
+ * enough to read as motion rather than a vanish; `forwards` keeps it
+ * invisible until the leaving state unmounts it. */
 .lyra-mobile-idle-slogan--leaving {
   position: absolute;
   margin: 0;
   pointer-events: none;
-  animation: lyra-mobile-slogan-out 200ms var(--lyra-ease-zen) 520ms forwards;
+  animation: lyra-mobile-slogan-out 300ms var(--lyra-ease-zen) 420ms forwards;
 }
 
 @keyframes lyra-mobile-slogan-out {
@@ -1012,7 +1010,7 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   }
   to {
     opacity: 0;
-    transform: translateY(-14px);
+    transform: translateY(-18px);
   }
 }
 

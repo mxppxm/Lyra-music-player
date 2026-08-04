@@ -21,7 +21,7 @@ import { setImmersiveStatusBar } from "./immersiveStatusBar";
 import { LyraAudio } from "@lyra/platform-ios";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
-const LYRA_START_LABEL = "让 Lyra 帮你启动";
+const LYRA_START_LABEL = "点我试试";
 
 type MobileHomeViewProps = {
   orchestrator: Orchestrator;
