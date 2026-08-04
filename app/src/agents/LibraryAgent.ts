@@ -18,6 +18,7 @@ import {
   tokenize,
   keywordScoreFromHaystack,
 } from "../recommendation";
+import { expandWithSynonyms, areSynonyms } from "../recommendation/moodSynonyms";
 
 const DEFAULT_LIMIT = 30;
 
@@ -86,14 +87,18 @@ function timeColorScore(hour: number, timeColor: string): number {
   return 0;
 }
 
-/** Scenario match: user utterance keywords vs best_for */
+/** Scenario match: user utterance keywords vs best_for.
+ *  Supports cross-language synonym matching — "无聊" can match "情绪低落时". */
 function scenarioScore(queryTokens: string[], bestFor: string[]): number {
   if (bestFor.length === 0 || queryTokens.length === 0) return 0;
+  // Expand query tokens with synonyms for cross-language matching
+  const expandedTokens = expandWithSynonyms(queryTokens);
   const lowerBest = bestFor.map((b) => b.toLowerCase());
   let hits = 0;
-  for (const t of queryTokens) {
+  for (const t of expandedTokens) {
+    const tLow = t.toLowerCase();
     for (const b of lowerBest) {
-      if (b.includes(t) || t.includes(b)) {
+      if (b.includes(tLow) || tLow.includes(b) || areSynonyms(tLow, b)) {
         hits++;
         break;
       }

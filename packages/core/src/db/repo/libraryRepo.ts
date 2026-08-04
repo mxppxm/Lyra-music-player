@@ -62,6 +62,21 @@ export async function findByPath(path: string): Promise<LibraryTrack | null> {
  *  leaves the SQLite `foreign_keys` pragma OFF, so ON DELETE CASCADE in the
  *  schema doesn't fire — we wipe children first, parent last, in an order
  *  that stays consistent whether or not cascades are eventually turned on. */
+/** Quick check: does any track in the library match the given artist name?
+ *  Searches the `artist` and `title` columns (case-insensitive, substring).
+ *  Used by parseArtistIntent to reject mood words that look like artist names. */
+export async function artistExists(name: string): Promise<boolean> {
+  const token = name.trim().toLowerCase();
+  if (!token) return false;
+  const db = await getDb();
+  const rows = await db.select<{ cnt: number }[]>(
+    `SELECT COUNT(*) AS cnt FROM library_tracks
+     WHERE LOWER(artist) LIKE ? OR LOWER(title) LIKE ?`,
+    [`%${token}%`, `%${token}%`],
+  );
+  return (rows[0]?.cnt ?? 0) > 0;
+}
+
 export async function deleteTrackCascade(id: string): Promise<void> {
   const db = await getDb();
   await db.execute(

@@ -1,5 +1,6 @@
 import type { MusicProfile } from "../types/musicProfile";
 import type { SoulState } from "../types";
+import { translateMoodTags } from "./moodEnToZh";
 
 /** Trust multiplier applied to the composite profile score. */
 export function profileQualityMultiplier(profile: MusicProfile | null | undefined): number {
@@ -10,7 +11,9 @@ export function profileQualityMultiplier(profile: MusicProfile | null | undefine
   return 0.95;
 }
 
-/** Overlap between user labels / query tokens and song mood or lyrical themes. */
+/** Overlap between user labels / query tokens and song mood or lyrical themes.
+ *  Translates English song tags to Chinese before matching, so "无聊" can
+ *  match a song tagged "melancholic" or "lonely". */
 export function tagOverlap(
   userLabels: string[],
   queryTokens: string[],
@@ -20,7 +23,8 @@ export function tagOverlap(
   if (merged.length === 0 || songTags.length === 0) return 0;
 
   const userSet = merged.map((l) => l.toLowerCase()).filter((l) => l.length > 1);
-  const songSet = songTags.map((m) => m.toLowerCase());
+  // Translate English mood tags to Chinese for cross-language matching
+  const songSet = translateMoodTags(songTags).map((m) => m.toLowerCase());
   let overlap = 0;
   for (const m of songSet) {
     for (const u of userSet) {
@@ -77,19 +81,23 @@ export function energyMatchScore(
   return 1 - dist / 4;
 }
 
-/** Text haystack for keyword fallback — uses canonical identity when profile exists. */
+/** Text haystack for keyword fallback — uses canonical identity when profile exists.
+ *  Translates English mood tags to Chinese so keyword search can match across languages. */
 export function profileSearchHaystack(
   track: { title?: string; artist?: string; album?: string },
   profile: MusicProfile | null | undefined,
 ): string {
+  // Translate English mood tags to Chinese for keyword matching
+  const moodWithZh = profile?.mood ? translateMoodTags(profile.mood) : [];
   const parts = [
     track.title,
     track.artist,
     track.album,
     profile?.canonical_work,
     ...(profile?.genre ?? []),
-    ...(profile?.mood ?? []),
+    ...moodWithZh,
     ...(profile?.lyrical_themes ?? []),
+    ...(profile?.best_for ?? []),
     ...(profile?.instrumentation ?? []),
     profile?.vocal_style,
   ];

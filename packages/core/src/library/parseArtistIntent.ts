@@ -6,8 +6,12 @@ export function normalizeArtistToken(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, "");
 }
 
+/** Quick-reject regex for common mood/scene words.
+ *  This is a FAST PATH only — the real guard is the library artist check
+ *  in updateArtistFilterFromUserInput. Words here skip the DB query entirely.
+ *  Keep it small; don't try to enumerate every mood word. */
 const MOOD_OR_SCENE =
-  /有点|累|烦|开心|难过|失眠|低落|还好|随便|算了|放空|孤独|焦虑|平静|老样子|没事|扛不住|顶不住|喘不过气|睡不着|丧|怪怪|今天|最近|现在|下雨|安静|慢|快|燃|治愈|放松/u;
+  /有点|累|烦|开心|难过|失眠|低落|还好|随便|算了|放空|孤独|焦虑|平静|老样子|没事|丧|今天|最近|现在|下雨|安静|慢|快|燃|治愈|放松|emo/u;
 
 const GENERIC_MUSIC_REQUEST =
   /^(?:来|放|播)(?:一|1)?[首个]?(?:歌|音乐)?$|^(?:来(?:点|首|个)?|随便(?:来|听)?)(?:歌|音乐)?$/u;

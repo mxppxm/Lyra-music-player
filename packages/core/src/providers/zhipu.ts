@@ -9,6 +9,8 @@ const DEFAULT_MODEL = "glm-5.2";
 // Hard-coded to match the CSP connect-src allowlist in tauri.conf.json.
 // If this ever changes, update the CSP simultaneously.
 const ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+/** Per-request timeout — prevents infinite thinking when the API hangs. */
+const TIMEOUT_MS = 30_000;
 
 /**
  * ZhipuProvider — 智谱 GLM adapter, OpenAI-compat wire format.
@@ -35,29 +37,42 @@ export class ZhipuProvider implements ModelProvider {
     if (opts?.response_format) body.response_format = opts.response_format;
     if (opts?.enable_thinking != null) body.enable_thinking = opts.enable_thinking;
 
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Zhipu ${res.status}: ${text}`);
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Zhipu ${res.status}: ${text}`);
+      }
+
+      const data = await res.json();
+      const content: string = data.choices?.[0]?.message?.content ?? "";
+      const usage = data.usage
+        ? {
+            input_tokens: data.usage.prompt_tokens ?? 0,
+            output_tokens: data.usage.completion_tokens ?? 0,
+          }
+        : undefined;
+
+      return { content, model: opts?.model ?? this.defaultModel, usage, raw: data };
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(`Zhipu request timed out after ${TIMEOUT_MS / 1000}s`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const data = await res.json();
-    const content: string = data.choices?.[0]?.message?.content ?? "";
-    const usage = data.usage
-      ? {
-          input_tokens: data.usage.prompt_tokens ?? 0,
-          output_tokens: data.usage.completion_tokens ?? 0,
-        }
-      : undefined;
-
-    return { content, model: opts?.model ?? this.defaultModel, usage, raw: data };
   }
 }

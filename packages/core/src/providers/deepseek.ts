@@ -10,6 +10,8 @@ const DEFAULT_MODEL = "deepseek-chat";
 // If this ever changes, update the CSP simultaneously.
 const ENDPOINT = "https://api.deepseek.com/v1/chat/completions";
 const MAX_ATTEMPTS = 3;
+/** Per-request timeout — prevents infinite thinking when the API hangs. */
+const TIMEOUT_MS = 30_000;
 
 export class DeepSeekProvider implements ModelProvider {
   readonly id = "deepseek" as const;
@@ -52,18 +54,31 @@ export class DeepSeekProvider implements ModelProvider {
 
   // DeepSeek load-sheds under pressure: 503s are transient, retry with backoff.
   private async post(body: string, attempt = 1): Promise<Response> {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        "content-type": "application/json",
-      },
-      body,
-    });
-    if (res.status === 503 && attempt < MAX_ATTEMPTS) {
-      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-      return this.post(body, attempt + 1);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          "content-type": "application/json",
+        },
+        body,
+        signal: controller.signal,
+      });
+      if (res.status === 503 && attempt < MAX_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        return this.post(body, attempt + 1);
+      }
+      return res;
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(`DeepSeek request timed out after ${TIMEOUT_MS / 1000}s`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    return res;
   }
 }

@@ -72,7 +72,8 @@ function timeColorScore(hour: number, timeColor: string): number {
   return 0;
 }
 
-/** Scenario match: user utterance keywords vs best_for */
+/** Scenario match: user utterance keywords vs best_for.
+ *  Also translates English mood tags to Chinese for cross-language matching. */
 function scenarioScore(queryTokens: string[], bestFor: string[]): number {
   if (bestFor.length === 0 || queryTokens.length === 0) return 0;
   const lowerBest = bestFor.map((b) => b.toLowerCase());

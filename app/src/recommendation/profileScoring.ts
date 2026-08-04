@@ -1,5 +1,6 @@
 import type { MusicProfile } from "../types/musicProfile";
 import type { SoulState } from "../types";
+import { expandWithSynonyms, areSynonyms, getSynonyms } from "./moodSynonyms";
 
 /** Trust multiplier applied to the composite profile score. */
 export function profileQualityMultiplier(profile: MusicProfile | null | undefined): number {
@@ -10,7 +11,9 @@ export function profileQualityMultiplier(profile: MusicProfile | null | undefine
   return 0.95;
 }
 
-/** Overlap between user labels / query tokens and song mood or lyrical themes. */
+/** Overlap between user labels / query tokens and song mood or lyrical themes.
+ *  Supports cross-language synonym matching via moodSynonyms — "无聊" can
+ *  match "melancholic", "lonely", "bored", etc. */
 export function tagOverlap(
   userLabels: string[],
   queryTokens: string[],
@@ -19,18 +22,21 @@ export function tagOverlap(
   const merged = [...userLabels, ...queryTokens];
   if (merged.length === 0 || songTags.length === 0) return 0;
 
-  const userSet = merged.map((l) => l.toLowerCase()).filter((l) => l.length > 1);
+  // Expand user tokens with cross-language synonyms
+  const expandedUser = expandWithSynonyms(merged.map((l) => l.toLowerCase()).filter((l) => l.length > 1));
   const songSet = songTags.map((m) => m.toLowerCase());
+
   let overlap = 0;
   for (const m of songSet) {
-    for (const u of userSet) {
-      if (m.includes(u) || u.includes(m)) {
+    for (const u of expandedUser) {
+      // Direct substring match OR synonym match
+      if (m.includes(u) || u.includes(m) || areSynonyms(m, u)) {
         overlap++;
         break;
       }
     }
   }
-  return overlap / Math.max(userSet.length, 1);
+  return overlap / Math.max(expandedUser.length, 1);
 }
 
 /** Soul genre affinity vs track profile genres. */
@@ -77,19 +83,31 @@ export function energyMatchScore(
   return 1 - dist / 4;
 }
 
-/** Text haystack for keyword fallback — uses canonical identity when profile exists. */
+/** Text haystack for keyword fallback — uses canonical identity when profile exists.
+ *  Expands English mood tags with Chinese synonyms for cross-language keyword matching. */
 export function profileSearchHaystack(
   track: { title?: string; artist?: string; album?: string },
   profile: MusicProfile | null | undefined,
 ): string {
+  // Expand mood tags with cross-language synonyms
+  const moodWithSynonyms: string[] = [];
+  if (profile?.mood) {
+    for (const m of profile.mood) {
+      moodWithSynonyms.push(m);
+      // Add Chinese synonyms for English mood tags
+      moodWithSynonyms.push(...getSynonyms(m));
+    }
+  }
+
   const parts = [
     track.title,
     track.artist,
     track.album,
     profile?.canonical_work,
     ...(profile?.genre ?? []),
-    ...(profile?.mood ?? []),
+    ...moodWithSynonyms,
     ...(profile?.lyrical_themes ?? []),
+    ...(profile?.best_for ?? []),
     ...(profile?.instrumentation ?? []),
     profile?.vocal_style,
   ];

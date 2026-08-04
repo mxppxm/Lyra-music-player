@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.daoyu.lyra",
+  appId: "com.jiuri.lyra",
   appName: "Lyra",
   webDir: "dist",
   ios: {

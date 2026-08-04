@@ -120,9 +120,23 @@ export class Orchestrator {
     return this.activeArtistFilter;
   }
 
-  private updateArtistFilterFromUserInput(text: string): void {
+  private async updateArtistFilterFromUserInput(text: string): Promise<void> {
     const artist = parseArtistIntent(text);
     if (artist) {
+      // Validate against the library — if no track matches this "artist",
+      // it's almost certainly a mood/scene word that slipped through the regex.
+      const exists = await libraryRepo.artistExists(artist);
+      if (!exists) {
+        console.log(`[lyra] artist session skipped: "${artist}" not found in library (likely mood/scene)`);
+        // Don't set the filter — let the utterance fall through to mood matching.
+        // Also clear any previous artist session so the user isn't stuck.
+        if (this.activeArtistFilter) {
+          this.activeArtistFilter = null;
+          this.nativeQueuePlan = [];
+          this.artistSessionPlayedIds.clear();
+        }
+        return;
+      }
       if (this.activeArtistFilter !== artist) {
         this.nativeQueuePlan = [];
         this.artistSessionPlayedIds.clear();
@@ -585,7 +599,7 @@ export class Orchestrator {
 
     this.emit({ kind: "thinking", user_utterance: text });
 
-    this.updateArtistFilterFromUserInput(text);
+    await this.updateArtistFilterFromUserInput(text);
 
     // Emit input_submit event for perception aggregator (best-effort, optional).
     try {
@@ -599,11 +613,24 @@ export class Orchestrator {
       /* bus errors are non-fatal */
     }
 
+    // Overall timeout guard — if the full turn pipeline hangs (LLM API,
+    // Bilibili search, etc.), bail out after 60s so the user isn't stuck
+    // in "thinking" forever.
+    const TURN_TIMEOUT_MS = 60_000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`turn timed out after ${TURN_TIMEOUT_MS / 1000}s`)), TURN_TIMEOUT_MS),
+    );
+
     try {
-      const emotion = await emotionAgent.analyze({ userUtterance: text });
-      const blended = blendEmotionWithBias(emotion, this.perceptionBias);
-      await this.finalisePreviousTurn(text, blended.pad);
-      await this.runTurnWithEmotion(blended, text, "text");
+      await Promise.race([
+        (async () => {
+          const emotion = await emotionAgent.analyze({ userUtterance: text });
+          const blended = blendEmotionWithBias(emotion, this.perceptionBias);
+          await this.finalisePreviousTurn(text, blended.pad);
+          await this.runTurnWithEmotion(blended, text, "text");
+        })(),
+        timeoutPromise,
+      ]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[lyra] orchestrator error:", err);
