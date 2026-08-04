@@ -3,7 +3,7 @@ import type { MusicProfile } from "../types/musicProfile";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import * as musicProfileRepo from "../db/repo/musicProfileRepo";
 import * as lyricsEmbeddingsRepo from "../db/repo/lyricsEmbeddingsRepo";
-import { createEmbeddingProvider, type EmbeddingProvider } from "../providers/embeddingProvider";
+import { createEmbeddingProvider } from "../providers/embeddingProvider";
 import type { PADProfile } from "../bilibili/audioFeatures";
 import type { RecommendationContext } from "../recommendation";
 import {
