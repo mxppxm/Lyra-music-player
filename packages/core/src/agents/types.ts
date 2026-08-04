@@ -25,6 +25,12 @@ export type CompanionInput = {
   topFacts?: Fact[];
   /** Play-history context — recent songs, fatigue, feedback. Drives diversity mandate. */
   recommendation?: RecommendationContext;
+  /** The rationale from the previous turn's companion response. Used to avoid
+   *  repeating the same writing style on auto-advance. Only set on auto-advance. */
+  previousRationale?: string;
+  /** The song that just finished playing (auto-advance context). Companion can
+   *  reference it in the rationale to create a natural DJ-like transition. */
+  previousSong?: { title: string; artist?: string };
 };
 
 export type EmotionInput = {
