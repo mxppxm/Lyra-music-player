@@ -1089,12 +1089,15 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
  * (absolute positioning otherwise drops it to the flex start edge), and
  * the dock rides 10px higher during playback. Nothing above is modified. */
 
-/* The glass capsule grows from a point on first mount (boot → home):
- * scale, not translate. `backwards` with no delay releases the transform
- * the moment it finishes, so the dock's FLIP, --playing and immersive
- * transforms keep working afterwards. */
+/* The glass capsule waits for the first screen to settle, then unfolds
+ * from a horizontal line (scaleY) into the full pill — the stage's own
+ * 600ms fade-up finishes first (matching delay), so the unfold never
+ * competes with the boot → home layout still moving. `backwards` keeps
+ * the dock invisible during that wait, then releases the transform when
+ * done so the dock's FLIP, --playing and immersive transforms keep
+ * working afterwards. */
 .lyra-mobile-dock {
-  animation: lyra-mobile-pill-in 600ms var(--lyra-ease-zen) backwards;
+  animation: lyra-mobile-pill-in 700ms var(--lyra-ease-zen) 600ms backwards;
   transform-origin: center;
 }
 
