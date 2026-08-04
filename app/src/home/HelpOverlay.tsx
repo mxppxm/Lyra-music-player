@@ -1,6 +1,7 @@
 // HelpOverlay — /help modal. First-person voice: 面向用户默认「我」。
 // Opened by the /help slash command in HomeView.
 import { useEffect } from "react";
+import { AnimatedMount } from "../ui/motion/AnimatedMount";
 
 export type HelpOverlayProps = {
   open: boolean;
@@ -20,20 +21,22 @@ export function HelpOverlay({ open, onClose }: HelpOverlayProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   return (
-    <>
-      <div
-        data-testid="help-backdrop"
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.35)",
-          zIndex: 9998,
-        }}
-      />
+    <AnimatedMount
+      open={open}
+      zIndex={9998}
+      backdrop={
+        <div
+          data-testid="help-backdrop"
+          onClick={onClose}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+          }}
+        />
+      }
+    >
       <div
         role="dialog"
         aria-label="Help"
@@ -103,7 +106,7 @@ export function HelpOverlay({ open, onClose }: HelpOverlayProps) {
           <button onClick={onClose} data-testid="help-close">好</button>
         </div>
       </div>
-    </>
+    </AnimatedMount>
   );
 }
 

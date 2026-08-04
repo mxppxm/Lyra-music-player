@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { SECRET_KEYS, setSecret, getSecret } from "./secrets";
 import { lyricsRefill } from "../library/lyricsRefill";
 import { reflectNow } from "../reflect/trigger";
+import { AnimatedMount } from "../ui/motion/AnimatedMount";
 
 type EmbeddingChoice = "" | "zhipu" | "openai";
 
@@ -79,8 +80,6 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
     };
   }, [open]);
 
-  if (!open) return null;
-
   const onSave = async () => {
     setSaving(true);
     try {
@@ -141,7 +140,8 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
   };
 
   return (
-    <div role="dialog" aria-label="设置" className="settings-modal">
+    <AnimatedMount open={open} zIndex={10000}>
+      <div role="dialog" aria-label="设置" className="settings-modal">
       <h2>⚙️ 设置</h2>
       {scanStatus && (
         <p style={{ opacity: 0.7, fontSize: "0.85em" }}>{scanStatus}</p>
@@ -338,6 +338,7 @@ export function Settings({ open, onClose, onSchedulerUpdate }: SettingsProps) {
           保存
         </button>
       </div>
-    </div>
+      </div>
+    </AnimatedMount>
   );
 }
