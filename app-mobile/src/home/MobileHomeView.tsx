@@ -256,17 +256,6 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
           </div>
         )}
 
-        <div
-          className={[
-            "lyra-mobile-idle-brand",
-            isSparseIdle ? "" : "lyra-mobile-idle-brand--hidden",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          aria-hidden="true"
-        >
-          Lyra
-        </div>
         <div className="lyra-mobile-idle-brand-slot" aria-hidden="true" />
 
         <div

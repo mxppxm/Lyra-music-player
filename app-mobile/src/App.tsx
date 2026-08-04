@@ -55,7 +55,6 @@ function BootScreen({
     >
       <div className="lyra-mobile-stage lyra-mobile-stage--centered">
         <div className="lyra-mobile-boot" data-testid="boot-screen">
-          <div className="lyra-mobile-boot__brand">Lyra</div>
           <div className="lyra-mobile-boot__caption">{caption}</div>
         </div>
       </div>
@@ -68,6 +67,8 @@ export function App() {
   const [orchestrator, setOrchestrator] = useState<Orchestrator | null>(null);
   /** boot → leaving (home mounted beneath, boot dissolves) → home */
   const [phase, setPhase] = useState<"boot" | "leaving" | "home">("boot");
+  /** The single Lyra wordmark hides once a playback session starts. */
+  const [brandHidden, setBrandHidden] = useState(false);
   const bootMountedAtRef = useRef(0);
 
   useEffect(() => {
@@ -115,6 +116,15 @@ export function App() {
     };
   }, [ready, orchestrator]);
 
+  // The wordmark is one always-mounted element (see the brand layer below),
+  // so mirror the old in-home hidden state from the turn kind instead of
+  // rendering a second mark inside the home.
+  useEffect(() => {
+    if (!orchestrator) return;
+    setBrandHidden(orchestrator.getState().kind !== "idle");
+    return orchestrator.subscribe((s) => setBrandHidden(s.kind !== "idle"));
+  }, [orchestrator]);
+
   const bootShown = phase !== "home";
 
   return (
@@ -128,6 +138,18 @@ export function App() {
           leaving={phase === "leaving"}
         />
       )}
+      <div className="lyra-mobile-brand-layer" aria-hidden="true">
+        <div
+          className={[
+            "lyra-mobile-brand",
+            brandHidden ? "lyra-mobile-brand--hidden" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          Lyra
+        </div>
+      </div>
       <BuildStamp />
     </>
   );
