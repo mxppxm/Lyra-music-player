@@ -33,6 +33,7 @@ import { RoadmapBoard } from "./ui/RoadmapBoard";
 import { DataExplorer } from "./ui/DataExplorer";
 import { HelpOverlay } from "./home/HelpOverlay";
 import { WeeklyReader } from "./home/WeeklyReader";
+import { AnimatedMount } from "./ui/motion/AnimatedMount";
 import { setLyraPlatform } from "@lyra/platform";
 import { createDesktopPlatform } from "@lyra/platform-desktop";
 
@@ -335,7 +336,7 @@ function App() {
 
   return (
     <>
-      {reflecting && (
+      <AnimatedMount open={reflecting} zIndex={9999} variant="fullscreen">
         <div
           data-testid="reflecting-overlay"
           style={{
@@ -345,12 +346,11 @@ function App() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 9999,
           }}
         >
           <span style={{ color: "#fff", fontSize: "1.5rem" }}>Lyra is dreaming…</span>
         </div>
-      )}
+      </AnimatedMount>
       <HomeView
         booting={!bootDone}
         zeroConfig={isZeroConfigRelease()}
