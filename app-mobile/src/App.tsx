@@ -6,7 +6,6 @@ import { createDefaultOrchestrator } from "@lyra/core";
 import type { Orchestrator } from "@lyra/core";
 import { MobileHomeView } from "./home/MobileHomeView";
 import { AmbientBackground } from "./home/AmbientBackground";
-import { BreathingGlow } from "./home/BreathingGlow";
 import { seedMobileLibraryIfNeeded } from "./db/seedLibrary";
 import "./home/mobile.css";
 
@@ -44,11 +43,9 @@ function BuildStamp() {
 
 function BootScreen({
   caption,
-  breathing = false,
   leaving = false,
 }: {
   caption: string;
-  breathing?: boolean;
   leaving?: boolean;
 }) {
   return (
@@ -60,7 +57,6 @@ function BootScreen({
         <div className="lyra-mobile-boot" data-testid="boot-screen">
           <div className="lyra-mobile-boot__brand">Lyra</div>
           <div className="lyra-mobile-boot__caption">{caption}</div>
-          {breathing ? <BreathingGlow size="lg" tone="warm" /> : null}
         </div>
       </div>
     </AmbientBackground>
@@ -129,7 +125,6 @@ export function App() {
       {bootShown && (
         <BootScreen
           caption={ready && !orchestrator ? "还没准备好" : "在醒来的路上"}
-          breathing={bootShown}
           leaving={phase === "leaving"}
         />
       )}

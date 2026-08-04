@@ -267,9 +267,7 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
         >
           Lyra
         </div>
-        {!isSparseIdle && (
-          <div className="lyra-mobile-idle-brand-slot" aria-hidden="true" />
-        )}
+        <div className="lyra-mobile-idle-brand-slot" aria-hidden="true" />
 
         <div
           ref={dockRef}

@@ -1152,14 +1152,14 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
  * away, the flex stage would push the wordmark down past the content block
  * (reads as the logo falling to the bottom before vanishing). Pin it to
  * its idle spot — the capsule group is centered, and the brand sits
- * ~54px above the vertical center — and let only opacity fade it out.
- * The base rule's translateY(-14px) is neutralized (transform: none). */
+ * ~54px above the vertical center — and fade it out with a gentle upward
+ * glide (translateY), never a drop. */
 .lyra-mobile-idle-brand--hidden {
   position: absolute;
   left: 0;
   right: 0;
   bottom: calc(50% + 54px);
-  transform: none;
+  transform: translateY(-14px);
   opacity: 0;
 }
 
@@ -1203,8 +1203,16 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
  * without this the caption would pop at full strength the moment boot
  * appears. `backwards` keeps it hidden during the short delay, and the
  * keyframe ends at the base opacity (0.72) so nothing snaps when the
- * animation releases. */
+ * animation releases. It is anchored just beneath the boot brand so the
+ * wordmark occupies the same spot as the home brand (bottom: 54px), keeping
+ * the Lyra mark frozen in place across the boot → home swap. */
 .lyra-mobile-boot__caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(50% + 24px);
+  margin-bottom: 0;
+  text-align: center;
   animation: lyra-mobile-caption-in 500ms var(--lyra-ease-zen) 200ms backwards;
 }
 
@@ -1248,4 +1256,34 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   .lyra-mobile-ambient--boot-leaving {
     opacity: 0;
   }
+}
+
+/* ── Fourth device-feedback round (appended) ────────────────────────────
+ * The Lyra wordmark must not wander: before this round it lived at three
+ * different vertical spots (boot in-flow, home idle in-flow, home hidden
+ * absolute), so the swap read as the logo jumping. It is now pinned to one
+ * canonical anchor — `bottom: calc(50% + 54px)`, i.e. ~54px above the
+ * stage center — in every state, on both screens. The in-flow slot keeps
+ * the dock's position stable regardless (see MobileHomeView). */
+
+/* Home brand: always absolute at the canonical spot. The round-2 --hidden
+ * rule already used this anchor; the idle state previously stayed in flow,
+ * which is what drifted. With the slot holding the layout, the brand can
+ * simply fade (+ a gentle 14px upward glide when hiding). */
+.lyra-mobile-idle-brand {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(50% + 54px);
+}
+
+/* Boot brand: same canonical anchor as the home brand, so during the
+ * boot → home dissolve the mark is already exactly where it belongs on the
+ * home surface — the swap reads as one still logo, not a jump. */
+.lyra-mobile-boot__brand {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(50% + 54px);
+  text-align: center;
 }
