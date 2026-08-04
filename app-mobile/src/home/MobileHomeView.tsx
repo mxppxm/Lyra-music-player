@@ -168,7 +168,7 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   useLayoutEffect(() => {
     const wasIdle = prevIdleRef.current;
     prevIdleRef.current = isSparseIdle;
-    if (wasIdle || isSparseIdle) return;
+    if (!wasIdle || isSparseIdle) return;
     const dock = dockRef.current;
     const from = dockFromRectRef.current;
     if (!dock || !from) return;
