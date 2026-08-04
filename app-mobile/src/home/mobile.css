@@ -1191,3 +1191,61 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 .lyra-mobile-cover-art--cd .lyra-mobile-cover-art__img {
   border-radius: 50%;
 }
+
+/* ── Third device-feedback round (appended) ─────────────────────────────
+ * The boot caption "在醒来的路上" must not flash: it rises in gently, the
+ * app holds the boot screen for a readable minimum before swapping (see
+ * MIN_BOOT_DWELL_MS in App.tsx), and the boot layer detaches from flow and
+ * dissolves over the freshly mounted home — the ambient surfaces are the
+ * same ZERO_PAD color, so the crossfade never blanks. */
+
+/* Caption rises in with the boot — the stage mount only translates, so
+ * without this the caption would pop at full strength the moment boot
+ * appears. `backwards` keeps it hidden during the short delay, and the
+ * keyframe ends at the base opacity (0.72) so nothing snaps when the
+ * animation releases. */
+.lyra-mobile-boot__caption {
+  animation: lyra-mobile-caption-in 500ms var(--lyra-ease-zen) 200ms backwards;
+}
+
+@keyframes lyra-mobile-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 0.72;
+    transform: translateY(0);
+  }
+}
+
+/* The boot layer floats above the home during the handoff and dissolves —
+ * `forwards` keeps it invisible until it unmounts (BOOT_LEAVE_MS in App.tsx
+ * matches the --lyra-duration-exit used below). pointer-events are released
+ * immediately so the home beneath is tappable mid-fade. Painted over the
+ * home because it comes later in the DOM at the same stacking level. */
+.lyra-mobile-ambient--boot-leaving {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: lyra-mobile-boot-dissolve var(--lyra-duration-exit)
+    var(--lyra-ease-zen) forwards;
+}
+
+@keyframes lyra-mobile-boot-dissolve {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-mobile-boot__caption,
+  .lyra-mobile-ambient--boot-leaving {
+    animation: none !important;
+  }
+
+  /* Reduced motion: the swap is a hard cut, not a dissolve. */
+  .lyra-mobile-ambient--boot-leaving {
+    opacity: 0;
+  }
+}
