@@ -829,6 +829,17 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         let delay = Double(remainingMs + slackMs) / 1000.0
         let work = DispatchWorkItem { [weak self] in
             guard let self = self, !self.userPaused else { return }
+            // If the player still has unfinished audio, the track hasn't
+            // actually completed — iOS may have suspended playback while
+            // backgrounded. Defer to the primary AVPlayerItemDidPlayToEndTime
+            // notification instead of firing prematurely.
+            if let player = self.player, let item = player.currentItem {
+                let elapsed = CMTimeGetSeconds(player.currentTime())
+                let duration = CMTimeGetSeconds(item.duration)
+                if duration.isFinite, duration > 0, elapsed.isFinite, elapsed < duration - 0.5 {
+                    return
+                }
+            }
             self.handlePlaybackEnded(playbackId: playbackId)
         }
         fallbackEndWorkItem = work

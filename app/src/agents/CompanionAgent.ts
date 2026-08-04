@@ -149,6 +149,15 @@ function buildBrief(i: CompanionInput): string {
     memoryLine,
   ];
 
+  // Auto-advance context: previous song & rationale for DJ-like transitions
+  if (i.previousSong) {
+    const artistStr = i.previousSong.artist ? ` · ${i.previousSong.artist}` : "";
+    parts.push(`上一首刚播完: ${i.previousSong.title}${artistStr}`);
+    if (i.previousRationale) {
+      parts.push(`你上一条 rationale: "${i.previousRationale}" ← 必须换一个完全不同的角度写这条`);
+    }
+  }
+
   if (memoryBlock) {
     parts.push("");
     parts.push(memoryBlock);

@@ -236,6 +236,7 @@ impl AudioPlayer {
         if let Some(dur_ms) = duration_hint_ms.filter(|d| *d > 0) {
             let current_id_f = Arc::clone(&self.current_id);
             let paused_f = Arc::clone(&self.paused);
+            let sink_arc_f = Arc::clone(&self.sink);
             let cb_f = Arc::clone(&on_complete);
             let wait_ms = dur_ms.saturating_add(FALLBACK_SLACK_MS);
             thread::spawn(move || {
@@ -245,6 +246,18 @@ impl AudioPlayer {
                 // manual pause.
                 if paused_f.load(Ordering::SeqCst) {
                     return;
+                }
+                // Also check if the sink is still playing. When macOS suspends
+                // audio output for a backgrounded app, the sink may not have
+                // finished yet even though the wall-clock duration has elapsed.
+                // In that case, defer to the primary watcher — don't fire the
+                // callback prematurely.
+                {
+                    let guard = sink_arc_f.lock().unwrap();
+                    let still_playing = guard.as_ref().map_or(false, |s| !s.empty());
+                    if still_playing {
+                        return;
+                    }
                 }
                 let taken = cb_f.lock().unwrap().take();
                 if let Some(cb) = taken {

@@ -209,6 +209,7 @@ export class Orchestrator {
     userUtterance: string,
     modality: "text" | "voice" | "proactive-open",
     pseudoTargetOverride?: string,
+    autoAdvanceContext?: { previousRationale: string; previousSong: { title: string; artist?: string } },
   ): Promise<void> {
     const { companion, library, soulStore, turnRepo, audio } = this.deps;
     const clock = this.deps.clock ?? Date.now;
@@ -265,6 +266,8 @@ export class Orchestrator {
       livingPortrait,
       topFacts,
       recommendation: recCtx,
+      previousRationale: autoAdvanceContext?.previousRationale,
+      previousSong: autoAdvanceContext?.previousSong,
     });
     const chosenSong = candidates.find((c) => c.id === chosen.song_id)!;
 
@@ -572,6 +575,11 @@ export class Orchestrator {
 
     // Remember what emotion we were on
     const endedEmotion = this.currentTurn.current_emotion;
+    // Capture previous rationale & song for auto-advance context
+    const prevRationale = this.currentTurn.agent_response.rationale;
+    const prevSong = this.currentSong
+      ? { title: this.currentSong.title ?? "", artist: this.currentSong.artist }
+      : undefined;
 
     // Emit thinking so UI shows "…" while we pick the next song
     this.emit({ kind: "thinking", user_utterance: "" });
@@ -581,11 +589,15 @@ export class Orchestrator {
       await this.finalisePreviousTurn(undefined, endedEmotion.pad);
 
       // Continue the flow: same emotion — play history excludes recent songs
+      const autoCtx = prevRationale && prevSong?.title
+        ? { previousRationale: prevRationale, previousSong: prevSong }
+        : undefined;
       await this.runTurnWithEmotion(
         endedEmotion,
         "",
         "proactive-open",
-        `${endedEmotion.labels.join(" ")} 延续`.trim(),
+        endedEmotion.labels.join(" ").trim() || undefined,
+        autoCtx,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -643,6 +655,11 @@ export class Orchestrator {
     const endedEmotion = this.currentTurn.current_emotion;
     // Capture timestamp before finalisePreviousTurn clears currentTurn
     const turnTimestamp = this.currentTurn.timestamp;
+    // Capture previous rationale & song for auto-advance context
+    const prevRationale = this.currentTurn.agent_response.rationale;
+    const prevSong = this.currentSong
+      ? { title: this.currentSong.title ?? "", artist: this.currentSong.artist }
+      : undefined;
 
     // Emit thinking so UI shows "…" while we pick the next song
     this.emit({ kind: "thinking", user_utterance: "" });
@@ -670,11 +687,15 @@ export class Orchestrator {
           : endedEmotion;
 
       // Continue the flow: play history excludes recent songs automatically
+      const autoCtx = prevRationale && prevSong?.title
+        ? { previousRationale: prevRationale, previousSong: prevSong }
+        : undefined;
       await this.runTurnWithEmotion(
         baseEmotion,
         "",
         "proactive-open",
-        `${baseEmotion.labels.join(" ")} 延续`.trim(),
+        baseEmotion.labels.join(" ").trim() || undefined,
+        autoCtx,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

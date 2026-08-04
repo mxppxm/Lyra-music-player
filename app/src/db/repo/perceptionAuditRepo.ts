@@ -48,5 +48,5 @@ export async function pruneOlderThan(cutoffMs: number): Promise<number> {
     `DELETE FROM perception_audit WHERE ts < ?`,
     [cutoffMs],
   );
-  return result.rowsAffected;
+  return result.rowsAffected ?? 0;
 }
