@@ -1081,3 +1081,56 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
     transition: none !important;
   }
 }
+
+/* ── Device-feedback polish (appended) ───────────────────────────────────
+ * Three follow-ups from on-device review: the first-screen glass capsule
+ * should bloom from a point instead of the nested double-translate that
+ * read as a shake, the leaving slogan must stay centered over the dock
+ * (absolute positioning otherwise drops it to the flex start edge), and
+ * the dock rides 10px higher during playback. Nothing above is modified. */
+
+/* The glass capsule grows from a point on first mount (boot → home):
+ * scale, not translate. `backwards` with no delay releases the transform
+ * the moment it finishes, so the dock's FLIP, --playing and immersive
+ * transforms keep working afterwards. */
+.lyra-mobile-dock {
+  animation: lyra-mobile-pill-in 520ms var(--lyra-ease-zen) backwards;
+  transform-origin: center;
+}
+
+/* The idle slogan rides the capsule's bloom — its own translate-based
+ * module-in would fight the grow and re-introduce the shake. */
+.lyra-mobile-dock--idle .lyra-mobile-idle-slogan {
+  animation: none;
+}
+
+@keyframes lyra-mobile-pill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Leaving slogan: it is absolutely positioned inside the dock for the
+ * handoff, and without offsets it snaps to the flex start (left) edge.
+ * Pin it horizontally centered so it dissolves in place above the
+ * controls (translateY-only keyframes, so no transform clash). */
+.lyra-mobile-idle-slogan--leaving {
+  left: 0;
+  right: 0;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+/* Playback raise: the control module floats 10px higher than its resting
+ * bottom position. The idle→active FLIP runs while kind is "thinking"
+ * (playing is false), so this never fights the inline FLIP transform;
+ * thinking→playing crosses over on the dock's own 560ms transition. In
+ * immersive the higher-specificity stage rule keeps it hidden. */
+.lyra-mobile-dock--playing {
+  transform: translateY(-10px);
+}
