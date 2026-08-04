@@ -545,7 +545,7 @@ button.lyra-idle-slogan:active {
 }
 
 .lyra-motion--leaving .lyra-modal-backdrop {
-  animation: lyra-fade-out 320ms var(--lyra-ease-zen) both;
+  animation: lyra-fade-out 150ms var(--lyra-ease-zen) both;
   animation-delay: 150ms;
 }
 
@@ -573,6 +573,13 @@ button.lyra-idle-slogan:active {
 .lyra-text-in {
   display: inline-block;
   animation: lyra-text-in 160ms var(--lyra-ease-zen) both;
+}
+
+.lyra-song-info .lyra-text-in {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @keyframes lyra-fade-in {
