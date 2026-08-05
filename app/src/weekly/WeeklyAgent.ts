@@ -1,7 +1,7 @@
 import type { ModelProvider, ChatMessage } from "../types";
 import { parseLooseJson } from "../lib/parseLooseJson";
 import { writeTrace } from "../reasoning/writeTrace";
-import { routeProvider } from "../agents/route";
+import { resolveProviders, chatWithFallback } from "../agents/route";
 import { WEEKLY_SYSTEM_PROMPT, buildUserMessage } from "./prompt";
 import type { WeeklyLetterJson } from "./weeklyRenderer";
 import type { WeeklyRawData } from "./dataGather";
@@ -12,10 +12,12 @@ export type WeeklyAgentResult = {
 };
 
 export class WeeklyAgent {
-  private provider: ModelProvider;
+  private providers: ModelProvider[];
 
   constructor(opts: { provider?: ModelProvider } = {}) {
-    this.provider = opts.provider ?? routeProvider("companion");
+    this.providers = opts.provider
+      ? [opts.provider]
+      : resolveProviders("companion");
   }
 
   async run(input: { raw: WeeklyRawData; onDemand?: boolean }): Promise<WeeklyAgentResult> {
@@ -31,7 +33,7 @@ export class WeeklyAgent {
     while (attempt < 2) {
       attempt += 1;
       try {
-        const res = await this.provider.chat(messages, {
+        const res = await chatWithFallback(this.providers, messages, {
           max_tokens: 4096,
           temperature: 0.6,
           response_format: { type: "json_object" },

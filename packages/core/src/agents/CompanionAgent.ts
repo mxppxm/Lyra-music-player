@@ -1,6 +1,6 @@
 import type { ModelProvider, ChatMessage } from "../types";
 import { COMPANION_SYSTEM_PROMPT } from "./prompts/companion";
-import { routeProvider } from "./route";
+import { resolveProviders, chatWithFallback } from "./route";
 import { writeTrace } from "../reasoning/writeTrace";
 import { parseLooseJson } from "../lib/parseLooseJson";
 import { songDisplayTitle } from "../library/display";
@@ -229,9 +229,11 @@ function buildCorrectionBrief(bad: PartialChosen, candidateIds: string[]): strin
 }
 
 export class CompanionAgent {
-  private provider: ModelProvider;
+  private providers: ModelProvider[];
   constructor(opts: { provider?: ModelProvider } = {}) {
-    this.provider = opts.provider ?? routeProvider("companion");
+    this.providers = opts.provider
+      ? [opts.provider]
+      : resolveProviders("companion");
   }
 
   async choose(input: CompanionInput): Promise<ChosenSong> {
@@ -244,7 +246,7 @@ export class CompanionAgent {
     ];
 
     const t0 = performance.now();
-    const res = await this.provider.chat(messages, {
+    const res = await chatWithFallback(this.providers, messages, {
       // Bumped 1024 → 3000 to survive GLM-5.x reasoning burn on the Zhipu
       // fallback path. Anthropic (primary) treats this as an upper cap.
       max_tokens: 3000,
@@ -273,7 +275,7 @@ export class CompanionAgent {
         { role: "assistant", content: res.content },
         { role: "user", content: buildCorrectionBrief(picked, candidateIds) },
       ];
-      const retryRes = await this.provider.chat(retryMessages, {
+      const retryRes = await chatWithFallback(this.providers, retryMessages, {
         max_tokens: 1500,
         temperature: 0.3,
         response_format: { type: "json_object" },

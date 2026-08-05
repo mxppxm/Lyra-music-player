@@ -9,8 +9,15 @@ const DEFAULT_MODEL = "deepseek-v4-flash";
 // Hard-coded to match the CSP connect-src allowlist in tauri.conf.json.
 // If this ever changes, update the CSP simultaneously.
 const ENDPOINT = "https://fxb.supa.net.cn:6443/v1/chat/completions";
-/** Per-request timeout — prevents infinite thinking when the API hangs. */
-const TIMEOUT_MS = 30_000;
+/**
+ * Per-request timeout — prevents infinite thinking when the API hangs.
+ * 30s → 15s: the fxb gateway is flaky (0.5s~20s+ latency); a tighter timeout
+ * lets the retry/fallback layer (agents/route.ts chatWithFallback) kick in
+ * sooner instead of stalling the whole turn.
+ * 15s → 45s: measured gateway latency is 0.5s~16s+ (bursty); 15s sat exactly
+ * on the slow-tail boundary and caused spurious timeouts on device.
+ */
+const TIMEOUT_MS = 45_000;
 
 /**
  * FxbProvider — OpenAI-compatible gateway (fxb.supa.net.cn) serving

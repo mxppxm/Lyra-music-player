@@ -112,9 +112,19 @@ export function useAutoAdvance(
     if (playback.progress < 0.98) return;
     if (advancedForSongRef.current === playback.songId) return;
     advancedForSongRef.current = playback.songId;
-    void orchestrator.onSongComplete().finally(() => {
-      void LyraAudio.acknowledgeEnded().catch(() => {});
-    });
+    // Only the *no-queue* case may fall back to JS picking the next song.
+    // When native already holds prefetched tracks it hand-offs seamlessly on
+    // its own (nativeAdvanced) — if we ALSO ran onSongComplete here the LLM
+    // would pick a different song and stomp the one already playing (visible
+    // as "thinking…" while the next track is audibly playing, then a swap).
+    void LyraAudio.getPlaybackQueueInfo()
+      .then(({ count }) => {
+        if (count > 0) return;
+        void orchestrator.onSongComplete().finally(() => {
+          void LyraAudio.acknowledgeEnded().catch(() => {});
+        });
+      })
+      .catch(() => {});
   }, [orchestrator, playback?.songId, playback?.playing, playback?.paused, playback?.progress]);
 
   useEffect(() => {

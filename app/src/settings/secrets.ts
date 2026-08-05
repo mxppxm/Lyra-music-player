@@ -4,6 +4,7 @@ export const SECRET_KEYS = {
   anthropicApiKey: "provider.anthropic.apiKey",
   deepseekApiKey: "provider.deepseek.apiKey",
   zhipuApiKey: "provider.zhipu.apiKey",
+  sensenovaApiKey: "provider.sensenova.apiKey",
   fxbApiKey: "provider.fxb.apiKey",
   dreamDailyTime: "dream.dailyTime",
   dreamIdleMinutes: "dream.idleMinutes",

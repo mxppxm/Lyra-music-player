@@ -1,7 +1,7 @@
 import type { ModelProvider, CurrentEmotion, ChatMessage } from "../types";
 import { EMOTION_SYSTEM_PROMPT } from "./prompts/emotion";
 import { writeTrace } from "../reasoning/writeTrace";
-import { routeProvider } from "./route";
+import { resolveProviders, chatWithFallback } from "./route";
 import { parseLooseJson } from "../lib/parseLooseJson";
 import type { EmotionInput } from "./types";
 
@@ -86,10 +86,12 @@ function validateEmotion(obj: unknown): CurrentEmotion {
 }
 
 export class EmotionAgent {
-  private provider: ModelProvider;
+  private providers: ModelProvider[];
 
   constructor(opts: { provider?: ModelProvider } = {}) {
-    this.provider = opts.provider ?? routeProvider("emotion");
+    this.providers = opts.provider
+      ? [opts.provider]
+      : resolveProviders("emotion");
   }
 
   async analyze(input: EmotionInput): Promise<CurrentEmotion> {
@@ -98,7 +100,9 @@ export class EmotionAgent {
       { role: "user", content: input.userUtterance },
     ];
     const t0 = performance.now();
-    const res = await this.provider.chat(messages, {
+    // chatWithFallback: retries each provider with backoff, then walks down
+    // the chain (fxb → deepseek) instead of failing the turn on one flake.
+    const res = await chatWithFallback(this.providers, messages, {
       // Raised from 400 → 2048 because GLM-5.x reasoning models can burn the
       // whole budget in `reasoning_content` before writing `content`. Emotion
       // JSON output is small (<500 tokens); the headroom is free (it's a cap,
@@ -137,7 +141,7 @@ export class EmotionAgent {
         duration_ms,
       });
       console.error(
-        `[lyra] EmotionAgent parse failed (raw_len=${res.content.length}, provider=${this.provider.id}):`,
+        `[lyra] EmotionAgent parse failed (raw_len=${res.content.length}, provider=${this.providers.map((p) => p.id).join("→")}):`,
         errMessage,
         "| raw content:",
         JSON.stringify(res.content),

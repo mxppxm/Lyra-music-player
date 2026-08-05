@@ -5,7 +5,7 @@
 import type { ModelProvider, ChatMessage } from "../types";
 import type { MusicProfile } from "../types/musicProfile";
 import { PROFILE_ANALYSIS_VERSION } from "../types/musicProfile";
-import { routeProvider } from "./route";
+import { resolveProviders, chatWithFallback } from "./route";
 import { parseLooseJson } from "../lib/parseLooseJson";
 import {
   formatProfileAnalyzeBrief,
@@ -68,10 +68,12 @@ const SYSTEM_PROMPT = `你是专业的音乐分析师。我会给你「原曲歌
 不要加 markdown 或任何额外文字。`;
 
 export class MusicProfileAgent {
-  private provider: ModelProvider;
+  private providers: ModelProvider[];
 
   constructor(opts: { provider?: ModelProvider } = {}) {
-    this.provider = opts.provider ?? routeProvider("music-profile");
+    this.providers = opts.provider
+      ? [opts.provider]
+      : resolveProviders("music-profile");
   }
 
   async analyze(input: ProfileAnalyzeInput): Promise<MusicProfile | null> {
@@ -83,7 +85,7 @@ export class MusicProfileAgent {
     ];
 
     try {
-      const res = await this.provider.chat(messages, {
+      const res = await chatWithFallback(this.providers, messages, {
         max_tokens: 1024,
         temperature: 0.3,
         response_format: { type: "json_object" },
@@ -97,7 +99,7 @@ export class MusicProfileAgent {
       const profile: MusicProfile = {
         track_id: "",
         analyzed_at: Date.now(),
-        llm_model: this.provider.id,
+        llm_model: res.model ?? this.providers[0].id,
         genre: asStringArray(parsed.genre),
         mood: asStringArray(parsed.mood),
         energy_level: asEnergyLevel(parsed.energy_level),

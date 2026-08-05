@@ -3,7 +3,7 @@ import type { ParsedMemory } from "../memory/types";
 import type { PerceptionTuning } from "../perception/tuning";
 import { clampTuning } from "../perception/tuning";
 import { REFLECT_SYSTEM_PROMPT } from "./prompt";
-import { routeProvider } from "../agents/route";
+import { resolveProviders, chatWithFallback } from "../agents/route";
 import { writeTrace } from "../reasoning/writeTrace";
 import { parseLooseJson } from "../lib/parseLooseJson";
 
@@ -182,10 +182,12 @@ function buildUserMessage(input: ReflectInput): string {
 }
 
 export class ReflectAgent {
-  private provider: ModelProvider;
+  private providers: ModelProvider[];
 
   constructor(opts: { provider?: ModelProvider } = {}) {
-    this.provider = opts.provider ?? routeProvider("companion");
+    this.providers = opts.provider
+      ? [opts.provider]
+      : resolveProviders("companion");
   }
 
   async run(input: ReflectInput): Promise<ReflectResult> {
@@ -195,7 +197,7 @@ export class ReflectAgent {
       { role: "user", content: brief },
     ];
     const t0 = performance.now();
-    const res = await this.provider.chat(messages, {
+    const res = await chatWithFallback(this.providers, messages, {
       max_tokens: 4096,
       temperature: 0.5,
       response_format: { type: "json_object" },

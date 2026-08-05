@@ -4,7 +4,7 @@ import { resolveSecret } from "./resolveSecret";
 import { AnthropicProvider } from "./anthropic";
 import { DeepSeekProvider } from "./deepseek";
 import { ZhipuProvider } from "./zhipu";
-import { FxbProvider } from "./fxb";
+import { SensenovaProvider } from "./sensenova";
 import { registry } from "./registry";
 import { withUsageLogging } from "./usageLogging";
 
@@ -41,10 +41,10 @@ const SPECS: ProviderSpec[] = [
       registry.register(withUsageLogging(new ZhipuProvider({ apiKey }))),
   },
   {
-    id: "fxb",
-    keyName: SECRET_KEYS.fxbApiKey,
+    id: "sensenova",
+    keyName: SECRET_KEYS.sensenovaApiKey,
     build: (apiKey) =>
-      registry.register(withUsageLogging(new FxbProvider({ apiKey }))),
+      registry.register(withUsageLogging(new SensenovaProvider({ apiKey }))),
   },
 ];
 

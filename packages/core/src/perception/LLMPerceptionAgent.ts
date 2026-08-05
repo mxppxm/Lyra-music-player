@@ -9,6 +9,7 @@
 
 import type { ChatMessage, ModelProvider } from "../types";
 import { writeTrace } from "../reasoning/writeTrace";
+import { resolveProviders, chatWithFallback } from "../agents/route";
 import type { BehavioralFeatures } from "./aggregator";
 import type { PerceptionAgent, PerceptionBias } from "./PerceptionAgent";
 import {
@@ -62,12 +63,14 @@ export type LLMPerceptionAgentOptions = {
 };
 
 export class LLMPerceptionAgent implements PerceptionAgent {
-  private provider: ModelProvider;
+  private providers: ModelProvider[];
   private fallback: PerceptionAgent;
   private timeoutMs: number;
 
   constructor(opts: LLMPerceptionAgentOptions) {
-    this.provider = opts.provider;
+    this.providers = opts.provider
+      ? [opts.provider]
+      : resolveProviders("perception");
     this.fallback = opts.fallback;
     this.timeoutMs = opts.timeoutMs ?? 10_000;
   }
@@ -80,7 +83,7 @@ export class LLMPerceptionAgent implements PerceptionAgent {
         { role: "user", content: userContent },
       ];
       const t0 = performance.now();
-      const chatPromise = this.provider.chat(messages, {
+      const chatPromise = chatWithFallback(this.providers, messages, {
         max_tokens: 300,
         temperature: 0.2,
       });

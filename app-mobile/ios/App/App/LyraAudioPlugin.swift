@@ -815,6 +815,11 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// Fires handlePlaybackEnded when AVPlayer's end notification is missing.
+    /// This is the *last-resort* path — AVPlayerItemDidPlayToEndTime is the
+    /// primary signal and fires at the true end. Never beat the real track
+    /// to the punch: the metadata duration is the *video* duration from the
+    /// Bilibili search API and can drift from the actual audio stream, and a
+    /// premature fire used to cut songs off before they finished.
     private func scheduleFallbackEnd(playbackId: Int, fromPositionMs: Int = 0) {
         fallbackEndWorkItem?.cancel()
         guard endedEmittedForPlaybackId != playbackId else { return }
@@ -825,25 +830,62 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             handlePlaybackEnded(playbackId: playbackId)
             return
         }
-        let slackMs = 750
+        let slackMs = 1_500
         let delay = Double(remainingMs + slackMs) / 1000.0
         let work = DispatchWorkItem { [weak self] in
-            guard let self = self, !self.userPaused else { return }
-            // If the player still has unfinished audio, the track hasn't
-            // actually completed — iOS may have suspended playback while
-            // backgrounded. Defer to the primary AVPlayerItemDidPlayToEndTime
-            // notification instead of firing prematurely.
-            if let player = self.player, let item = player.currentItem {
-                let elapsed = CMTimeGetSeconds(player.currentTime())
-                let duration = CMTimeGetSeconds(item.duration)
-                if duration.isFinite, duration > 0, elapsed.isFinite, elapsed < duration - 0.5 {
-                    return
-                }
-            }
-            self.handlePlaybackEnded(playbackId: playbackId)
+            self?.checkFallbackEnd(playbackId: playbackId)
         }
         fallbackEndWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Fallback-end gate: only fire handlePlaybackEnded when the track has
+    /// genuinely reached its end. If playback still has time left, re-arm the
+    /// check (using the real AVPlayer duration when available) instead of
+    /// cutting the song off early.
+    private func checkFallbackEnd(playbackId: Int) {
+        guard !userPaused, endedEmittedForPlaybackId != playbackId else { return }
+
+        if let player = player, let item = player.currentItem {
+            let elapsed = CMTimeGetSeconds(player.currentTime())
+            let realDuration = CMTimeGetSeconds(item.duration)
+
+            if realDuration.isFinite, realDuration > 0, elapsed.isFinite {
+                // Real duration available — wait until playback actually
+                // reaches the end, regardless of what metadata said.
+                let remaining = realDuration - elapsed
+                if remaining > 0.5 {
+                    rearmFallbackEnd(playbackId: playbackId, waitMs: Int(remaining * 1000) + 500)
+                    return
+                }
+                // Within 0.5s of the real end (or AVPlayer already stopped
+                // there) — the song really is done. Safe to fire.
+            } else if elapsed.isFinite {
+                // No usable item duration — stay conservative. Poll in short
+                // steps, using the metadata duration only as a coarse gate
+                // with a full second of slack.
+                let metaDuration = Double(currentTrackDurationMs) / 1000.0
+                if metaDuration > 0, elapsed < metaDuration - 1.0 {
+                    rearmFallbackEnd(playbackId: playbackId, waitMs: 1_000)
+                    return
+                }
+            } else {
+                // No usable position/duration — never guess; keep waiting.
+                rearmFallbackEnd(playbackId: playbackId, waitMs: 1_000)
+                return
+            }
+        }
+        handlePlaybackEnded(playbackId: playbackId)
+    }
+
+    private func rearmFallbackEnd(playbackId: Int, waitMs: Int) {
+        fallbackEndWorkItem?.cancel()
+        guard endedEmittedForPlaybackId != playbackId else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.checkFallbackEnd(playbackId: playbackId)
+        }
+        fallbackEndWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(waitMs) / 1000.0, execute: work)
     }
 
     private func emitEnded(playbackId: Int) {

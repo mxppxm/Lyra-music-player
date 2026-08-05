@@ -40,12 +40,20 @@ export type ProviderId =
   | "deepseek"
   | "zhipu"
   | "fxb"
+  | "sensenova"
   | "doubao"
   | "openai"
   | "local-ollama";
 
 export interface ModelProvider {
   readonly id: ProviderId;
+  /**
+   * Per-provider retry budget (1 initial attempt + retries) used by
+   * agents/route.ts chatWithRetry. Providers can override the default
+   * (e.g. the cheap SenseNova gateway retries more so the paid fallbacks
+   * like DeepSeek official are touched as rarely as possible).
+   */
+  readonly maxRetries?: number;
   chat(messages: ChatMessage[], opts?: ChatOptions): Promise<ChatResponse>;
   embed?(text: string): Promise<number[]>;
 }

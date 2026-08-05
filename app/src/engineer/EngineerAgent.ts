@@ -1,7 +1,7 @@
 // EngineerAgent — daily reflect → propose roadmap items via LLM (v0.3-α)
 // PROPOSE-ONLY: never writes source files, never spawns CLI.
 import type { ModelProvider, ChatMessage } from "../types";
-import { routeProvider } from "../agents/route";
+import { resolveProviders, chatWithFallback } from "../agents/route";
 import { writeTrace } from "../reasoning/writeTrace";
 import { ENGINEER_SYSTEM_PROMPT } from "./prompt";
 import { partitionByZone } from "./boundaryMap";
@@ -65,10 +65,12 @@ export type DailyLoopResult = {
 };
 
 export class EngineerAgent {
-  private provider: ModelProvider;
+  private providers: ModelProvider[];
 
   constructor(deps: { provider?: ModelProvider } = {}) {
-    this.provider = deps.provider ?? routeProvider("companion");
+    this.providers = deps.provider
+      ? [deps.provider]
+      : resolveProviders("companion");
   }
 
   async runDailyLoop(): Promise<DailyLoopResult> {
@@ -100,7 +102,7 @@ export class EngineerAgent {
     let rawContent: string;
     const t0 = performance.now();
     try {
-      const res = await this.provider.chat(messages, {
+      const res = await chatWithFallback(this.providers, messages, {
         max_tokens: 2048,
         temperature: 0.5,
       });

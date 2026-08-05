@@ -665,9 +665,13 @@ export class Orchestrator {
     }
 
     // Overall timeout guard — if the full turn pipeline hangs (LLM API,
-    // Bilibili search, etc.), bail out after 60s so the user isn't stuck
-    // in "thinking" forever.
-    const TURN_TIMEOUT_MS = 60_000;
+    // Bilibili search, etc.), bail out so the user isn't stuck in "thinking"
+    // forever. 90s → 180s: the retry + provider-fallback layer
+    // (agents/route.ts chatWithFallback) now spends up to ~90s on the cheap
+    // sensenova primary (6×15s retries) before falling back to DeepSeek
+    // official (3×30s); a tighter ceiling would kill the fallback before it
+    // gets a fair shot.
+    const TURN_TIMEOUT_MS = 180_000;
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`turn timed out after ${TURN_TIMEOUT_MS / 1000}s`)), TURN_TIMEOUT_MS),
     );

@@ -6,7 +6,13 @@ export default defineConfig({
   plugins: [react()],
   define: {
     __LYRA_BUILD_TIME__: JSON.stringify(
-      new Date().toLocaleString("sv-SE").slice(0, 16),
+      (() => {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        return `${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(
+          now.getHours(),
+        )}${pad(now.getMinutes())}`;
+      })(),
     ),
   },
   resolve: {

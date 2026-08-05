@@ -9,6 +9,12 @@ import { AmbientBackground } from "./home/AmbientBackground";
 import { seedMobileLibraryIfNeeded } from "./db/seedLibrary";
 import "./home/mobile.css";
 
+/**
+ * Debug log overlay (OnScreenLog) is compiled OUT of normal builds.
+ * Enable with VITE_LYRA_DEBUG_LOG=true in app-mobile/.env.production.local
+ * then rebuild — see README.md "Mobile Debug Log Panel". */
+const LYRA_DEBUG_LOG = import.meta.env.VITE_LYRA_DEBUG_LOG === "true";
+
 const ZERO_PAD = { p: 0, a: 0, d: 0 };
 
 /** How long the boot screen must hold before the home may take over, so the
@@ -36,7 +42,7 @@ function BuildStamp() {
         textAlign: "center",
       }}
     >
-      {__LYRA_BUILD_TIME__}
+      version：{__LYRA_BUILD_TIME__}
     </div>
   );
 }
@@ -79,7 +85,9 @@ function safeString(a: unknown): string {
 }
 
 function OnScreenLog({ lines }: { lines: LogLine[] }) {
-  const [open, setOpen] = useState(true);
+  // Default closed — tap the tiny "日志(off)" button to reopen during
+  // debugging. Toggling needs no rebuild.
+  const [open, setOpen] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
@@ -182,7 +190,10 @@ export function App() {
   const logKeyRef = useRef(0);
 
   // Capture console output on-screen so real-device logs need no Xcode.
+  // Only active in debug builds (VITE_LYRA_DEBUG_LOG=true) — production
+  // builds skip both the interception and the overlay entirely.
   useEffect(() => {
+    if (!LYRA_DEBUG_LOG) return;
     const orig = {
       log: console.log.bind(console),
       warn: console.warn.bind(console),
@@ -293,7 +304,7 @@ export function App() {
         </div>
       </div>
       <BuildStamp />
-      <OnScreenLog lines={logLines} />
+      {LYRA_DEBUG_LOG && <OnScreenLog lines={logLines} />}
     </>
   );
 }

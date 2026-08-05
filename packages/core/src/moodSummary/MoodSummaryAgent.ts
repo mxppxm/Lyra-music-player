@@ -4,7 +4,7 @@
 // 文案规则与 companion 一致：禁止「很适合你/太配了/很搭/完美契合」这类套话。
 
 import type { ChatMessage, ModelProvider } from "../types";
-import { routeProvider } from "../agents/route";
+import { resolveProviders, chatWithFallback } from "../agents/route";
 import { parseLooseJson } from "../lib/parseLooseJson";
 import { writeTrace } from "../reasoning/writeTrace";
 import type { MoodSummaryData } from "./summarizeMood";
@@ -75,10 +75,12 @@ export type MoodSummaryAgentInput = {
 };
 
 export class MoodSummaryAgent {
-  private provider: ModelProvider;
+  private providers: ModelProvider[];
 
   constructor(opts: { provider?: ModelProvider } = {}) {
-    this.provider = opts.provider ?? routeProvider("companion");
+    this.providers = opts.provider
+      ? [opts.provider]
+      : resolveProviders("companion");
   }
 
   async summarize(input: MoodSummaryAgentInput): Promise<MoodSummaryJson> {
@@ -88,7 +90,7 @@ export class MoodSummaryAgent {
       { role: "user", content: brief },
     ];
     const t0 = performance.now();
-    const res = await this.provider.chat(messages, {
+    const res = await chatWithFallback(this.providers, messages, {
       max_tokens: 1500,
       temperature: 0.7,
       response_format: { type: "json_object" },

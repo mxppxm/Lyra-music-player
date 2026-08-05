@@ -133,3 +133,33 @@ Proprietary — all rights reserved unless a top-level LICENSE file states other
 
 - **Agent personality**: Lyra is a music *agent* — not a player, not a recommender tool, but a conversational entity that learns and grows through dialogue. Design decisions reflect this agency model.
 - **Rust crate names**: `Cargo.toml` uses `name = "app"` and `lib.name = "lyra_lib"` pending a future rename sweep. Product/project name is consistently "Lyra".
+
+## Mobile Debug Log Panel (`app-mobile`)
+
+The iOS app (`app-mobile/`) ships with a hidden on-device debug console: `OnScreenLog`
+(`app-mobile/src/App.tsx`) intercepts `console.log/warn/error` (only lines starting
+with `[lyra`) and renders them in a floating translucent panel on the device screen,
+so real-device debugging needs no Xcode console.
+
+**It is compiled OUT of normal builds — the UI is completely absent.** To enable it:
+
+1. In `app-mobile/.env.production.local` (git-ignored, never commit keys):
+   ```
+   VITE_LYRA_DEBUG_LOG=true
+   ```
+2. Rebuild & redeploy the app:
+   ```bash
+   pnpm -C app-mobile build
+   pnpm -C app-mobile cap:sync
+   cd app-mobile/ios/App
+   xcodebuild build -workspace App.xcworkspace -scheme App \
+     -configuration Debug -destination 'platform=iOS,id=<DEVICE_UDID>' \
+     -derivedDataPath ../DerivedData
+   xcrun devicectl device install app --device <DEVICE_UDID> ../DerivedData/Build/Products/Debug-iphoneos/App.app
+   xcrun devicectl device process launch --device <DEVICE_UDID> com.jiuri.lyra
+   ```
+
+When enabled, the panel starts collapsed — tap the small **📜 日志(off)** button
+(bottom-right) to expand; tap the panel header to collapse it again. Logs are
+capped at the 200 most recent lines. Remove `VITE_LYRA_DEBUG_LOG` from the env
+file and rebuild to ship clean builds.
