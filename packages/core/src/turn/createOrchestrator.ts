@@ -256,14 +256,16 @@ export function createDefaultOrchestrator(): Orchestrator | null {
     if (path.startsWith("bili:__pending__:")) {
       const bvid = path.slice("bili:__pending__:".length);
       try {
+        console.log(`[lyra] resolve pending ${bvid} → 试着拉真实音频 URL…`);
         const { getVideoCid, getAudioUrl } = await import("../bilibili/api");
         const cid = await getVideoCid(bvid);
+        console.log(`[lyra] ${bvid} cid=${cid}`);
         const url = await getAudioUrl(bvid, cid);
         if (url) {
           path = url;
-          console.log(`[lyra] resolved ${bvid} → audio URL`);
+          console.log(`[lyra] resolved ${bvid} → audio URL: ${url.slice(0, 120)}`);
         } else {
-          console.warn(`[lyra] failed to resolve audio URL for ${bvid}`);
+          console.warn(`[lyra] 拉不到音频 URL: ${bvid} (cid=${cid}) — getAudioUrl 返回 null`);
           return null;
         }
       } catch (e) {
@@ -280,6 +282,7 @@ export function createDefaultOrchestrator(): Orchestrator | null {
       console.warn(`[lyra] could not resolve play path: ${rawPath}`);
       return;
     }
+    console.log(`[lyra] playFile → native: ${String(path).slice(0, 130)}`);
     return audio.playFile(path, durationMs ?? null);
   };
 

@@ -390,20 +390,28 @@ export class Orchestrator {
 
     const profileMap = await musicProfileRepo.getBatch(candidates.map((c) => c.id));
     const { livingPortrait, topFacts } = getMemoryContext();
-    const chosen = await companion.choose({
-      userUtterance,
-      currentEmotion: emotion,
-      soul,
-      candidates: candidates.map((c) => ({
-        ...c,
-        musicProfile: profileMap.get(c.id) ?? null,
-      })),
-      livingPortrait,
-      topFacts,
-      recommendation: recCtx,
-      previousRationale: autoAdvanceContext?.previousRationale,
-      previousSong: autoAdvanceContext?.previousSong,
-    });
+    let chosen;
+    try {
+      console.log(`[lyra] companion.choose LLM 调用中…（candidates=${candidates.length}）`);
+      chosen = await companion.choose({
+        userUtterance,
+        currentEmotion: emotion,
+        soul,
+        candidates: candidates.map((c) => ({
+          ...c,
+          musicProfile: profileMap.get(c.id) ?? null,
+        })),
+        livingPortrait,
+        topFacts,
+        recommendation: recCtx,
+        previousRationale: autoAdvanceContext?.previousRationale,
+        previousSong: autoAdvanceContext?.previousSong,
+      });
+      console.log(`[lyra] companion.choose 返回 song_id=${chosen.song_id}`);
+    } catch (e) {
+      console.error("[lyra] companion.choose LLM 调用失败:", e);
+      throw e;
+    }
     const song = candidates.find((c) => c.id === chosen.song_id);
     if (!song) return null;
     return { song, rationale: chosen.rationale };
@@ -460,7 +468,13 @@ export class Orchestrator {
       undefined,
       autoAdvanceContext,
     );
-    if (!picked) return;
+    if (!picked) {
+      console.warn("[lyra] pickNextSong 没选到歌（candidates 空或 companion 失败）");
+      return;
+    }
+    console.log(
+      `[lyra] 选中歌曲: id=${picked.song.id} title=${picked.song.title ?? ""} path=${String(picked.song.path).slice(0, 100)}`,
+    );
 
     const turn = this.buildTurn(
       emotion,
@@ -699,10 +713,14 @@ export class Orchestrator {
     }
 
     this.emit({ kind: "thinking", user_utterance: "" });
+    console.log("[lyra] onLyraStart 进入 → 时间上下文入口");
 
     try {
       const soul = await this.deps.soulStore.load();
       const timeCtx = computeTimeContext();
+      console.log(
+        `[lyra] timeCtx: defaultMoodTags=${timeCtx.defaultMoodTags.join(",")} pseudoTarget=${timeCtx.pseudoTarget}`,
+      );
       // 点我试试：没有用户输入，就用「时间上下文」当心情入口 ——
       // 深夜 → 平静/内省，早通勤 → 清醒/出发 …… 推荐器和文案都有据可依。
       const defaultLabels = [...timeCtx.defaultMoodTags];
@@ -722,9 +740,10 @@ export class Orchestrator {
         "proactive-open",
         timeCtx.pseudoTarget,
       );
+      console.log("[lyra] onLyraStart → runTurnWithEmotion 完成（已进入 playing 或已播放）");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[lyra] lyra-start error:", err);
+      console.error("[lyra] lyra-start error（LLM/选歌/provider 异常）:", err);
       this.emit({ kind: "error", message: msg });
     }
   }
