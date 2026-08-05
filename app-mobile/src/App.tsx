@@ -62,6 +62,114 @@ function BootScreen({
   );
 }
 
+/** Rivets a floating translucent console onto the screen so mobile logs
+ *  (no Xcode console needed) are visible in real time. */
+type LogLine = { key: number; text: string; level: "log" | "warn" | "error" };
+
+function safeString(a: unknown): string {
+  if (a === null) return "null";
+  if (a === undefined) return "undefined";
+  if (a instanceof Error) return `${a.name}: ${a.message}`;
+  try {
+    const s = JSON.stringify(a);
+    return s === undefined ? String(a) : s;
+  } catch {
+    return String(a);
+  }
+}
+
+function OnScreenLog({ lines }: { lines: LogLine[] }) {
+  const [open, setOpen] = useState(true);
+  const endRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "nearest" });
+  }, [lines.length]);
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          position: "fixed",
+          right: 8,
+          bottom: 8,
+          zIndex: 999,
+          fontSize: 11,
+          opacity: 0.85,
+          background: "#000c",
+          color: "#fff",
+          border: "1px solid #555",
+          borderRadius: 6,
+          padding: "4px 8px",
+          fontFamily: "monospace",
+        }}
+      >
+        📜 日志(off)
+      </button>
+    );
+  }
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: 8,
+        right: 8,
+        bottom: 8,
+        maxHeight: "46%",
+        overflowY: "auto",
+        background: "rgba(0,0,0,0.78)",
+        color: "#dfe6ee",
+        fontFamily: "monospace",
+        fontSize: 10,
+        lineHeight: 1.4,
+        padding: "8px 10px",
+        borderRadius: 10,
+        zIndex: 999,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-all",
+        border: "1px solid #333",
+      }}
+      onClick={() => setOpen(false)}
+    >
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          display: "flex",
+          justifyContent: "space-between",
+          background: "rgba(0,0,0,0.9)",
+          paddingBottom: 4,
+          fontWeight: 700,
+        }}
+      >
+        <span>🎛 lyra 日志（点面板收起）</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(false);
+          }}
+          style={{ background: "none", border: "none", color: "#fff", cursor: "pointer" }}
+        >
+          ✕
+        </button>
+      </div>
+      {lines.length === 0 && <div style={{ opacity: 0.5 }}>（还没有前后台日志…）</div>}
+      {lines.map((l) => (
+        <div
+          key={l.key}
+          style={{
+            color:
+              l.level === "error" ? "#ff7b7b" : l.level === "warn" ? "#ffcf6b" : "#bfe3ff",
+            marginBottom: 2,
+          }}
+        >
+          {l.text}
+        </div>
+      ))}
+      <div ref={endRef} />
+    </div>
+  );
+}
+
 export function App() {
   const [ready, setReady] = useState(false);
   const [orchestrator, setOrchestrator] = useState<Orchestrator | null>(null);
@@ -70,6 +178,40 @@ export function App() {
   /** The single Lyra wordmark hides once a playback session starts. */
   const [brandHidden, setBrandHidden] = useState(false);
   const bootMountedAtRef = useRef(0);
+  const [logLines, setLogLines] = useState<LogLine[]>([]);
+  const logKeyRef = useRef(0);
+
+  // Capture console output on-screen so real-device logs need no Xcode.
+  useEffect(() => {
+    const orig = {
+      log: console.log.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+    };
+    const bump = (kind: "log" | "warn" | "error") => {
+      (console as any)[kind] = (...args: unknown[]) => {
+        orig[kind](...args);
+        const text = args
+          .map((a) => (typeof a === "string" ? a : safeString(a)))
+          .join(" ");
+        if (!/\[lyra/i.test(text)) return; // only surface Lyra diagnostics
+        const key = logKeyRef.current++;
+        const line: LogLine = { key, text, level: kind };
+        setLogLines((prevLines) => {
+          const next = prevLines.concat(line);
+          return next.length > 200 ? next.slice(next.length - 200) : next;
+        });
+      };
+    };
+    bump("log");
+    bump("warn");
+    bump("error");
+    return () => {
+      console.log = orig.log as any;
+      console.warn = orig.warn as any;
+      console.error = orig.error as any;
+    };
+  }, []);
 
   useEffect(() => {
     bootMountedAtRef.current = performance.now();
@@ -151,6 +293,7 @@ export function App() {
         </div>
       </div>
       <BuildStamp />
+      <OnScreenLog lines={logLines} />
     </>
   );
 }
