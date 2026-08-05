@@ -817,8 +817,11 @@ export class Orchestrator {
       endedEmotion,
     );
     const autoCtx = this.captureAutoAdvanceContext();
+    // pseudoTarget 用会话心情锚点（入口心情/时间上下文），连播不走样，与 onSongComplete 对齐。
     const pseudoTarget =
-      baseEmotion.labels.join(" ").trim() || undefined;
+      this.sessionMoodAnchor?.pseudoTarget ||
+      baseEmotion.labels.join(" ").trim() ||
+      undefined;
 
     const exclude = new Set<string>([
       this.currentSong.id,
