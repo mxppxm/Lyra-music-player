@@ -14,6 +14,7 @@ import { setMemoryContext } from "./memory/context";
 import { onSongComplete } from "./audio/player";
 import { DreamScheduler } from "./schedule/dreamScheduler";
 import { autoWeeklyTrigger, onDemandWeeklyOpen } from "./weekly/wire";
+import { runMoodSummary } from "./moodSummary/wire";
 import { SECRET_KEYS, getSecret } from "./settings/secrets";
 import { ProactiveEngine } from "./proactive/engine";
 import { createSulkStore } from "./proactive/sulkStore";
@@ -365,6 +366,10 @@ function App() {
         orchestrator={orchestrator}
         onWeek={async () => {
           const html = await onDemandWeeklyOpen();
+          if (html) setWeeklyHtml(html);
+        }}
+        onMood={async () => {
+          const html = await runMoodSummary();
           if (html) setWeeklyHtml(html);
         }}
       />

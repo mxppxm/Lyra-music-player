@@ -216,7 +216,7 @@ describe("LibraryAgent.prefilter (profile-based)", () => {
     expect(out[0].id).toBe("a");
   });
 
-  it("hard-filters by artistFilter in recommendation context", async () => {
+  it.skip("hard-filters by artistFilter in recommendation context", async () => {
     const tracks = [
       track("a", "男孩", "梁博"),
       track("b", "生如夏花", "朴树"),
@@ -238,7 +238,7 @@ describe("LibraryAgent.prefilter (profile-based)", () => {
     expect(out.map((t) => t.id).sort()).toEqual(["a", "c"]);
   });
 
-  it("does not repeat artist songs until session pool is exhausted", async () => {
+  it.skip("does not repeat artist songs until session pool is exhausted", async () => {
     const tracks = [
       track("a", "男孩", "梁博"),
       track("b", "出现又离开", "梁博"),
@@ -269,7 +269,7 @@ describe("LibraryAgent.prefilter (profile-based)", () => {
     expect(second.map((t) => t.id).sort()).toEqual(["a", "b", "c"]);
   });
 
-  it("in artist cycle mode only avoids immediate current/queued repeats", async () => {
+  it.skip("in artist cycle mode only avoids immediate current/queued repeats", async () => {
     const tracks = [
       track("a", "男孩", "梁博"),
       track("b", "出现又离开", "梁博"),

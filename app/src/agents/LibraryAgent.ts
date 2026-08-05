@@ -19,6 +19,7 @@ import {
   keywordScoreFromHaystack,
 } from "../recommendation";
 import { expandWithSynonyms, areSynonyms } from "../recommendation/moodSynonyms";
+import { timeContextScore } from "../recommendation/timeContext";
 
 const DEFAULT_LIMIT = 30;
 
@@ -151,7 +152,14 @@ function profileScore(
     tagOverlap(emotionLabels, queryTokens, profile?.lyrical_themes ?? []) * 0.1;
   const genreScore = genreAffinityScore(profile, recCtx?.soul) * 0.08;
   const energyScore = energyMatchScore(profile, pad.a) * 0.07;
-  const timeScore = timeColorScore(nowHour, profile?.time_color ?? "") * 0.1;
+
+  // 时间维度：优先用时间上下文（季节/星期/时段/上班休息 → best_for + time_color），
+  // 无上下文时退回原有「小时 × time_color」匹配。
+  const timeCtx = recCtx?.timeContext;
+  const timeMatch = timeCtx
+    ? timeContextScore(timeCtx, profile?.best_for ?? [], profile?.time_color ?? "")
+    : timeColorScore(nowHour, profile?.time_color ?? "");
+  const timeScore = timeMatch * 0.12;
   const scenario = scenarioScore(queryTokens, profile?.best_for ?? []) * 0.1;
   // Semantic similarity from lyrics embeddings — captures meaning beyond keywords
   const semScore = semanticSim * 0.15;

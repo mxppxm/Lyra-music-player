@@ -13,6 +13,8 @@ export { EmotionAgent } from "./agents/EmotionAgent.ts";
 export { CompanionAgent } from "./agents/CompanionAgent.ts";
 export { LibraryAgent } from "./agents/LibraryAgent.ts";
 export { MusicProfileAgent } from "./agents/MusicProfileAgent.ts";
+export { MoodSummaryAgent } from "./moodSummary/MoodSummaryAgent.ts";
+export * from "./moodSummary/summarizeMood.ts";
 export { routeProvider } from "./agents/route.ts";
 export { registry } from "./providers/registry.ts";
 export * from "./agents/types.ts";

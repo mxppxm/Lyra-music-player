@@ -7,7 +7,8 @@ export type SlashCommand =
   | { kind: "stats" }
   | { kind: "explorer" }
   | { kind: "help" }
-  | { kind: "week" };
+  | { kind: "week" }
+  | { kind: "mood" };
 
 export function parseSlashCommand(raw: string): SlashCommand | null {
   const t = raw.trim();
@@ -16,5 +17,6 @@ export function parseSlashCommand(raw: string): SlashCommand | null {
   if (t === "/explorer") return { kind: "explorer" };
   if (t === "/help") return { kind: "help" };
   if (t === "/week") return { kind: "week" };
+  if (t === "/mood") return { kind: "mood" };
   return null;
 }

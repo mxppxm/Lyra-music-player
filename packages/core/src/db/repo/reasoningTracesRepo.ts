@@ -13,7 +13,8 @@ export type AgentKind =
   | "reflect"
   | "perception"
   | "engineer"
-  | "weekly";
+  | "weekly"
+  | "mood-summary";
 
 export type ReasoningTrace = {
   id: string;

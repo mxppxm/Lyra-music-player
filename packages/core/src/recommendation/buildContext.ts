@@ -3,6 +3,7 @@ import { getFeedbackStats } from "../db/repo/musicProfileRepo";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import type { RecommendationContext, TrackFeedbackCounts } from "./types";
 import { RECOMMENDATION_DEFAULTS } from "./types";
+import { computeTimeContext } from "./timeContext";
 import {
   buildExcludeSet,
   buildFatigueMap,
@@ -67,6 +68,7 @@ export async function buildRecommendationContext(
     feedbackStats,
     soul,
     emotionLabels: opts.emotionLabels ?? [],
+    timeContext: computeTimeContext(),
   };
 }
 

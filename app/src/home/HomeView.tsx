@@ -37,6 +37,7 @@ type HomeViewProps = {
   onOpenDataExplorer: (tab?: DataExplorerTabId) => void;
   onOpenHelp: () => void;
   onWeek?: () => Promise<void>;
+  onMood?: () => Promise<void>;
   orchestrator: Orchestrator | null;
   /** True while provider boot / bundled data copy is still running. */
   booting?: boolean;
@@ -53,12 +54,14 @@ function LiveHomeView({
   onOpenDataExplorer,
   onOpenHelp,
   onWeek,
+  onMood,
   orchestrator,
 }: {
   onOpenSettings: () => void;
   onOpenDataExplorer: (tab?: DataExplorerTabId) => void;
   onOpenHelp: () => void;
   onWeek?: () => Promise<void>;
+  onMood?: () => Promise<void>;
   orchestrator: Orchestrator;
 }) {
   const { state, submit: rawSubmit } = useTurn(orchestrator);
@@ -77,6 +80,7 @@ function LiveHomeView({
     else if (cmd.kind === "explorer") onOpenDataExplorer();
     else if (cmd.kind === "help") onOpenHelp();
     else if (cmd.kind === "week") void onWeek?.();
+    else if (cmd.kind === "mood") void onMood?.();
     return Promise.resolve();
   };
 
@@ -410,6 +414,7 @@ export function HomeView({
   onOpenDataExplorer,
   onOpenHelp,
   onWeek,
+  onMood,
   orchestrator,
   booting = false,
   zeroConfig = isZeroConfigRelease(),
@@ -426,6 +431,7 @@ export function HomeView({
       onOpenDataExplorer={onOpenDataExplorer}
       onOpenHelp={onOpenHelp}
       onWeek={onWeek}
+      onMood={onMood}
       orchestrator={orchestrator}
     />
   );

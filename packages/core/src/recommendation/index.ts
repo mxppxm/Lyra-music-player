@@ -19,6 +19,12 @@ export {
 export { buildRecommendationContext } from "./buildContext";
 export { scheduleBackgroundProfiling, runBackgroundProfiling } from "./backgroundProfiling";
 export {
+  computeTimeContext,
+  timeContextToPseudoTarget,
+  timeContextScore,
+} from "./timeContext";
+export type { TimeContext, TimePeriod, Season } from "./timeContext";
+export {
   profileQualityMultiplier,
   tagOverlap,
   genreAffinityScore,

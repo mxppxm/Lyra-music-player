@@ -17,6 +17,7 @@ import type { EventBus } from "../perception/events";
 import * as musicProfileRepo from "../db/repo/musicProfileRepo";
 import type { TrackFeedback } from "../types/musicProfile";
 import { buildRecommendationContext } from "../recommendation";
+import { computeTimeContext } from "../recommendation/timeContext";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import { parseArtistIntent } from "../library/parseArtistIntent";
 
@@ -108,6 +109,14 @@ export class Orchestrator {
   private activeArtistFilter: string | null = null;
   /** Tracks which artist-pool songs were played in the current artist session. */
   private artistSessionPlayedIds = new Set<string>();
+  /**
+   * 会话心情锚点：记录这条播放流的「心情入口」。
+   * - 用户输入 → EmotionAgent 分析出的情绪标签 + 原话
+   * - 点我试试 → 时间上下文默认心情 + 时间伪目标
+   * 连播时持续用它做 pseudoTarget，保证整条流都和入口心情相关，
+   * 直到用户下一次新输入才更新。
+   */
+  private sessionMoodAnchor: { labels: string[]; pseudoTarget: string } | null = null;
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
@@ -127,12 +136,18 @@ export class Orchestrator {
     return this.activeArtistFilter;
   }
 
+  /**
+   * 搜索歌手播放 —— 暂时禁用（用户需求）。
+   * 保留函数与调用点，activeArtistFilter 永为 null，歌手会话不再触发；
+   * 后续要恢复只需把下面这行 return 移除。
+   */
   private async updateArtistFilterFromUserInput(text: string): Promise<void> {
+    return; // [暂时禁用] 搜索歌手播放。下面的歌手解析逻辑保留未删。
     const artist = parseArtistIntent(text);
     if (artist) {
       // Validate against the library — if no track matches this "artist",
       // it's almost certainly a mood/scene word that slipped through the regex.
-      const exists = await libraryRepo.artistExists(artist);
+      const exists = await libraryRepo.artistExists(artist!);
       if (!exists) {
         console.log(`[lyra] artist session skipped: "${artist}" not found in library (likely mood/scene)`);
         // Don't set the filter — let the utterance fall through to mood matching.
@@ -648,6 +663,13 @@ export class Orchestrator {
         (async () => {
           const emotion = await emotionAgent.analyze({ userUtterance: text });
           const blended = blendEmotionWithBias(emotion, this.perceptionBias);
+          // 心情入口锚点：用户这条输入是什么情绪，后续连播就延续什么。
+          if (blended.labels.length > 0) {
+            this.sessionMoodAnchor = {
+              labels: [...blended.labels],
+              pseudoTarget: text.trim() || blended.labels.join(" "),
+            };
+          }
           await this.finalisePreviousTurn(text, blended.pad);
           await this.runTurnWithEmotion(blended, text, "text");
         })(),
@@ -680,17 +702,25 @@ export class Orchestrator {
 
     try {
       const soul = await this.deps.soulStore.load();
+      const timeCtx = computeTimeContext();
+      // 点我试试：没有用户输入，就用「时间上下文」当心情入口 ——
+      // 深夜 → 平静/内省，早通勤 → 清醒/出发 …… 推荐器和文案都有据可依。
+      const defaultLabels = [...timeCtx.defaultMoodTags];
       const emotion: CurrentEmotion = {
         pad: soul.dynamic_mood.current_pad,
-        labels: [],
+        labels: defaultLabels,
         confidence: 0.2,
         source: "emotion-agent-inferred",
+      };
+      this.sessionMoodAnchor = {
+        labels: defaultLabels,
+        pseudoTarget: timeCtx.pseudoTarget,
       };
       await this.runTurnWithEmotion(
         emotion,
         "",
         "proactive-open",
-        "让 Lyra 帮你启动",
+        timeCtx.pseudoTarget,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -958,12 +988,15 @@ export class Orchestrator {
         endedEmotion,
       );
 
-      // Continue the flow: play history excludes recent songs automatically
+      // Continue the flow: play history excludes recent songs automatically.
+      // pseudoTarget 用会话心情锚点（入口心情/时间上下文），连播不走样。
+      const anchorTarget = this.sessionMoodAnchor?.pseudoTarget;
+      const labelsTarget = baseEmotion.labels.join(" ").trim();
       await this.runTurnWithEmotion(
         baseEmotion,
         "",
         "proactive-open",
-        baseEmotion.labels.join(" ").trim() || undefined,
+        anchorTarget || labelsTarget || undefined,
         undefined,
         autoCtx,
       );

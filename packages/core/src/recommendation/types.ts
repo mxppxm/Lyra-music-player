@@ -1,4 +1,5 @@
 import type { SoulState } from "../types";
+import type { TimeContext } from "./timeContext";
 
 /** One row in the recent-play ledger derived from dialogue turns. */
 export type PlayHistoryEntry = {
@@ -37,6 +38,8 @@ export type RecommendationContext = {
   soul: SoulState;
   /** Labels from EmotionAgent (e.g. 疲惫, 孤独) — used in prefilter mood match. */
   emotionLabels: readonly string[];
+  /** 时间上下文（季节/星期/时段/上班休息）—— 推荐打分与文案的时间维度。 */
+  timeContext?: TimeContext;
   /** When set, candidate pool is restricted to this artist until the user says otherwise. */
   artistFilter?: string;
   /** Song ids already played in the current artist session — no repeat until pool exhausted. */

@@ -54,6 +54,7 @@ export function HelpOverlay({ open, onClose }: HelpOverlayProps) {
             <li><code>/stats</code> — LLM 调用与消耗</li>
             <li><code>/explorer</code> — 数据浏览器（轮次、记忆、灵魂、显著性…）</li>
             <li><code>/week</code> — 打开我给你写的这一周的信（最近 7 天） · 若数据不足或我这周没写好，会展示一封短的道歉</li>
+            <li><code>/mood</code> — 打开最近这段时间的心情总结（情绪轨迹 + 时段分布）</li>
           </ul>
           <p style={hint}>
             快捷键：<kbd>⌘=</kbd> 设置 · <kbd>⌘⇧D</kbd> 数据浏览器 ·{" "}

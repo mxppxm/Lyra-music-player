@@ -27,3 +27,10 @@ nohup.out
 # Rust incremental
 **/*.rs.bk
 app-mobile/.env.production.local
+
+# SQLite runtime files
+*.db-shm
+*.db-wal
+
+# Cursor editor state
+.cursor/
