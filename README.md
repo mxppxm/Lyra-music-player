@@ -6,7 +6,7 @@
 
 A music agent that sings to you, remembers you, and grows on its own. **Not just another music player.**
 
-Lyra is a music agent built as a **pnpm monorepo** with **React 19** + **TypeScript 5**. It ships as a **Tauri 2 desktop app** (`app/`) and an **iOS app** (`app-mobile/` via Capacitor), sharing one core (`@lyra/core`). It manages a personal music library, maintains emotional state, and uses LLM backends to recommend and generate song selections in real time — adapting to your mood and preferences as you interact with it.
+Lyra is a **pnpm monorepo** built with **React 19** + **TypeScript 5**. It ships as a **Tauri 2 desktop app** (`app/`) and an **iOS app** (`app-mobile/` via Capacitor), sharing one core (`@lyra/core`). It manages a personal music library, maintains emotional state, and uses LLM backends to recommend and play music in real time — adapting to your mood and preferences as you interact with it.
 
 ## Repository Layout
 
@@ -15,10 +15,10 @@ Lyra-music-player/                  # pnpm monorepo (pnpm-workspace.yaml)
 ├── app/                            # Tauri 2 desktop application (React + Rust)
 ├── app-mobile/                     # iOS app (Capacitor 7 + React)
 ├── packages/
-│   ├── core/                       # @lyra/core — shared agent brain (agents, memory, library)
+│   ├── core/                       # @lyra/core — shared agent brain (agents, memory, library, providers)
 │   ├── platform/                   # @lyra/platform — platform interface contracts
-│   ├── platform-desktop/           # @lyra/platform-desktop — desktop impl
-│   └── platform-ios/               # @lyra/platform-ios — iOS impl (native audio plugin)
+│   ├── platform-desktop/           # @lyra/platform-desktop — desktop impl (Tauri IPC)
+│   └── platform-ios/               # @lyra/platform-ios — iOS impl (native audio plugin, Capacitor)
 ├── website/                        # Official website (Vite)
 ├── docs/                           # Product docs, plans, specs, and design notes
 │   ├── business-model.md
@@ -26,7 +26,7 @@ Lyra-music-player/                  # pnpm monorepo (pnpm-workspace.yaml)
 │   ├── feature-gaps.md
 │   ├── music-licensing-policy.md
 │   ├── promotion-strategy.md
-│   └── superpowers/                # plans, specs, tuning notes
+│   └── superpowers/                # plans/ and specs/
 ├── scripts/                        # shared build / resource scripts
 ├── start.sh                        # Convenience launcher — cd app && pnpm tauri dev
 └── 需求.md                         # Original product requirements (Chinese)
@@ -36,20 +36,21 @@ The full desktop developer guide lives in [`app/README.md`](./app/README.md).
 
 ## Key Features
 
-- **Personal Music Library** — SQLite-backed local storage with metadata and listening history; bigram + lyrics semantic search for fast Chinese song matching
-- **Emotional Agent State** — Tracks mood (PAD model), listening patterns, and aesthetic preferences
-- **Multi-LLM Support** — Pluggable model providers (Anthropic, DeepSeek, Zhipu, DouBao, OpenAI, local Ollama, SenseNova / SupaNet gateway), with automatic fallback and retry on transient errors
+- **Personal Music Library** — SQLite-backed storage (desktop: `tauri-plugin-sql`; iOS: `@capacitor-community/sqlite`) with metadata and listening history; bigram tokenization + lyrics embeddings for fast Chinese song matching
+- **Emotional Agent State** — Tracks mood with the PAD model (pleasure / arousal / dominance), listening patterns, and aesthetic preferences; a perception layer blends LLM reads, rule-based signals, and Open-Meteo weather into the current emotional state
+- **Multi-LLM Support** — Pluggable providers (Anthropic, DeepSeek, Zhipu) plus OpenAI-compatible gateways (SupaNet `fxb` on desktop, SenseNova on iOS/core), with automatic fallback and retry on transient errors; OpenAI embeddings for lyrics search
 - **Song Recommender** — Recommends songs by time-of-day and mood via the `song-recommender` strategy
-- **Native iOS Playback** — Custom `LyraAudioPlugin` (mediagrid → native) with a native playback queue for long background listening, lock screen & Dynamic Island controls
-- **Immersive Player** — One-tap Lyra start, immersive chrome that persists across song switches, emotion-glow backdrop, animated motion (FLIP dock, crossfades, AnimatedMount overlays)
-- **ShanShui Home** — Ink-wash canvas + photographic background layer set the tone of the room
-- **Weekly Letter** — Lyra writes you a first-person weekly reflection every Sunday
-- **System Integration** — Native keychain via `keyring`; file dialogs and URIs via Tauri plugins (desktop); on-device debug log panel for real-phone troubleshooting (iOS)
+- **Bilibili Integration** — CORS proxy to `api.bilibili.com`, DASH audio streaming, FFT-extracted audio features (energy, spectral centroid → real PAD), and lyrics extraction with semantic embeddings
+- **Native iOS Playback** — Custom `LyraAudioPlugin` with a native playback queue for long background listening, lock-screen controls, and Live Activity (Dynamic Island)
+- **Immersive Player** — One-tap Lyra start, immersive chrome that persists across song switches, emotion-glow backdrop, and restrained motion (crossfades, AnimatedMount overlays, collapsing dock)
+- **ShanShui Home** — Ink-wash canvas over a photographic background layer sets the tone of the room
+- **Weekly Letter** — Lyra writes you a first-person weekly reflection every Sunday (Rust `weekly.rs` + HTML renderer)
+- **System Integration** — Tauri plugins for opener (URIs/paths) and notifications; tray breathing icon; on-device debug log panel for real-phone troubleshooting (iOS)
 
 ## Tech Stack
 
 ### Shared (`packages/`)
-- **@lyra/core** — platform-agnostic agent brain: agents, memory, library, LLM call-sites
+- **@lyra/core** — platform-agnostic agent brain: agents, memory, library, providers, recommendation
 - **@lyra/platform** + **@lyra/platform-desktop** + **@lyra/platform-ios** — interface contracts and per-platform implementations
 
 ### Desktop (`app/`)
@@ -59,15 +60,16 @@ The full desktop developer guide lives in [`app/README.md`](./app/README.md).
 - **@tauri-apps/api** for IPC to the backend
 
 ### iOS (`app-mobile/`)
-- **Capacitor 7** (iOS) with `@capacitor-community/sqlite`, filesystem, preferences
-- **Custom `LyraAudioPlugin`** — native audio playback queue for background listening & lock-screen controls
-- Shares `@lyra/core` UI components (MobileHomeView) via workspace deps
+- **Capacitor 7** with `@capacitor-community/sqlite`, filesystem, preferences
+- **Custom `LyraAudioPlugin`** — native audio playback queue for background listening, lock-screen controls & Live Activity
+- Shares `@lyra/core` agent logic via workspace deps; the mobile UI shell lives in `app-mobile/src`
 
 ### Backend (Rust, desktop)
 - **Tauri 2** desktop framework
 - **SQLite** via `tauri-plugin-sql` for persistent storage
 - **rodio** for audio playback (symphonia backend)
-- **keyring** for secure credential storage (Apple native)
+- **reqwest** CORS proxy for Bilibili + DASH stream download; **lofty** for metadata; **rustfft** for audio feature extraction
+- API keys are stored as `secrets.json` in the app data directory (not the system keychain — see [Persistence](#persistence--configuration))
 
 ### Tooling
 - **pnpm 10.27** package manager + workspaces
@@ -78,7 +80,7 @@ The full desktop developer guide lives in [`app/README.md`](./app/README.md).
 ### Prerequisites
 
 - **Node.js** 18+ with **pnpm 10.27**
-- **Rust 1.70+** (for the Tauri desktop backend)
+- **Rust stable** (1.77+, for Tauri 2) — needed for the desktop backend
 - **Xcode Command Line Tools** (macOS) — also needed for the iOS app: **Xcode 15+** and `@capacitor/cli`
 
 ### Quick Start
@@ -121,9 +123,9 @@ See the [Mobile Debug Log Panel](#mobile-debug-log-panel-app-mobile) section bel
 
 ## Persistence & Configuration
 
-- **SQLite database** — `~/Library/Application Support/com.daoyu.lyra/lyra.db`
-- **Keychain** — API keys and secrets stored via the macOS native keychain (`keyring` crate)
-- **Bundle ID** — `com.daoyu.lyra`
+- **SQLite database** — `~/Library/Application Support/com.daoyu.lyra/lyra.db` (desktop)
+- **API keys & secrets** — desktop: plain-JSON `secrets.json` in the app data directory (the `keyring` crate / system keychain is **not** used); iOS: Capacitor Preferences
+- **Bundle IDs** — desktop `com.daoyu.lyra`; iOS `com.jiuri.lyra`
 
 ## Commit Conventions
 
@@ -163,8 +165,9 @@ Proprietary — all rights reserved unless a top-level LICENSE file states other
 ## Notes for Maintainers
 
 - **Agent personality**: Lyra is a music *agent* — not a player, not a recommender tool, but a conversational entity that learns and grows through dialogue. Design decisions reflect this agency model.
-- **Shared brain**: `packages/core` (`@lyra/core`) holds the platform-agnostic agent logic; desktop and iOS both consume it. Keep cross-platform behavior there rather than in the app shells.
+- **Shared brain**: `packages/core` (`@lyra/core`) holds the platform-agnostic agent logic; desktop and iOS both consume it. Keep cross-platform behavior there rather than in the app shells. Note: `app/src` still keeps local copies of several subsystems (`db`, `providers`, `recommendation`, `memory`, `proactive`, `reflect`) that predate the packages split and have drifted — the desktop boot registers the SupaNet `fxb` gateway while core boots SenseNova. Migrate these to `@lyra/core` as you touch them.
 - **Rust crate names**: `Cargo.toml` uses `name = "app"` and `lib.name = "lyra_lib"` pending a future rename sweep. Product/project name is consistently "Lyra".
+- **Known debt**: desktop secrets are stored as plaintext JSON, not in the system keychain; replacing them with real keychain storage is on the backlog.
 
 ## Mobile Debug Log Panel (`app-mobile`)
 

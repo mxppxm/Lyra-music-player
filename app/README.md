@@ -1,22 +1,26 @@
-# Lyra
+# Lyra (Desktop App)
 
 > **Between the things you say. 未成曲调先有情。**
 
 A music agent that sings to you, remembers you, and grows on its own. **Not yet another music player.**
 
-Design docs and decisions are in `../docs/superpowers/specs/`.
+Design docs and decisions live in [`../docs/superpowers/`](../docs/superpowers/).
 
 ## Overview
 
-Lyra is a desktop music agent built with **Tauri 2** + **React 19** + **TypeScript 5**. It manages a personal music library, maintains emotional state, and uses LLM backends to recommend and generate song selections in real time—adapting to your mood and preferences as you interact with it.
+Lyra is a desktop music agent built with **Tauri 2** + **React 19** + **TypeScript 5**. It manages a personal music library, maintains emotional state, and uses LLM backends to recommend and play music in real time — adapting to your mood and preferences as you interact with it.
 
 ### Key Features
 
 - **Personal Music Library**: SQLite-backed local storage with metadata and listening history
 - **Emotional Agent State**: Tracks mood (PAD model), listening patterns, and aesthetic preferences
-- **Multi-LLM Support**: Pluggable model providers (Anthropic, DeepSeek, Zhipu, DouBao, OpenAI, local Ollama)
-- **Responsive UI**: React components with Vite hot-reload and Testing Library coverage
-- **System Integration**: Native keychain via `keyring` crate; file dialogs and URIs via Tauri plugins
+- **Multi-LLM Support**: Pluggable model providers (Anthropic, DeepSeek, Zhipu, plus the SupaNet `fxb` OpenAI-compatible gateway), with automatic fallback and retry
+- **Bilibili Integration**: CORS proxy to `api.bilibili.com`, DASH audio streaming, FFT audio features, and lyrics extraction with semantic embeddings
+- **Song Recommender**: Recommends songs by time-of-day and mood via the `song-recommender` strategy
+- **Immersive Player**: One-tap Lyra start, immersive chrome, emotion-glow backdrop, and restrained motion
+- **ShanShui Home**: Ink-wash canvas over a photographic background
+- **Weekly Letter**: First-person weekly reflection every Sunday
+- **System Integration**: Tauri plugins for opener (URIs/paths) and notifications; tray breathing icon
 
 ## Tech Stack
 
@@ -30,7 +34,7 @@ Lyra is a desktop music agent built with **Tauri 2** + **React 19** + **TypeScri
 - **Tauri 2** desktop framework
 - **SQLite** via `tauri-plugin-sql` for persistent storage
 - **rodio** for audio playback (symphonia backend)
-- **keyring** for secure credential storage (Apple native)
+- **reqwest** for the Bilibili CORS proxy + DASH stream download; **lofty** for metadata; **rustfft** for audio feature extraction
 - **serde** + **serde_json** for serialization
 
 ### Build & Development
@@ -43,22 +47,19 @@ Lyra is a desktop music agent built with **Tauri 2** + **React 19** + **TypeScri
 ### Prerequisites
 
 - **Node.js** 18+ (we use pnpm 10.27)
-- **Rust 1.70+** (for Tauri backend compilation)
+- **Rust stable** (1.77+, for Tauri 2)
 - **Xcode Command Line Tools** (macOS) or equivalent build tools
 
 ### Installation
 
-1. Clone and navigate to the app directory:
+1. Clone the monorepo and install workspace deps from the root:
    ```bash
-   cd /Users/daoyu/Documents/my-github/Lyra-music-player/app
-   ```
-
-2. Install dependencies:
-   ```bash
+   git clone git@github.com:daoyuly/Lyra-music-player.git
+   cd Lyra-music-player
    pnpm install
    ```
 
-3. Verify TypeScript and build setup:
+2. From this directory (`app/`), verify the setup:
    ```bash
    pnpm typecheck
    ```
@@ -79,8 +80,8 @@ pnpm typecheck
 #### Testing
 ```bash
 pnpm test              # Run all tests once
-pnpm test:watch       # Watch mode
-pnpm test:ui          # Vitest UI dashboard
+pnpm test:watch        # Watch mode
+pnpm test:ui           # Vitest UI dashboard
 ```
 
 #### Building for Distribution
@@ -93,73 +94,63 @@ pnpm tauri build      # Package as macOS .app (or platform-specific binary)
 
 ```
 app/
-├── src/                         # TypeScript/React frontend
-│   ├── audio/                   # Tauri IPC → rodio audio playback
-│   │   ├── player.ts            # playFile / stopPlayback / isPlaying wrappers
-│   │   └── player.test.ts
-│   ├── db/                      # SQLite client + codec + repository
-│   │   ├── client.ts            # Database.load() + getDb() memoization + invalidateDb()
-│   │   ├── codec/               # Domain type ↔ SQL row translation
-│   │   │   ├── dialogueTurn.ts
-│   │   │   ├── soulState.ts
-│   │   │   ├── emotionSnapshot.ts
-│   │   │   └── libraryTrack.ts
-│   │   └── repo/                # CRUD helpers on top of the codec
-│   │       ├── turnRepo.ts
-│   │       ├── soulRepo.ts
-│   │       ├── emotionRepo.ts
-│   │       └── libraryRepo.ts
-│   ├── providers/               # Model provider abstraction + adapters
-│   │   ├── registry.ts          # ProviderRegistry singleton
-│   │   ├── anthropic.ts         # AnthropicProvider adapter
-│   │   ├── deepseek.ts          # DeepSeekProvider adapter
-│   │   └── boot.ts              # bootProviders() reads keychain, registers
-│   ├── settings/                # API key modal + secret storage wrapper
-│   │   ├── secrets.ts           # SECRET_KEYS + setSecret / getSecret / deleteSecret
-│   │   └── Settings.tsx         # Modal for entering keys
-│   ├── types/                   # Shared TypeScript interfaces
-│   │   ├── dialogue.ts          # DialogueTurn, PAD, CurrentEmotion, ProactiveKind
-│   │   ├── soul.ts              # SoulState, MusicalTasteBase, DynamicMood
-│   │   ├── song.ts              # LibraryTrack, TrackFeatures
-│   │   ├── provider.ts          # ModelProvider interface, ChatMessage, ChatResponse
-│   │   └── index.ts             # Barrel export
-│   ├── App.tsx                  # Full-screen hero (Lyra + slogans + Settings)
-│   ├── App.test.tsx
-│   └── main.tsx                 # React entry point
-├── src-tauri/                   # Rust backend
+├── src/                          # TypeScript/React frontend
+│   ├── agents/                   # Agent re-exports from @lyra/core (+ emotion eval regression)
+│   ├── audio/                    # Tauri IPC → rodio audio playback (player.ts, useProgress)
+│   ├── bilibili/                 # Bilibili API client + FFT audio-features cache
+│   ├── db/                       # SQLite client + codec + repository (local copy, mirrors core)
+│   ├── home/                     # Home view: ShanShuiCanvas, PlayerControls, WeeklyReader, keyboard/slash commands
+│   ├── library/                  # Bilibili-track → library mapping, lyrics extraction/embeddings, feature extraction
+│   ├── memory/                   # Salient memory, context assembly, file-backed store (local copy, mirrors core)
+│   ├── moodSummary/              # PAD time-bucket summaries (local copy, mirrors core)
+│   ├── perception/               # LLM + rule-based perception, weather (Open-Meteo)
+│   ├── proactive/                # Proactive engine, politeness, sulk persistence
+│   ├── providers/                # Model provider adapters + bootProviders() — registers Anthropic/DeepSeek/Zhipu/fxb
+│   ├── reasoning/                # LLM reasoning traces
+│   ├── recommendation/           # time-of-day/mood context, play history, profile scoring, diversity
+│   ├── reflect/                  # Weekly/reflective agent
+│   ├── schedule/                 # Scheduled triggers
+│   ├── settings/                 # Settings modal + secret storage wrapper
+│   ├── tray/                     # Tray breathing-icon bridge
+│   ├── turn/                     # Turn orchestration (local copy, mirrors core)
+│   ├── ui/                       # Motion primitives (AnimatedMount, Crossfade), overlays
+│   ├── weekly/                   # WeeklyAgent, data gathering, HTML renderer, Sunday trigger wiring
+│   ├── App.tsx                   # App shell: boot providers, mount HomeView, overlays
+│   └── main.tsx                  # React entry point
+├── src-tauri/                    # Rust backend
 │   ├── src/
-│   │   ├── main.rs              # Tauri entry point
-│   │   ├── lib.rs               # Plugin registration + Tauri command handlers
-│   │   ├── audio.rs             # rodio-based playback (Arc<AudioPlayer>)
-│   │   └── secrets.rs           # keyring-backed secret CRUD
-│   ├── migrations/
-│   │   └── 001_initial.sql      # 10-table schema
-│   ├── tests/
-│   │   ├── audio_test.rs
-│   │   ├── secrets_test.rs
-│   │   └── fixtures/silence_1s.wav
+│   │   ├── main.rs               # Tauri entry point
+│   │   ├── lib.rs                # Plugin registration + Tauri command handlers
+│   │   ├── audio.rs              # rodio-based playback (Arc<AudioPlayer>)
+│   │   ├── audio_features.rs     # FFT feature extraction from audio URLs
+│   │   ├── bilibili_proxy.rs     # CORS proxy for api.bilibili.com
+│   │   ├── library_scan.rs       # Directory scan + metadata (lofty)
+│   │   ├── lyrics.rs             # Lyrics handling
+│   │   ├── secrets.rs            # secrets.json CRUD in the app data dir
+│   │   ├── tray.rs               # Tray breathing icon
+│   │   └── weekly.rs             # Weekly letter generation/writing
+│   ├── migrations/               # SQLite schema migrations (001..008)
+│   ├── tests/                    # Rust integration tests (audio, secrets, weekly, library_scan, features)
 │   ├── capabilities/default.json
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── public/                      # Static assets
-├── index.html                   # HTML entry point
-├── vite.config.ts               # Vite bundler config
-├── vitest.config.ts             # Vitest test runner config
-├── tsconfig.json                # TypeScript compiler options
-├── package.json                 # Node dependencies & scripts
-└── README.md                    # This file
+├── public/                       # Static assets
+├── index.html                    # HTML entry point
+├── vite.config.ts / vitest.config.ts
+├── tsconfig.json
+├── package.json
+└── README.md                     # This file
 ```
 
 ## Persistence & Configuration
 
 ### SQLite Database
 - **Path**: `~/Library/Application Support/com.daoyu.lyra/lyra.db`
-- **Schema**: Defined in migration scripts within Rust backend
-- **Tables**: Likely includes `songs`, `dialogue_turns`, `soul_state`, listening history, etc.
+- **Schema**: Defined by migrations in `src-tauri/migrations/`
 
-### Keychain Integration
-- Credentials and API keys are stored securely in the system keychain (macOS native)
-- Accessed via the `keyring` Rust crate
+### API Keys & Secrets
+- Stored as plain-JSON `secrets.json` in the app data directory (see `src-tauri/src/secrets.rs`).
+- **Note**: the system keychain (`keyring` crate) is **not** used; this is known technical debt.
 
 ## Commit Conventions
 
@@ -229,5 +220,6 @@ Proprietary — see parent project LICENSE if applicable.
 ## Notes for Maintainers
 
 - **Rust crate names**: The Cargo.toml still uses `name = "app"` and `lib.name = "lyra_lib"` for now (pending a future rename sweep to fully align with the Lyra branding). The README uses "Lyra" consistently for the product/project name.
-- **Bundle ID**: `com.daoyu.lyra` (see `src-tauri/tauri.conf.json`)
-- **Agent personality**: Lyra is a music agent—not a player, not a recommender tool, but a conversational entity that learns and grows through dialogue. Design decisions reflect this agency model.
+- **Bundle ID**: `com.daoyu.lyra` (see `src-tauri/tauri.conf.json`); the iOS app uses `com.jiuri.lyra`.
+- **Agent personality**: Lyra is a music agent — not a player, not a recommender tool, but a conversational entity that learns and grows through dialogue. Design decisions reflect this agency model.
+- **Local copies vs `@lyra/core`**: several `app/src` subsystems (`db`, `providers`, `recommendation`, `memory`, `proactive`, `turn`) are local copies that predate the packages split and have drifted from `@lyra/core` (e.g. the desktop boot registers the SupaNet `fxb` gateway, while core registers SenseNova). Migrate them back to core as you touch them.
