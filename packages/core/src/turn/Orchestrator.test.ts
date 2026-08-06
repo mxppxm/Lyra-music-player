@@ -23,6 +23,7 @@ vi.mock("../tray/trayBridge", () => ({
 
 vi.mock("../db/repo/libraryRepo", () => ({
   listAll: vi.fn(async () => []),
+  getTrack: vi.fn(async () => null),
 }));
 
 vi.mock("../db/repo/turnRepo", () => ({
@@ -43,6 +44,7 @@ vi.mock("../db/repo/musicProfileRepo", async (importOriginal) => {
 
 import { setBreathing } from "../tray/trayBridge";
 import { listRecentTurns } from "../db/repo/turnRepo";
+import * as libraryRepo from "../db/repo/libraryRepo";
 
 function makeDeps(overrides: Partial<any> = {}) {
   const emotion = {
@@ -606,6 +608,110 @@ describe("Orchestrator T8: emotion prediction channel (auto-advance)", () => {
     ];
     expect(secondCall[3].excludeIds.has("t1")).toBe(true);
     expect(deps.audio.playFile).toHaveBeenLastCalledWith("/b.mp3", null);
+  });
+});
+
+describe("Orchestrator native auto-advance: rationale never falls back to canned copy", () => {
+  const t1: LibraryTrack = { id: "t1", path: "/a.mp3", origin: "local", added_at: 0, title: "T1" };
+  const t2: LibraryTrack = { id: "t2", path: "/b.mp3", origin: "local", added_at: 0, title: "T2" };
+
+  function nativeDeps() {
+    const tracks: LibraryTrack[] = [t1];
+    const prefilter = vi.fn(async () => [...tracks]);
+    const choose = vi.fn(async (input: { candidates: LibraryTrack[] }) => {
+      const song = input.candidates[input.candidates.length - 1];
+      return {
+        song_id: song.id,
+        target_profile: "x",
+        rationale: `${song.id}-rationale`,
+        needed_shift: "接住" as const,
+      };
+    });
+    return makeDeps({
+      library: { prefilter },
+      companion: { choose },
+      resolvePlayUrl: vi.fn(async () => "http://x/b.mp3"),
+    });
+  }
+
+  it("uses the plan rationale when the native song matches the plan head", async () => {
+    const deps = nativeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+
+    // Prefetch t2 → native queue holds it in the plan
+    const tracks: LibraryTrack[] = [t1, t2];
+    (deps.library.prefilter as ReturnType<typeof vi.fn>).mockResolvedValue([...tracks]);
+    await orc.prefetchMore(1);
+
+    vi.mocked(libraryRepo.getTrack).mockResolvedValue(t2);
+    let last: any = null;
+    orc.subscribe((s) => (last = s));
+    await orc.onNativeAutoAdvanced("t2");
+
+    expect(last?.kind).toBe("playing");
+    expect(last.turn.agent_response.rationale).toBe("t2-rationale");
+    expect(libraryRepo.getTrack).not.toHaveBeenCalled();
+  });
+
+  it("uses the cached LLM rationale after the plan is cleared (background→foreground)", async () => {
+    const deps = nativeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+
+    const tracks: LibraryTrack[] = [t1, t2];
+    (deps.library.prefilter as ReturnType<typeof vi.fn>).mockResolvedValue([...tracks]);
+    await orc.prefetchMore(1);
+
+    // Race that previously produced canned copy: plan cleared while the native
+    // queue still holds the prefetched track.
+    orc.clearPrefetchedNext();
+
+    vi.mocked(libraryRepo.getTrack).mockResolvedValue(t2);
+    let last: any = null;
+    orc.subscribe((s) => (last = s));
+    await orc.onNativeAutoAdvanced("t2");
+
+    expect(last?.kind).toBe("playing");
+    expect(last.turn.agent_response.rationale).toBe("t2-rationale");
+    expect(libraryRepo.getTrack).toHaveBeenCalledWith("t2");
+  });
+
+  it("generates a fresh LLM rationale when both plan and cache miss", async () => {
+    const deps = nativeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+
+    // Never prefetched t2 — cache has no entry for it
+    vi.mocked(libraryRepo.getTrack).mockResolvedValue(t2);
+    const chooseSpy = deps.companion.choose as ReturnType<typeof vi.fn>;
+    chooseSpy.mockClear();
+
+    let last: any = null;
+    orc.subscribe((s) => (last = s));
+    await orc.onNativeAutoAdvanced("t2");
+
+    expect(last?.kind).toBe("playing");
+    expect(last.turn.agent_response.rationale).toBe("t2-rationale");
+    // A real companion.choose was made with exactly this one candidate
+    expect(chooseSpy).toHaveBeenCalledTimes(1);
+    const arg = chooseSpy.mock.calls[0][0];
+    expect(arg.userUtterance).toBe("");
+    expect(arg.candidates.map((c: LibraryTrack) => c.id)).toEqual(["t2"]);
+  });
+
+  it("never emits one of the old canned auto-advance phrases", async () => {
+    const deps = nativeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+
+    vi.mocked(libraryRepo.getTrack).mockResolvedValue(t2);
+    let last: any = null;
+    orc.subscribe((s) => (last = s));
+    await orc.onNativeAutoAdvanced("t2");
+
+    const rationale = last.turn.agent_response.rationale as string;
+    expect(rationale).not.toMatch(/先顶上|耳朵别打盹|余温还没散|鼓点已经热好|把房间的空气换一遍|这一拍踩进来/);
   });
 });
 

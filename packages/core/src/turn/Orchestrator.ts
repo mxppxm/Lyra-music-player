@@ -105,6 +105,9 @@ export class Orchestrator {
     baseEmotion: import("../types").CurrentEmotion;
     rationale: string;
   }> = [];
+  /** songId → LLM rationale, survives nativeQueuePlan clears so background
+   *  auto-advance never falls back to canned copy. Session-scoped. */
+  private rationaleBySongId = new Map<string, string>();
   /** Persists across auto-advance until the user submits new input in the text box. */
   private activeArtistFilter: string | null = null;
   /** Tracks which artist-pool songs were played in the current artist session. */
@@ -475,6 +478,8 @@ export class Orchestrator {
     console.log(
       `[lyra] 选中歌曲: id=${picked.song.id} title=${picked.song.title ?? ""} path=${String(picked.song.path).slice(0, 100)}`,
     );
+
+    this.rationaleBySongId.set(picked.song.id, picked.rationale);
 
     const turn = this.buildTurn(
       emotion,
@@ -871,6 +876,7 @@ export class Orchestrator {
         baseEmotion,
         rationale: picked.rationale,
       });
+      this.rationaleBySongId.set(picked.song.id, picked.rationale);
       exclude.add(picked.song.id);
       results.push(this.prefetchPayload(picked.song, url));
     }
@@ -918,17 +924,20 @@ export class Orchestrator {
     try {
       await this.finalisePreviousTurn(undefined, endedEmotion.pad);
 
+      // Native may have skipped past plan entries (or the plan was cleared
+      // while JS was suspended) — search the whole plan, not just the head.
+      const planIdx = this.nativeQueuePlan.findIndex((e) => e.song.id === songId);
       const planEntry =
-        this.nativeQueuePlan[0]?.song.id === songId
-          ? this.nativeQueuePlan.shift()
-          : null;
+        planIdx >= 0 ? this.nativeQueuePlan.splice(0, planIdx + 1).pop() ?? null : null;
 
       let song: LibraryTrack | null = null;
       let baseEmotion = this.computeAutoAdvanceBaseEmotion(
         turnTimestamp,
         endedEmotion,
       );
-      let rationale = autoAdvanceFallbackNote(baseEmotion, autoCtx);
+      // Never canned copy — prefer the plan, then the session cache, then a
+      // real LLM rationale for this specific track.
+      let rationale = this.rationaleBySongId.get(songId) ?? "";
 
       if (planEntry) {
         song = planEntry.song;
@@ -940,6 +949,15 @@ export class Orchestrator {
           console.warn("[lyra] native auto-advanced but song not in library:", songId);
           return;
         }
+        if (!rationale) {
+          rationale = (await this.rationaleForNativeSong(song, baseEmotion, autoCtx)) ?? "";
+          if (rationale) this.rationaleBySongId.set(song.id, rationale);
+        }
+      }
+      if (!rationale) {
+        // Absolute last resort: carry the previous LLM copy forward rather
+        // than showing a template.
+        rationale = autoCtx?.previousRationale ?? "";
       }
 
       const turn = this.buildTurn(
@@ -960,6 +978,43 @@ export class Orchestrator {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[lyra] native auto-advance sync error:", err);
       this.emit({ kind: "error", message: msg });
+    }
+  }
+
+  /**
+   * Generate a real LLM rationale for a track that native already started
+   * but whose copy we don't have (plan + cache both missed). Single-candidate
+   * companion.choose — best-effort; returns null on any failure so the caller
+   * falls back to the previous rationale instead of a template.
+   */
+  private async rationaleForNativeSong(
+    song: LibraryTrack,
+    baseEmotion: import("../types").CurrentEmotion,
+    autoCtx?: AutoAdvanceContext,
+  ): Promise<string | null> {
+    const { companion, soulStore } = this.deps;
+    try {
+      const soul = await soulStore.load();
+      const recCtx = await buildRecommendationContext(soul, {
+        emotionLabels: baseEmotion.labels,
+      });
+      const profileMap = await musicProfileRepo.getBatch([song.id]);
+      const { livingPortrait, topFacts } = getMemoryContext();
+      const chosen = await companion.choose({
+        userUtterance: "",
+        currentEmotion: baseEmotion,
+        soul,
+        candidates: [{ ...song, musicProfile: profileMap.get(song.id) ?? null }],
+        livingPortrait,
+        topFacts,
+        recommendation: recCtx,
+        previousRationale: autoCtx?.previousRationale,
+        previousSong: autoCtx?.previousSong,
+      });
+      return chosen.rationale || null;
+    } catch (err) {
+      console.warn("[lyra] rationaleForNativeSong failed, keeping previous copy:", err);
+      return null;
     }
   }
 
@@ -1056,26 +1111,6 @@ export function blendEmotionWithBias(
 
 function clampPad(v: number): number {
   return Math.max(-1, Math.min(1, v));
-}
-
-// ── Auto-advance fallback note ──────────────────────────────────────────────
-
-const AUTO_ADVANCE_NOTES = [
-  "这首先顶上，耳朵别打盹。",
-  "刚那首的余温还没散，这首就来接棒。",
-  "鼓点已经热好了，听就是了。",
-  "让这首把房间的空气换一遍。",
-  "这一拍踩进来，就别想停下来了。",
-] as const;
-
-function autoAdvanceFallbackNote(
-  baseEmotion: import("../types").CurrentEmotion,
-  autoCtx: AutoAdvanceContext | undefined,
-): string {
-  const seed =
-    Math.round((baseEmotion.pad.p + 1) * 31 + (baseEmotion.pad.a + 1) * 17 + (baseEmotion.pad.d + 1) * 7) +
-    (autoCtx ? [...autoCtx.previousSong.title].reduce((n, ch) => n + ch.charCodeAt(0), 0) : 0);
-  return AUTO_ADVANCE_NOTES[Math.abs(seed) % AUTO_ADVANCE_NOTES.length];
 }
 
 // ── Track Feedback helper ───────────────────────────────────────────────────
