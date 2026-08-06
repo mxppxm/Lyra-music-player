@@ -112,12 +112,30 @@ pnpm tauri build     # 打包可分发的二进制
 
 ### iOS 端（`app-mobile/`）
 
+**重要：`app-mobile` 是 Capacitor 项目，不是 React Native。** 它的 UI 是 React + Vite 写的 **Web 代码**，真正打到 iOS App 里的是一套被 `WKWebView` 加载的静态网页资源（`dist/` → `ios/App/App/public/`），而不是直接编译进二进制的原生代码。
+
+首次构建：
+
 ```bash
 cd app-mobile
 pnpm install
 pnpm build && pnpm cap:sync    # 打包 JS 并同步原生 iOS 工程
 # 然后在 Xcode 中打开 / 构建：pnpm cap:open
 ```
+
+#### 修改 Web 代码（`.tsx` / `.js` / `.css`）后，必须同步才能上真机
+
+- 你改的这些文件属于「网页源码」，**不会**因为直接 `xcodebuild` 编译而更新。
+- 原生 App 加载的是 `ios/App/App/public/` 里的静态文件，只有把新编译的资源同步进去，真机才会显示新代码。
+- 因此每次改完 Web 代码，都要重复 **打包 → 同步 → 编译** 三连（第 1、2 步可合并）：
+
+```bash
+cd app-mobile
+npx cap sync ios        # 1) 自动跑 build 并把新网页拷进 ios/App/App/public
+# 2) 然后重新编译安装（Xcode Run，或 xcodebuild）
+```
+
+> 注意：仅当你**改了原生 Swift 代码**（`ios/App/App/*.swift`，如 `Lyra*Plugin`）或**增减了原生插件**时，才必须重新编译原生层；只改页面的话原生壳不需要重编，但同步步骤（`npx cap sync ios`）不能省。
 
 运行真机调试控制台的方式见下文 [移动调试日志面板](#移动调试日志面板-app-mobile) 章节。
 

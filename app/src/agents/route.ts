@@ -10,17 +10,19 @@ import { registry as defaultRegistry, ProviderRegistry } from "../providers/regi
 export type AgentKind = "emotion" | "companion" | "perception" | "music-profile";
 
 export const PRIMARY_FOR: Record<AgentKind, ProviderId> = {
-  emotion: "fxb",
-  companion: "fxb",
-  perception: "fxb",
-  "music-profile": "fxb",
+  emotion: "sensenova",
+  companion: "sensenova",
+  perception: "sensenova",
+  "music-profile": "sensenova",
 };
 
+// Chat uses only the free SenseNova gateway — no paid official DeepSeek /
+// Zhipu / fxb fallbacks, so no third-party LLM billing is ever incurred.
 export const FALLBACK_FOR: Record<AgentKind, ProviderId[]> = {
-  emotion: ["deepseek"],
-  companion: ["zhipu", "deepseek"],
-  perception: ["deepseek"],
-  "music-profile": ["deepseek"],
+  emotion: [],
+  companion: [],
+  perception: [],
+  "music-profile": [],
 };
 
 export function routeProvider(

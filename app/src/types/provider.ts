@@ -39,6 +39,7 @@ export type ProviderId =
   | "anthropic"
   | "deepseek"
   | "zhipu"
+  | "sensenova"
   | "fxb"
   | "doubao"
   | "openai"

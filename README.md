@@ -112,12 +112,30 @@ pnpm tauri build     # Package a distributable binary
 
 ### iOS (`app-mobile/`)
 
+**Important: `app-mobile` is a Capacitor project, not React Native.** Its UI is React + Vite **web code**; what actually ships in the iOS app is a set of static web assets loaded by the `WKWebView` (`dist/` → `ios/App/App/public/`), not native code compiled into the binary.
+
+First-time build:
+
 ```bash
 cd app-mobile
 pnpm install
 pnpm build && pnpm cap:sync    # bundle JS and sync the native iOS project
 # then open / build in Xcode: pnpm cap:open
 ```
+
+#### After editing web code (`.tsx` / `.js` / `.css`), you MUST sync to see it on-device
+
+- The files you edit are "web source". A plain `xcodebuild` recompile will **not** pick them up.
+- The native app loads the static files under `ios/App/App/public/`; only after the freshly built assets are synced there will the device show your changes.
+- So every time you change web code, repeat the **build → sync → recompile** triple (steps 1–2 can be combined):
+
+```bash
+cd app-mobile
+npx cap sync ios        # 1) runs build and copies the new web bundle into ios/App/App/public
+# 2) then rebuild & reinstall (Xcode Run, or xcodebuild)
+```
+
+> Note: you only need to rebuild the native layer when you change **native Swift code** (`ios/App/App/*.swift`, e.g. the `Lyra*Plugin` files) or **add/remove native plugins**. For page-only changes the native shell doesn't need recompiling, but the sync step (`npx cap sync ios`) is never optional.
 
 See the [Mobile Debug Log Panel](#mobile-debug-log-panel-app-mobile) section below for running the on-device debug console.
 

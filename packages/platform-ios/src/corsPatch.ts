@@ -25,10 +25,10 @@ const SENSENOVA_PREFIX = "https://token.sensenova.cn/";
 // Keep in sync with provider TIMEOUT_MS:
 //  - FxbProvider: 45s (packages/core/src/providers/fxb.ts) — flaky gateway,
 //    slow tail measured at 16s+;
-//  - SensenovaProvider: 15s (packages/core/src/providers/sensenova.ts) —
-//    stable gateway (0.5~3s); tight timeout keeps 6 retries ≈ 90s worst case.
+//  - SensenovaProvider: 40s (packages/core/src/providers/sensenova.ts) —
+//    generous safety margin for the free reasoning model when it's slow.
 const NATIVE_TIMEOUT_MS = 45_000;
-const SENSENOVA_TIMEOUT_MS = 15_000;
+const SENSENOVA_TIMEOUT_MS = 40_000;
 
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;

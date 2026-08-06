@@ -7,6 +7,7 @@ vi.mock("./secrets", () => ({
     anthropicApiKey: "provider.anthropic.apiKey",
     deepseekApiKey: "provider.deepseek.apiKey",
     zhipuApiKey: "provider.zhipu.apiKey",
+    sensenovaApiKey: "provider.sensenova.apiKey",
     dreamDailyTime: "dream.dailyTime",
     dreamIdleMinutes: "dream.idleMinutes",
     perceptionEnabled: "perception.enabled",

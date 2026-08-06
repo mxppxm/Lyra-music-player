@@ -11,6 +11,8 @@ import type { TraceStripItem } from "./TraceStrip";
 import { InputBox } from "./InputBox";
 import { GlassBar } from "./GlassBar";
 import { PlayerControls } from "./PlayerControls";
+import { HistoryOverlay } from "./HistoryOverlay";
+import { IconHistory } from "./icons";
 import { ProgressBar, progressLabel } from "./ProgressBar";
 import { useProgress } from "../audio/useProgress";
 import { bindGlobalKeys } from "./keyboard";
@@ -89,6 +91,7 @@ function LiveHomeView({
   const [dockHovered, setDockHovered] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const [inputDimmed, setInputDimmed] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const isPlayback = state.kind === "playing";
   // Song-to-song transitions pass through "thinking" — treat it as part of
@@ -282,22 +285,34 @@ function LiveHomeView({
                   label={progressLabel(progress.elapsedMs, progress.durationMs)}
                 />
               ) : null}
-              <PlayerControls
-                canControl={state.kind === "playing"}
-                paused={state.kind === "playing" ? !!state.paused : true}
-                onTogglePlay={() => {
-                  if (state.kind !== "playing") return;
-                  if (state.paused) {
-                    void orchestrator.onResume();
-                  } else {
-                    void orchestrator.onPause();
-                  }
-                }}
-                onSkip={() => {
-                  if (state.kind !== "playing") return;
-                  void orchestrator.onSkip();
-                }}
-              />
+              <div className="lyra-player-controls-row">
+                <PlayerControls
+                  canControl={state.kind === "playing"}
+                  paused={state.kind === "playing" ? !!state.paused : true}
+                  onTogglePlay={() => {
+                    if (state.kind !== "playing") return;
+                    if (state.paused) {
+                      void orchestrator.onResume();
+                    } else {
+                      void orchestrator.onPause();
+                    }
+                  }}
+                  onSkip={() => {
+                    if (state.kind !== "playing") return;
+                    void orchestrator.onSkip();
+                  }}
+                />
+                <button
+                  type="button"
+                  className="lyra-control-btn lyra-control-btn--ghost"
+                  onClick={() => setHistoryOpen(true)}
+                  title="播放历史"
+                  aria-label="播放历史"
+                  data-testid="history-open-btn"
+                >
+                  <IconHistory />
+                </button>
+              </div>
             </div>
             <TraceStrip items={traceItems} />
           </div>
@@ -308,6 +323,12 @@ function LiveHomeView({
           onBlur={() => setInputFocused(false)}
         />
       </GlassBar>
+
+      <HistoryOverlay
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        orchestrator={orchestrator}
+      />
     </AmbientBackground>
   );
 }

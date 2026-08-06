@@ -850,3 +850,52 @@ describe("Orchestrator playback-failure auto-skip", () => {
     expect(paths).toEqual(["/a.mp3", "/b.mp3", "/c.mp3"]);
   });
 });
+
+describe("Orchestrator.onReplaySong (history replay)", () => {
+  const track = (): LibraryTrack => ({
+    id: "t1",
+    path: "/x.mp3",
+    origin: "local",
+    added_at: 0,
+    title: "Nuvole Bianche",
+    artist: "Ludovico Einaudi",
+  });
+  const emotion: CurrentEmotion = {
+    pad: { p: 0.3, a: 0.1, d: 0.2 },
+    labels: ["calm"],
+    confidence: 0.8,
+    source: "emotion-agent-inferred",
+  };
+
+  it("plays the track with the historical rationale/emotion and does NOT insert a turn", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+
+    await orc.onReplaySong(track(), "舒缓的旋律，陪你慢下来", emotion);
+
+    expect(deps.audio.stop).toHaveBeenCalledOnce();
+    expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
+    expect(deps.turnRepo.insertTurn).not.toHaveBeenCalled();
+    expect(seen).toEqual(["playing"]);
+    const state = orc.getState();
+    expect(state.kind).toBe("playing");
+    if (state.kind === "playing") {
+      expect(state.song.id).toBe("t1");
+      expect(state.turn.agent_response.rationale).toBe("舒缓的旋律，陪你慢下来");
+      expect(state.turn.current_emotion.pad).toEqual({ p: 0.3, a: 0.1, d: 0.2 });
+    }
+  });
+
+  it("emits an error state when playback fails", async () => {
+    const deps = makeDeps();
+    deps.audio.playFile.mockRejectedValue(new Error("stream dead"));
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onReplaySong(track(), "r", emotion);
+
+    expect(orc.getState().kind).toBe("error");
+    expect(deps.turnRepo.insertTurn).not.toHaveBeenCalled();
+  });
+});

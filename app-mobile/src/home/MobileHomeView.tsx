@@ -8,6 +8,7 @@ import { SongInfo } from "./SongInfo";
 import { SmallNote } from "./SmallNote";
 import { InputBox } from "./InputBox";
 import { PlayerControls } from "./PlayerControls";
+import { HistoryOverlay } from "./HistoryOverlay";
 import { ProgressBar, progressLabel } from "./ProgressBar";
 import { useProgress } from "../audio/useProgress";
 import { useNowPlaying } from "../audio/useNowPlaying";
@@ -34,6 +35,7 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   useNowPlaying(orchestrator, state);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [dockExpanded, setDockExpanded] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [immersive, setImmersive] = useState(false);
   const coverShiftRef = useRef<HTMLDivElement>(null);
   const [coverTransform, setCoverTransform] = useState<string>("none");
@@ -331,6 +333,7 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
                 }
                 onTogglePlay={handleTogglePlay}
                 onSkip={handleSkip}
+                onHistory={() => setHistoryOpen(true)}
               />
             </>
           )}
@@ -339,6 +342,12 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
           </div>
         </div>
       </div>
+
+      <HistoryOverlay
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        orchestrator={orchestrator}
+      />
     </AmbientBackground>
   );
 }

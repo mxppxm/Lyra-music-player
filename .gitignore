@@ -34,3 +34,10 @@ app-mobile/.env.production.local
 
 # Cursor editor state
 .cursor/
+
+# Reasonix local tool state
+.reasonix/
+reasonix.toml
+
+# iOS derived build output
+app-mobile/ios/App/build-derived/

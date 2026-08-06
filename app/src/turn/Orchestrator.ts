@@ -638,6 +638,65 @@ export class Orchestrator {
     this.emit({ ...this.state, paused: true });
   }
 
+  /**
+   * Replay a song from history. Plays the track immediately with the
+   * historical rationale + emotion carried into the playing state.
+   *
+   * Deliberately does NOT insert a new dialogue_turn row — the history
+   * stays clean. The in-memory turn still wires pause/skip/complete, so
+   * a finished replay auto-advances normally like any other song.
+   */
+  async onReplaySong(
+    track: LibraryTrack,
+    rationale: string,
+    emotion: CurrentEmotion,
+  ): Promise<void> {
+    await this.deps.audio.stop();
+
+    // Finalise any in-flight turn as a skip so its stats stay honest.
+    if (this.currentTurn) {
+      this.pendingEvents.push({ kind: "skip" });
+      await this.finalisePreviousTurn(undefined, this.currentTurn.current_emotion.pad);
+    }
+
+    const clock = this.deps.clock ?? Date.now;
+    const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
+    const turn: DialogueTurn = {
+      id: idGen(),
+      timestamp: clock(),
+      current_emotion: emotion,
+      user_utterance: { modality: "proactive-open", content: "" },
+      agent_response: { song_id: track.id, rationale },
+      user_reaction: {
+        behavioral: {
+          listen_duration_ms: 0,
+          completed: false,
+          skipped: false,
+          repeated: 0,
+          volume_delta: 0,
+        },
+        silence_positive: false,
+      },
+      emotion_delta: ZERO_PAD,
+    };
+
+    try {
+      await this.deps.audio.playFile(track.path, track.duration_ms ?? null);
+    } catch (err) {
+      console.error("[lyra] replay playback failed:", err);
+      this.emit({
+        kind: "error",
+        message: "播放失败，检查下网络或音频设备？",
+      });
+      return;
+    }
+
+    this.currentTurn = turn;
+    this.currentSong = track;
+    this.pendingEvents = [];
+    this.emit({ kind: "playing", turn, song: track });
+  }
+
   async onResume(): Promise<void> {
     if (this.state.kind !== "playing" || !this.state.paused) return;
     await this.deps.audio.resume();

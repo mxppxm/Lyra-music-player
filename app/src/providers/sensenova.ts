@@ -27,10 +27,7 @@ const TIMEOUT_MS = 40_000;
  */
 export class SensenovaProvider implements ModelProvider {
   readonly id = "sensenova" as const;
-  // Cheap/free gateway — retry generously so the paid fallbacks (DeepSeek
-  // official) are only hit when sensenova is fully down. At 40s/request, 6
-  // retries alone could reach ~240s, so Orchestrator's 180s turn timeout is
-  // the practical ceiling (see Orchestrator.ts).
+  // Cheap/free gateway — retry generously.
   readonly maxRetries = 6;
   private apiKey: string;
   private defaultModel: string;

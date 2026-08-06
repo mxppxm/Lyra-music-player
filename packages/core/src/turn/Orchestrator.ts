@@ -672,10 +672,10 @@ export class Orchestrator {
     // Overall timeout guard — if the full turn pipeline hangs (LLM API,
     // Bilibili search, etc.), bail out so the user isn't stuck in "thinking"
     // forever. 90s → 180s: the retry + provider-fallback layer
-    // (agents/route.ts chatWithFallback) now spends up to ~90s on the cheap
-    // sensenova primary (6×15s retries) before falling back to DeepSeek
-    // official (3×30s); a tighter ceiling would kill the fallback before it
-    // gets a fair shot.
+    // (agents/route.ts chatWithFallback) tries the cheap sensenova primary
+    // first (6×40s retries ≈ up to 240s budget); because that alone exceeds
+    // this 180s ceiling, the turn timeout is the practical backstop and the
+    // DeepSeek fallback may be cut short on a hung sensenova.
     const TURN_TIMEOUT_MS = 180_000;
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`turn timed out after ${TURN_TIMEOUT_MS / 1000}s`)), TURN_TIMEOUT_MS),
@@ -812,6 +812,65 @@ export class Orchestrator {
       console.error("[lyra] skip auto-advance error:", err);
       this.emit({ kind: "error", message: msg });
     }
+  }
+
+  /**
+   * Replay a song from history. Plays the track immediately with the
+   * historical rationale + emotion carried into the playing state.
+   *
+   * Deliberately does NOT insert a new dialogue_turn row — the history
+   * stays clean. The in-memory turn still wires pause/skip/complete, so
+   * a finished replay auto-advances normally like any other song.
+   */
+  async onReplaySong(
+    track: LibraryTrack,
+    rationale: string,
+    emotion: CurrentEmotion,
+  ): Promise<void> {
+    await this.deps.audio.stop();
+
+    // Finalise any in-flight turn as a skip so its stats stay honest.
+    if (this.currentTurn) {
+      this.pendingEvents.push({ kind: "skip" });
+      await this.finalisePreviousTurn(undefined, this.currentTurn.current_emotion.pad);
+    }
+
+    const clock = this.deps.clock ?? Date.now;
+    const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
+    const turn: DialogueTurn = {
+      id: idGen(),
+      timestamp: clock(),
+      current_emotion: emotion,
+      user_utterance: { modality: "proactive-open", content: "" },
+      agent_response: { song_id: track.id, rationale },
+      user_reaction: {
+        behavioral: {
+          listen_duration_ms: 0,
+          completed: false,
+          skipped: false,
+          repeated: 0,
+          volume_delta: 0,
+        },
+        silence_positive: false,
+      },
+      emotion_delta: ZERO_PAD,
+    };
+
+    try {
+      await this.deps.audio.playFile(track.path, track.duration_ms ?? null);
+    } catch (err) {
+      console.error("[lyra] replay playback failed:", err);
+      this.emit({
+        kind: "error",
+        message: "播放失败，检查下网络或音频设备？",
+      });
+      return;
+    }
+
+    this.currentTurn = turn;
+    this.currentSong = track;
+    this.pendingEvents = [];
+    this.emit({ kind: "playing", turn, song: track });
   }
 
   async onPause(): Promise<void> {

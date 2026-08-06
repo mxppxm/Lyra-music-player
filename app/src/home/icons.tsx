@@ -32,3 +32,52 @@ export function IconPause({ size = 22, className }: IconProps) {
     </svg>
   );
 }
+
+/** 静谧的涟漪 —— 报错/未得回响时的克制示意，取「静」之象。 */
+export function IconRipple({ size = 26, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" opacity="0.9" />
+      <ellipse
+        cx="12"
+        cy="12"
+        rx="6"
+        ry="2.4"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        opacity="0.55"
+      />
+      <ellipse
+        cx="12"
+        cy="12"
+        rx="9.4"
+        ry="3.6"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        opacity="0.3"
+      />
+    </svg>
+  );
+}
+
+export function IconHistory({ size = 20, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
+      <path
+        d="M12 8v4l2.5 1.5M12 5a7 7 0 1 0 7 7"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M12 5V3M12 3h-2M12 3h2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

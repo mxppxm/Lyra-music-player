@@ -269,4 +269,24 @@ describe("HomeView — error state", () => {
       "B 站上暂时没搜到合适的歌，换种心情说说看？",
     );
   });
+
+  it("shows a calm ripple glyph alongside the error note", () => {
+    const orc = makeStubOrchestrator({
+      kind: "error",
+      message: "连接超时",
+    });
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
+    const note = screen.getByTestId("small-note");
+    expect(note.querySelector(".lyra-small-note__glyph")).not.toBeNull();
+  });
+
+  it("keeps the note glyph-free outside the error state", () => {
+    const orc = makeStubOrchestrator({
+      kind: "thinking",
+      user_utterance: "最近有点累",
+    });
+    render(<HomeView onOpenSettings={() => {}} onOpenDataExplorer={() => {}} onOpenHelp={() => {}} orchestrator={orc} />);
+    const note = screen.getByTestId("small-note");
+    expect(note.querySelector(".lyra-small-note__glyph")).toBeNull();
+  });
 });

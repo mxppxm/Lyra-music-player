@@ -734,10 +734,41 @@ button.lyra-mobile-idle-slogan:hover {
 /* ── Player controls ──────────────────────────────────────────────────── */
 
 .lyra-mobile-player-controls {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 48px;
+}
+
+.lyra-mobile-player-controls__center {
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 14px;
+}
+
+.lyra-mobile-player-controls__history {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  color: var(--lyra-control-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--lyra-transition-control);
+}
+
+.lyra-mobile-player-controls__history:active {
+  transform: translateY(-50%) scale(0.94);
 }
 
 .lyra-mobile-control-btn {
@@ -1243,4 +1274,386 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
  * layer above), so boot and home no longer render separate marks that
  * crossfade over one another during the dissolve. The in-flow slot keeps
  * the dock's position stable regardless (see MobileHomeView). */
+
+/* ── Play history draggable bottom sheet ──────────────────────────────── */
+
+.lyra-mobile-history {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  touch-action: none;
+}
+
+.lyra-mobile-history__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  transition: opacity 280ms ease;
+}
+
+.lyra-mobile-history__sheet {
+  position: relative;
+  width: 100%;
+  max-height: 85dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 24px 24px 0 0;
+  background: var(--lyra-glass-bg);
+  backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
+  border: 1px solid var(--lyra-glass-border);
+  border-bottom: none;
+  box-shadow: var(--lyra-glass-shadow);
+  touch-action: pan-y;
+}
+
+.lyra-mobile-history__grabber {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: rgba(28, 24, 20, 0.22);
+  flex-shrink: 0;
+}
+
+.lyra-mobile-history__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.lyra-mobile-history__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--lyra-color-song-info);
+}
+
+.lyra-mobile-history__close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--lyra-control-ink);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--lyra-transition-control);
+}
+
+.lyra-mobile-history__close:active {
+  transform: scale(0.94);
+}
+
+.lyra-mobile-history__hint {
+  margin: 8px 0 16px;
+  font-size: 14px;
+  opacity: 0.6;
+  color: var(--lyra-color-small-note);
+}
+
+.lyra-mobile-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lyra-mobile-history__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.lyra-mobile-history__item:active {
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(0.99);
+}
+
+.lyra-mobile-history__mood {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-top: 6px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+.lyra-mobile-history__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lyra-mobile-history__song {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lyra-mobile-history__title {
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-mobile-history__artist {
+  font-size: 13px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-mobile-history__note {
+  margin: 0;
+  font-family: var(--lyra-note-family);
+  font-size: 14px;
+  line-height: 1.6;
+  opacity: 0.78;
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lyra-mobile-history__time {
+  font-size: 12px;
+  opacity: 0.45;
+  letter-spacing: 0.02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-mobile-history__item {
+    transition: none;
+  }
+  .lyra-mobile-history__item:active {
+    transform: none;
+  }
+}
+
+.lyra-mobile-history__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  animation: lyra-mobile-history-fade-in 240ms ease;
+}
+
+.lyra-mobile-history__sheet {
+  position: relative;
+  width: 100%;
+  max-height: 75dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 24px 24px 0 0;
+  background: var(--lyra-glass-bg);
+  backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--lyra-glass-blur)) saturate(1.2);
+  border: 1px solid var(--lyra-glass-border);
+  border-bottom: none;
+  box-shadow: var(--lyra-glass-shadow);
+  animation: lyra-mobile-history-rise 340ms cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+.lyra-mobile-history__grabber {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: rgba(28, 24, 20, 0.22);
+  flex-shrink: 0;
+}
+
+.lyra-mobile-history__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.lyra-mobile-history__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--lyra-color-song-info);
+}
+
+.lyra-mobile-history__close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--lyra-control-ink);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--lyra-transition-control);
+}
+
+.lyra-mobile-history__close:active {
+  transform: scale(0.94);
+}
+
+.lyra-mobile-history__hint {
+  margin: 8px 0 16px;
+  font-size: 14px;
+  opacity: 0.6;
+  color: var(--lyra-color-small-note);
+}
+
+.lyra-mobile-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lyra-mobile-history__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.lyra-mobile-history__mood {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-top: 6px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+.lyra-mobile-history__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lyra-mobile-history__song {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lyra-mobile-history__title {
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-mobile-history__artist {
+  font-size: 13px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lyra-mobile-history__note {
+  margin: 0;
+  font-family: var(--lyra-note-family);
+  font-size: 14px;
+  line-height: 1.6;
+  opacity: 0.78;
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lyra-mobile-history__time {
+  font-size: 12px;
+  opacity: 0.45;
+  letter-spacing: 0.02em;
+}
+
+.lyra-mobile-history__replay {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--lyra-control-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--lyra-transition-control);
+}
+
+.lyra-mobile-history__replay:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.lyra-mobile-history__replay:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+@keyframes lyra-mobile-history-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes lyra-mobile-history-rise {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-mobile-history__backdrop,
+  .lyra-mobile-history__sheet {
+    animation: none !important;
+  }
+}
 

@@ -2,7 +2,6 @@ import type { ProviderId } from "../types";
 import { SECRET_KEYS } from "../settings/secrets";
 import { resolveSecret } from "./resolveSecret";
 import { AnthropicProvider } from "./anthropic";
-import { DeepSeekProvider } from "./deepseek";
 import { ZhipuProvider } from "./zhipu";
 import { SensenovaProvider } from "./sensenova";
 import { registry } from "./registry";
@@ -29,22 +28,16 @@ const SPECS: ProviderSpec[] = [
       registry.register(withUsageLogging(new AnthropicProvider({ apiKey }))),
   },
   {
-    id: "deepseek",
-    keyName: SECRET_KEYS.deepseekApiKey,
+    id: "sensenova",
+    keyName: SECRET_KEYS.sensenovaApiKey,
     build: (apiKey) =>
-      registry.register(withUsageLogging(new DeepSeekProvider({ apiKey }))),
+      registry.register(withUsageLogging(new SensenovaProvider({ apiKey }))),
   },
   {
     id: "zhipu",
     keyName: SECRET_KEYS.zhipuApiKey,
     build: (apiKey) =>
       registry.register(withUsageLogging(new ZhipuProvider({ apiKey }))),
-  },
-  {
-    id: "sensenova",
-    keyName: SECRET_KEYS.sensenovaApiKey,
-    build: (apiKey) =>
-      registry.register(withUsageLogging(new SensenovaProvider({ apiKey }))),
   },
 ];
 

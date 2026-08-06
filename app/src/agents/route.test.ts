@@ -39,26 +39,26 @@ function fail(msg: string) {
 }
 
 describe("routeProvider", () => {
-  it("PRIMARY_FOR maps every agent→fxb per routing §3.5", () => {
-    expect(PRIMARY_FOR.emotion).toBe("fxb");
-    expect(PRIMARY_FOR.companion).toBe("fxb");
+  it("PRIMARY_FOR maps every agent→sensenova per routing §3.5", () => {
+    expect(PRIMARY_FOR.emotion).toBe("sensenova");
+    expect(PRIMARY_FOR.companion).toBe("sensenova");
   });
 
-  it("FALLBACK_FOR keeps deepseek as the fallback per routing §3.5", () => {
-    expect(FALLBACK_FOR.emotion).toEqual(["deepseek"]);
-    expect(FALLBACK_FOR.companion).toEqual(["zhipu", "deepseek"]);
+  it("FALLBACK_FOR keeps no paid fallback per routing §3.5", () => {
+    expect(FALLBACK_FOR.emotion).toEqual([]);
+    expect(FALLBACK_FOR.companion).toEqual([]);
   });
 
   it("returns the primary when registered", () => {
     const registry = new ProviderRegistry();
-    registry.register(fakeProvider("fxb"));
-    expect(routeProvider("emotion", registry).id).toBe("fxb");
+    registry.register(fakeProvider("sensenova"));
+    expect(routeProvider("emotion", registry).id).toBe("sensenova");
   });
 
-  it("returns the fallback when primary is not registered but fallback is", () => {
+  it("throws when primary (sensenova) is not registered", () => {
     const registry = new ProviderRegistry();
-    registry.register(fakeProvider("deepseek"));
-    expect(routeProvider("emotion", registry).id).toBe("deepseek");
+    // fallbacks are empty, so nothing else can be picked either
+    expect(() => routeProvider("emotion", registry)).toThrow(/no provider/i);
   });
 
   it("throws when neither primary nor fallback is registered", () => {
@@ -70,27 +70,25 @@ describe("routeProvider", () => {
 describe("resolveProviders", () => {
   it("returns the full chain [primary, ...fallbacks] in routing order", () => {
     const registry = new ProviderRegistry();
-    registry.register(fakeProvider("fxb"));
-    registry.register(fakeProvider("zhipu"));
-    registry.register(fakeProvider("deepseek"));
+    registry.register(fakeProvider("sensenova"));
     const chain = resolveProviders("companion", registry);
-    expect(chain.map((p) => p.id)).toEqual(["fxb", "zhipu", "deepseek"]);
+    expect(chain.map((p) => p.id)).toEqual(["sensenova"]);
   });
 
   it("only includes registered providers", () => {
     const registry = new ProviderRegistry();
-    registry.register(fakeProvider("fxb"));
+    registry.register(fakeProvider("sensenova"));
     const chain = resolveProviders("companion", registry);
-    expect(chain.map((p) => p.id)).toEqual(["fxb"]);
+    expect(chain.map((p) => p.id)).toEqual(["sensenova"]);
   });
 
   it("dedupes ids (primary === first fallback)", () => {
     const registry = new ProviderRegistry();
-    registry.register(fakeProvider("fxb"));
-    // No-op guard: fxb appears twice for companion? it doesn't; sanity check
-    // the dedupe path with a synthetic case via emotion chain.
+    registry.register(fakeProvider("sensenova"));
+    // No-op guard: sensenova appears only once (fallbacks are empty); sanity
+    // check the dedupe path with a synthetic case via emotion chain.
     const chain = resolveProviders("emotion", registry);
-    expect(chain.map((p) => p.id)).toEqual(["fxb"]);
+    expect(chain.map((p) => p.id)).toEqual(["sensenova"]);
   });
 
   it("throws when nothing is registered", () => {
