@@ -1,5 +1,12 @@
 import { BreathingGlow } from "./BreathingGlow";
-import { IconHistory, IconNext, IconPause, IconPlay, IconPrev } from "./icons";
+import {
+  IconHistory,
+  IconNext,
+  IconPause,
+  IconPlay,
+  IconPrev,
+  IconShare,
+} from "./icons";
 
 export type PlayerControlsProps = {
   canControl: boolean;
@@ -9,6 +16,8 @@ export type PlayerControlsProps = {
   onTogglePlay: () => void;
   onSkip: () => void;
   onHistory?: () => void;
+  /** Share the currently playing track (system share sheet, incl. WeChat). */
+  onShare?: () => void;
 };
 
 export function PlayerControls({
@@ -18,6 +27,7 @@ export function PlayerControls({
   onTogglePlay,
   onSkip,
   onHistory,
+  onShare,
 }: PlayerControlsProps) {
   return (
     <div className="lyra-mobile-player-controls" data-testid="player-controls">
@@ -62,6 +72,20 @@ export function PlayerControls({
           <IconNext />
         </button>
       </div>
+
+      {onShare && (
+        <button
+          type="button"
+          className="lyra-mobile-player-controls__share"
+          disabled={!canControl}
+          onClick={onShare}
+          title="分享到微信"
+          aria-label="分享到微信"
+          data-testid="share-btn"
+        >
+          <IconShare />
+        </button>
+      )}
 
       {onHistory && (
         <button

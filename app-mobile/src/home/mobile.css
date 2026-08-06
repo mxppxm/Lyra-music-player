@@ -748,6 +748,35 @@ button.lyra-mobile-idle-slogan:hover {
   gap: 14px;
 }
 
+.lyra-mobile-player-controls__share {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  color: var(--lyra-control-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--lyra-transition-control);
+}
+
+.lyra-mobile-player-controls__share:disabled {
+  opacity: 0.28;
+  transform: translateY(-50%);
+  cursor: default;
+}
+
+.lyra-mobile-player-controls__share:not(:disabled):active {
+  transform: translateY(-50%) scale(0.94);
+}
+
 .lyra-mobile-player-controls__history {
   position: absolute;
   right: 0;
@@ -1287,10 +1316,10 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 }
 
 .lyra-mobile-history__backdrop {
+  /* transparent tap layer only — the full-screen dim/flash is intentionally
+     removed; clicking outside the sheet still closes it */
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  transition: opacity 280ms ease;
 }
 
 .lyra-mobile-history__sheet {
@@ -1457,8 +1486,6 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 .lyra-mobile-history__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  animation: lyra-mobile-history-fade-in 240ms ease;
 }
 
 .lyra-mobile-history__sheet {
@@ -1630,18 +1657,10 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   cursor: not-allowed;
 }
 
-@keyframes lyra-mobile-history-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
 
 @keyframes lyra-mobile-history-rise {
   from {
-    transform: translateY(24px);
+    transform: translateY(100%);
     opacity: 0;
   }
   to {

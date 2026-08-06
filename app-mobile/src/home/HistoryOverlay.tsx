@@ -9,7 +9,11 @@ import type { Orchestrator } from "@lyra/core";
 
 const MAX_HISTORY = 50;
 const DRAG_THRESHOLD_RATIO = 0.35;
-const CLOSE_ANIM_MS = 240;
+// Time budget for the slide-out, also used as a safety net so closing never
+// depends on the requestAnimationFrame loop converging (which could stall).
+const CLOSE_ANIM_MS = 360;
+// Extra travel past the sheet height so it fully retreats below the bottom edge.
+const EXIT_MARGIN = 60;
 
 // Spring physics config - tuned for "silky" feel
 const SPRING_STIFFNESS = 220;
@@ -34,8 +38,8 @@ export function HistoryOverlay({
 }: HistoryOverlayProps) {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragY, setDragY] = useState(0);
   const sheetRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef(0);
   const dragYRef = useRef(0);
@@ -84,13 +88,13 @@ export function HistoryOverlay({
     return () => ro.disconnect();
   }, [open, entries.length]);
 
-  // Spring animation loop
+  // Spring animation loop — reads/writes only refs to avoid dependency loop
   const runSpring = useCallback(() => {
     if (isAnimatingRef.current) return;
     isAnimatingRef.current = true;
 
     const animate = () => {
-      const currentY = dragY;
+      const currentY = dragYRef.current;
       const currentV = velocityRef.current;
       const target = targetYRef.current;
 
@@ -107,19 +111,21 @@ export function HistoryOverlay({
       const settled = Math.abs(newY - target) < 0.5 && Math.abs(newV) < 0.5;
 
       if (settled) {
-        setDragY(target);
+        dragYRef.current = target;
         velocityRef.current = 0;
         isAnimatingRef.current = false;
+        setDragY(target);
         return;
       }
 
-      setDragY(newY);
+      dragYRef.current = newY;
       velocityRef.current = newV;
+      setDragY(newY);
       animFrameRef.current = requestAnimationFrame(animate);
     };
 
     animate();
-  }, [dragY]);
+  }, []); // intentionally empty — uses only refs, never stale
 
   // Start spring to target
   const springTo = useCallback((target: number) => {
@@ -130,11 +136,26 @@ export function HistoryOverlay({
   // Close is decoupled from the spring settle: start the slide-out animation
   // AND fire onClose via a fallback timer so closing never depends on the
   // requestAnimationFrame loop converging (which could stall / never fire).
+  // translateY is positive toward the bottom here (matching drag), so we move
+  // the sheet past the screen's bottom edge — it slides DOWN off-screen.
+  // When the slide-out finishes we fully detach/zero the sheet so the overlay
+  // hits `if (!open && dragY === 0) return null` and unmounts. Otherwise the
+  // full-screen .lyra-mobile-history container (with its transparent backdrop)
+  // lingers and swallows every tap — making the history button unclickable
+  // after closing once.
   const closeSheet = useCallback(() => {
     if (closePendingRef.current) return;
     closePendingRef.current = true;
-    springTo(-(sheetHeightRef.current + 50));
+    springTo(sheetHeightRef.current + EXIT_MARGIN);
     closeTimerRef.current = window.setTimeout(() => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = undefined;
+      isAnimatingRef.current = false;
+      dragYRef.current = 0;
+      velocityRef.current = 0;
+      targetYRef.current = 0;
+      closePendingRef.current = false;
+      setDragY(0);
       onCloseRef.current();
     }, CLOSE_ANIM_MS);
   }, [springTo]);
@@ -152,13 +173,9 @@ export function HistoryOverlay({
     const onUp = () => {
       setIsDragging(false);
       const threshold = sheetHeightRef.current * DRAG_THRESHOLD_RATIO;
-      // read the freshest offset from a ref — event-handler closures capture a
-      // possibly stale dragY from the render in which they were attached
       if (dragYRef.current > threshold) {
-        // drag far enough → close
         closeSheet();
       } else {
-        // spring back to 0
         springTo(0);
       }
       window.removeEventListener("pointermove", onMove);
@@ -173,7 +190,7 @@ export function HistoryOverlay({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [isDragging, dragY, springTo, closeSheet]);
+  }, [isDragging, springTo, closeSheet]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (!open) return;
@@ -204,8 +221,11 @@ export function HistoryOverlay({
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Reset drag state when opening/closing
+  // Reset drag state when opening. On close we deliberately do NOT touch dragY:
+  // the sheet is mid slide-out and resetting here would yank it back to the top
+  // mid-animation. We just leave it parked off-screen and reset on next open.
   useEffect(() => {
+    if (!open) return;
     setDragY(0);
     setIsDragging(false);
     velocityRef.current = 0;
@@ -232,8 +252,6 @@ export function HistoryOverlay({
 
   const sheetTransform = `translateY(${dragY}px)`;
 
-  const backdropOpacity = open ? Math.max(0, 0.35 * (1 - dragY / (sheetHeightRef.current || 1))) : 0;
-
   if (!open && dragY === 0) return null;
 
   return (
@@ -248,7 +266,6 @@ export function HistoryOverlay({
         className="lyra-mobile-history__backdrop"
         data-testid="history-backdrop"
         onClick={() => !isDragging && closeSheet()}
-        style={{ opacity: backdropOpacity }}
       />
       <div
         ref={sheetRef}

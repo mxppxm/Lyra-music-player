@@ -169,6 +169,42 @@ describe("HistoryOverlay", () => {
     });
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
+
+  it("releases the full-screen overlay after closing and can be opened again", async () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <HistoryOverlay open={false} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
+    );
+    // closed → no overlay
+    expect(screen.queryByTestId("history-overlay")).not.toBeInTheDocument();
+
+    // open → overlay appears
+    rerender(
+      <HistoryOverlay open={true} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
+    );
+    await screen.findByTestId("history-overlay");
+    expect(screen.getByTestId("history-overlay")).toBeInTheDocument();
+
+    // close → simulate parent flipping open to false once onClose fires, then
+    // the overlay must actually unmount (dragY reset to 0) instead of lingering
+    // as an invisible full-screen layer that blocks taps.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("history-close"));
+    });
+    rerender(
+      <HistoryOverlay open={false} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
+    );
+    await waitFor(() => {
+      expect(screen.queryByTestId("history-overlay")).not.toBeInTheDocument();
+    });
+
+    // can open again after a previous close
+    rerender(
+      <HistoryOverlay open={true} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
+    );
+    await screen.findByTestId("history-overlay");
+    expect(screen.getByTestId("history-overlay")).toBeInTheDocument();
+  });
 });
 
 describe("formatRelativeTime", () => {

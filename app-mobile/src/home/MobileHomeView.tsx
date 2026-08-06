@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { AmbientBackground } from "./AmbientBackground";
 import { CoverArt, normalizeCoverUrl } from "./CoverBackground";
 import { GlowCanvas } from "./GlowCanvas";
@@ -19,6 +19,7 @@ import type { Orchestrator } from "@lyra/core";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
 import type { PAD } from "../lib/color";
 import { setImmersiveStatusBar } from "./immersiveStatusBar";
+import { buildSharePayload } from "./share";
 import { LyraAudio } from "@lyra/platform-ios";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
@@ -157,6 +158,47 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
     if (state.kind !== "playing") return;
     void orchestrator.onSkip();
   };
+
+  // Share the currently-playing track via the native Web Share API, which on
+  // iOS opens the system share sheet (incl. WeChat). No native plugin needed.
+  // If Web Share is unavailable, fall back to copying the share text.
+  const playingSong =
+    state.kind === "playing" || state.kind === "proactive-pending"
+      ? state.song
+      : null;
+  const shareRationale =
+    state.kind === "playing"
+      ? state.turn.agent_response.rationale
+      : state.kind === "proactive-pending"
+        ? state.rationale
+        : "";
+  const handleShare = useCallback(async () => {
+    if (!playingSong) return;
+    const payload = buildSharePayload(playingSong, shareRationale);
+
+    if (
+      typeof navigator !== "undefined" &&
+      typeof navigator.share === "function"
+    ) {
+      try {
+        await navigator.share(payload);
+        return;
+      } catch (err) {
+        // User cancelled — don't fall back.
+        if (err instanceof Error && err.name === "AbortError") return;
+        // share() may be blocked (NotAllowedError) → fall through to clipboard.
+      }
+    }
+
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(payload.text);
+        window.alert("已复制分享文案，粘贴到微信即可发送");
+      } catch (err) {
+        console.warn("[lyra-ios] share clip fallback:", err);
+      }
+    }
+  }, [playingSong, shareRationale]);
 
   const isSparseIdle = state.kind === "idle";
   const [idleLeaving, setIdleLeaving] = useState(false);
@@ -334,6 +376,7 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
                 onTogglePlay={handleTogglePlay}
                 onSkip={handleSkip}
                 onHistory={() => setHistoryOpen(true)}
+                onShare={handleShare}
               />
             </>
           )}
