@@ -9,6 +9,8 @@ import { SmallNote } from "./SmallNote";
 import { InputBox } from "./InputBox";
 import { PlayerControls } from "./PlayerControls";
 import { HistoryOverlay } from "./HistoryOverlay";
+import { WeatherBadge } from "./WeatherBadge";
+import type { WeatherContext } from "@lyra/core/recommendation/timeContext";
 import { ProgressBar, progressLabel } from "./ProgressBar";
 import { useProgress } from "../audio/useProgress";
 import { useNowPlaying } from "../audio/useNowPlaying";
@@ -17,6 +19,7 @@ import { usePrefetchNext } from "../audio/usePrefetchNext";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "@lyra/core";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
+import { looksLikePartialLyrics } from "@lyra/core/agents/LyricsAgent";
 import type { PAD } from "../lib/color";
 import { setImmersiveStatusBar } from "./immersiveStatusBar";
 import { buildSharePayload } from "./share";
@@ -27,9 +30,11 @@ const LYRA_START_LABEL = "点我试试";
 
 type MobileHomeViewProps = {
   orchestrator: Orchestrator;
+  /** 当前天气（App 天气 tick 拉取后传入）—— 播放时展示天气 badge。 */
+  weather?: WeatherContext | null;
 };
 
-export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
+export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   const { state, submit } = useTurn(orchestrator);
   const playing = state.kind === "playing";
   const progress = useProgress(playing);
@@ -38,8 +43,14 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   const [dockExpanded, setDockExpanded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [immersive, setImmersive] = useState(false);
+  const [noteFlipped, setNoteFlipped] = useState(false);
+  const [lyricsText, setLyricsText] = useState<string | null>(null);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
+  const [lyricsFailed, setLyricsFailed] = useState(false);
+  const [lyricsRefreshing, setLyricsRefreshing] = useState(false);
   const coverShiftRef = useRef<HTMLDivElement>(null);
   const [coverTransform, setCoverTransform] = useState<string>("none");
+  const lyricsRequestGen = useRef(0);
 
   // Keep immersive across the thinking gap between songs; only drop it when
   // the playback session itself ends.
@@ -107,6 +118,16 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
     setPlaybackError(null);
   }, [currentSongId]);
 
+  // Reset lyrics card when the playing track changes.
+  useEffect(() => {
+    lyricsRequestGen.current += 1;
+    setNoteFlipped(false);
+    setLyricsText(null);
+    setLyricsLoading(false);
+    setLyricsFailed(false);
+    setLyricsRefreshing(false);
+  }, [currentSongId]);
+
   useAutoAdvance(orchestrator, setPlaybackError, {
     songId: currentSongId,
     playing: state.kind === "playing",
@@ -125,7 +146,7 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
 
   const noteText: string =
     playbackError !== null
-      ? `这首歌没能放出来：${playbackError}`
+      ? `这首歌没能放出来：${playbackError}（点一下重试）`
       : state.kind === "idle"
         ? "Lyra 在等你说一句话"
         : state.kind === "thinking"
@@ -135,8 +156,96 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
             : state.kind === "proactive-pending"
               ? state.rationale
               : state.kind === "error"
-                ? state.message
+                ? `${state.message}（点一下重试）`
                 : "";
+
+  const isErrorNote = playbackError !== null || state.kind === "error";
+
+  const handleRetry = useCallback(() => {
+    if (state.kind === "error") {
+      void orchestrator.onRetry();
+      return;
+    }
+    // Playback failure — replay the current track.
+    if (playbackError !== null && state.kind === "playing") {
+      setPlaybackError(null);
+      void orchestrator.onReplaySong(
+        state.song,
+        state.turn.agent_response.rationale,
+        state.turn.current_emotion,
+      );
+    }
+  }, [orchestrator, playbackError, state]);
+
+  const loadLyrics = useCallback(async () => {
+    if (state.kind !== "playing") return;
+    const cached = state.turn.agent_response.lyrics?.trim();
+    if (cached && !looksLikePartialLyrics(cached)) {
+      setLyricsText(cached);
+      setLyricsFailed(false);
+      setLyricsLoading(false);
+      return;
+    }
+    if (lyricsText && !looksLikePartialLyrics(lyricsText)) return;
+
+    const gen = ++lyricsRequestGen.current;
+    setLyricsLoading(true);
+    setLyricsFailed(false);
+    try {
+      const text = await orchestrator.getLyrics();
+      if (gen !== lyricsRequestGen.current) return;
+      setLyricsText(text);
+    } catch {
+      if (gen !== lyricsRequestGen.current) return;
+      setLyricsFailed(true);
+    } finally {
+      if (gen === lyricsRequestGen.current) setLyricsLoading(false);
+    }
+  }, [orchestrator, state, lyricsText]);
+
+  const refreshLyrics = useCallback(async () => {
+    if (state.kind !== "playing" || lyricsRefreshing) return;
+    const gen = ++lyricsRequestGen.current;
+    setLyricsRefreshing(true);
+    setLyricsFailed(false);
+    try {
+      const text = await orchestrator.getLyrics({ force: true });
+      if (gen !== lyricsRequestGen.current) return;
+      setLyricsText(text);
+    } catch {
+      // Keep the previous lyrics visible on failure.
+      if (gen !== lyricsRequestGen.current) return;
+    } finally {
+      if (gen === lyricsRequestGen.current) setLyricsRefreshing(false);
+    }
+  }, [orchestrator, state.kind, lyricsRefreshing]);
+
+  const handleNoteClick = useCallback(() => {
+    if (isErrorNote) {
+      handleRetry();
+      return;
+    }
+    if (state.kind !== "playing") return;
+
+    if (noteFlipped) {
+      if (lyricsFailed) {
+        void loadLyrics();
+        return;
+      }
+      setNoteFlipped(false);
+      return;
+    }
+
+    setNoteFlipped(true);
+    void loadLyrics();
+  }, [
+    handleRetry,
+    isErrorNote,
+    loadLyrics,
+    lyricsFailed,
+    noteFlipped,
+    state.kind,
+  ]);
 
   const isThinking = state.kind === "thinking";
 
@@ -256,6 +365,9 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
   const pad: PAD =
     state.kind === "playing" ? state.turn.current_emotion.pad : ZERO_PAD;
 
+  // 播放会话期间（含切歌 thinking 间隙）展示天气 badge；idle 不打扰。
+  const showWeather = weather !== null && weather !== undefined && state.kind !== "idle";
+
   const coverRaw =
     state.kind === "playing" || state.kind === "proactive-pending"
       ? state.song.metadata?.cover
@@ -295,12 +407,38 @@ export function MobileHomeView({ orchestrator }: MobileHomeViewProps) {
             {isThinking ? (
               <ThinkingNote />
             ) : (
-              <SmallNote text={noteText} color={noteColor} />
+              <SmallNote
+                text={noteText}
+                color={noteColor}
+                error={isErrorNote}
+                onClick={
+                  isErrorNote || state.kind === "playing"
+                    ? handleNoteClick
+                    : undefined
+                }
+                flip={
+                  state.kind === "playing" && !isErrorNote
+                    ? {
+                        flipped: noteFlipped,
+                        backText: lyricsText ?? undefined,
+                        loading: lyricsLoading,
+                        failed: lyricsFailed,
+                        refreshing: lyricsRefreshing,
+                        onRefresh: () => {
+                          void refreshLyrics();
+                        },
+                      }
+                    : undefined
+                }
+              />
             )}
           </div>
         )}
 
         <div className="lyra-mobile-idle-brand-slot" aria-hidden="true" />
+
+        {/* 天气 badge —— stage 顶部绝对定位，不参与 content 布局，不推挤沉浸元素 */}
+        <WeatherBadge weather={showWeather ? weather : null} />
 
         <div
           ref={dockRef}

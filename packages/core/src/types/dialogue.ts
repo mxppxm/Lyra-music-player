@@ -23,6 +23,8 @@ export type ProactiveKind =
 export type AgentResponse = {
   song_id: string;
   rationale: string;
+  /** Plain-text lyrics cached on the turn after the user flips the note card. */
+  lyrics?: string;
   proactive_kind?: ProactiveKind;
   generation_meta?: {
     generator: string;

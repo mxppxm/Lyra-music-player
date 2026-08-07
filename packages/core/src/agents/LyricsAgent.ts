@@ -1,0 +1,142 @@
+import type { ModelProvider, ChatMessage } from "../types";
+import { resolveProviders, chatWithFallback } from "./route";
+import {
+  LYRICS_COMPLETE_RETRY_PROMPT,
+  LYRICS_SYSTEM_PROMPT,
+} from "./prompts/lyrics";
+
+export class LyricsAgentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LyricsAgentError";
+  }
+}
+
+const NOT_FOUND_RE =
+  /找不到这首歌的歌词|未能找到|无法找到歌词|没有找到歌词|查不到这首|sorry[, ]?i (can'?t|cannot|couldn'?t) (find|provide).*lyric|lyrics not found|unable to (find|provide).*lyric/i;
+
+export type LyricsFetchInput = {
+  title: string;
+  artist?: string;
+};
+
+/** Strip Bilibili / channel wrappers so the LLM sees a cleaner song name. */
+export function cleanTitleForLyricsQuery(title: string): string {
+  const unwrapped = title.match(/《([^》]+)》/);
+  if (unwrapped?.[1]?.trim()) return unwrapped[1].trim();
+  return title
+    .replace(/【[^】]*】/g, " ")
+    .replace(/\[[^\]]*]/g, " ")
+    .replace(/（[^）]*(高音质|翻唱|封面|cover|MV|live)[^）]*）/gi, " ")
+    .replace(/\([^)]*(hq|mv|live|cover)[^)]*\)/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Heuristic: first reply often dumps only the chorus (few unique lines,
+ * heavy repetition, or explicit “副歌/高潮” stubs).
+ */
+export function looksLikePartialLyrics(text: string): boolean {
+  const lines = text
+    .split(/\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return true;
+  if (lines.length < 8) return true;
+
+  const unique = new Set(lines);
+  if (unique.size <= 4) return true;
+  if (unique.size < 8 && unique.size / lines.length < 0.4) return true;
+
+  if (
+    /只[有给返回了]?(副歌|高潮)|（?副歌重复）?|chorus only|hook only|\.{2,}|…{1,}/i.test(
+      text,
+    ) &&
+    lines.length < 20
+  ) {
+    return true;
+  }
+
+  // Extremely short body for a "full" pop lyric.
+  const compact = lines.join("");
+  if (compact.length < 80) return true;
+
+  return false;
+}
+
+function assertLyricsOrThrow(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) throw new LyricsAgentError("empty lyrics response");
+  const lineCount = trimmed.split(/\n/).filter((l) => l.trim()).length;
+  if (NOT_FOUND_RE.test(trimmed) && (trimmed.length < 80 || lineCount <= 2)) {
+    throw new LyricsAgentError("lyrics not found");
+  }
+  return trimmed;
+}
+
+/**
+ * Ask the LLM for plain-text lyrics of a track. Returns trimmed body text
+ * or throws LyricsAgentError when the model declines / returns empty.
+ * Retries once when the first answer looks like chorus-only / truncated.
+ */
+export class LyricsAgent {
+  private providers: ModelProvider[];
+
+  constructor(opts: { provider?: ModelProvider } = {}) {
+    this.providers = opts.provider
+      ? [opts.provider]
+      : resolveProviders("lyrics");
+  }
+
+  async fetch(input: LyricsFetchInput): Promise<string> {
+    const rawTitle = input.title.trim();
+    const title = cleanTitleForLyricsQuery(rawTitle) || rawTitle;
+    const artist = (input.artist ?? "").trim();
+
+    const lines = [
+      `歌名：${title}`,
+      ...(artist ? [`歌手：${artist}`] : []),
+      ...(title !== rawTitle ? [`原始标题（供参考）：${rawTitle}`] : []),
+      "请返回完整歌词（主歌+副歌+桥段等全部段落），不要只返回高潮/副歌。",
+    ];
+
+    const messages: ChatMessage[] = [
+      { role: "system", content: LYRICS_SYSTEM_PROMPT },
+      { role: "user", content: lines.join("\n") },
+    ];
+
+    const chatOpts = {
+      max_tokens: 8192,
+      temperature: 0.2,
+      enable_thinking: false as const,
+      agent: "lyrics",
+    };
+
+    const first = await chatWithFallback(this.providers, messages, chatOpts);
+    let text = assertLyricsOrThrow(first.content ?? "");
+
+    if (!looksLikePartialLyrics(text)) return text;
+
+    const retryMessages: ChatMessage[] = [
+      ...messages,
+      { role: "assistant", content: text },
+      { role: "user", content: LYRICS_COMPLETE_RETRY_PROMPT },
+    ];
+    const second = await chatWithFallback(
+      this.providers,
+      retryMessages,
+      chatOpts,
+    );
+    const retryText = assertLyricsOrThrow(second.content ?? "");
+
+    // Prefer the longer / fuller reply if the retry still looks thin.
+    if (
+      looksLikePartialLyrics(retryText) &&
+      retryText.length <= text.length
+    ) {
+      return text;
+    }
+    return retryText;
+  }
+}

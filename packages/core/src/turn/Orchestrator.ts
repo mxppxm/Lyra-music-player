@@ -17,12 +17,18 @@ import type { EventBus } from "../perception/events";
 import * as musicProfileRepo from "../db/repo/musicProfileRepo";
 import type { TrackFeedback } from "../types/musicProfile";
 import { buildRecommendationContext } from "../recommendation";
-import { computeTimeContext } from "../recommendation/timeContext";
+import {
+  computeTimeContext,
+  type WeatherContext,
+} from "../recommendation/timeContext";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import { parseArtistIntent } from "../library/parseArtistIntent";
 import {
   resolveSongIntent,
 } from "../library/songIntent";
+import { songDisplayArtist, songDisplayTitle } from "../library/display";
+import { resolveAndPersistLyrics } from "../library/resolveLyrics";
+import { looksLikePartialLyrics } from "../agents/LyricsAgent";
 
 export type PrefetchNextResult = {
   url: string;
@@ -55,7 +61,12 @@ export type OrchestratorDeps = {
   turnRepo: {
     insertTurn(t: DialogueTurn): Promise<void>;
     updateTurn?(t: DialogueTurn): Promise<void>;
+    listRecentTurns?(limit: number): Promise<DialogueTurn[]>;
     setTurnLatency?(id: string, ms: number): Promise<void>;
+  };
+  /** On-demand lyrics via LLM (iOS note-card flip). */
+  lyrics?: {
+    fetch(input: { title: string; artist?: string }): Promise<string>;
   };
   audio: {
     // playFile may return the Rust playback id (a number) so the caller can
@@ -85,6 +96,18 @@ export type AutoAdvanceContext = {
   previousSong: { title: string; artist?: string };
 };
 
+/** What the user (or the auto-advance flow) last asked the Orchestrator to
+ *  do — replayed by `onRetry()` so the “点一下重试” affordance on the error
+ *  note can re-run the exact same intent. */
+type RetryIntent =
+  | { kind: "text"; text: string }
+  | { kind: "lyra-start" }
+  | {
+      kind: "auto-advance";
+      emotion: import("../types").CurrentEmotion;
+      autoCtx?: AutoAdvanceContext;
+    };
+
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 
 export class Orchestrator {
@@ -100,6 +123,8 @@ export class Orchestrator {
   private pendingEvents: ReactionEvent[] = [];
   /** Latest perception bias — blended into onUserInput emotion when set. */
   private perceptionBias: PerceptionBias | null = null;
+  /** 天气上下文（由 App 的天气 tick 注入）—— 推荐打分与伪目标文案感知天气。 */
+  private weatherContext: WeatherContext | null = null;
   /** Guard against concurrent fulfillProactive calls. */
   private proactiveInFlight = false;
   /** Serialises all state transitions (auto-advance, native sync, skip, user
@@ -129,9 +154,95 @@ export class Orchestrator {
    * 直到用户下一次新输入才更新。
    */
   private sessionMoodAnchor: { labels: string[]; pseudoTarget: string; locked: boolean } | null = null;
+  /** Last user/auto-advance intent — replayed by onRetry() after an error. */
+  private lastIntent: RetryIntent | null = null;
+  /** In-flight lyrics fetches keyed by song id — flip spam shares one request. */
+  private lyricsInFlight = new Map<string, Promise<string>>();
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
+  }
+
+  /**
+   * Resolve plain-text lyrics for the currently playing song.
+   * Cache order: current turn → recent turns with same song_id → LLM.
+   * Persists onto the current dialogue turn when newly resolved.
+   * Pass `{ force: true }` to bypass cache and overwrite with a fresh LLM fetch.
+   */
+  async getLyrics(opts?: { force?: boolean }): Promise<string> {
+    if (
+      this.state.kind !== "playing" ||
+      !this.currentTurn ||
+      !this.currentSong
+    ) {
+      throw new Error("lyrics only available while playing");
+    }
+    const turnId = this.currentTurn.id;
+    const songId = this.currentSong.id;
+    const force = Boolean(opts?.force);
+
+    if (!force) {
+      const cachedRaw = this.currentTurn.agent_response.lyrics?.trim();
+      // Ignore chorus-only / truncated cache — re-fetch full lyrics.
+      if (cachedRaw && !looksLikePartialLyrics(cachedRaw)) return cachedRaw;
+
+      const existing = this.lyricsInFlight.get(songId);
+      if (existing) return existing;
+    } else {
+      this.lyricsInFlight.delete(songId);
+    }
+
+    const { turnRepo, lyrics } = this.deps;
+    if (!turnRepo.listRecentTurns || !turnRepo.updateTurn) {
+      throw new Error("lyrics persistence unavailable");
+    }
+    if (!lyrics) {
+      throw new Error("lyrics fetcher unavailable");
+    }
+
+    const turnSnapshot = this.currentTurn;
+    const songSnapshot = this.currentSong;
+    const promise = (async () => {
+      try {
+        return await resolveAndPersistLyrics({
+          turn: turnSnapshot,
+          title: songDisplayTitle(songSnapshot),
+          artist: songDisplayArtist(songSnapshot) || undefined,
+          force,
+          listRecentTurns: (limit) => turnRepo.listRecentTurns!(limit),
+          updateTurn: async (t) => {
+            // Song/turn changed mid-flight — do not write the stale turn.
+            if (
+              this.currentTurn?.id !== turnId ||
+              this.currentSong?.id !== songId
+            ) {
+              return;
+            }
+            const lyricsText = t.agent_response.lyrics?.trim();
+            if (!lyricsText) return;
+            // Merge onto the live turn so mid-play reaction fields are kept.
+            const merged: DialogueTurn = {
+              ...this.currentTurn,
+              agent_response: {
+                ...this.currentTurn.agent_response,
+                lyrics: lyricsText,
+              },
+            };
+            await turnRepo.updateTurn!(merged);
+            this.currentTurn = merged;
+            if (this.state.kind === "playing") {
+              this.emit({ ...this.state, turn: merged });
+            }
+          },
+          fetchLyrics: (input) => lyrics.fetch(input),
+        });
+      } finally {
+        this.lyricsInFlight.delete(songId);
+      }
+    })();
+
+    this.lyricsInFlight.set(songId, promise);
+    return promise;
   }
 
   /**
@@ -221,6 +332,14 @@ export class Orchestrator {
   subscribe(cb: (s: OrchestratorState) => void): () => void {
     this.subs.add(cb);
     return () => this.subs.delete(cb);
+  }
+
+  /**
+   * 注入当前天气上下文（由 App 的天气 tick 周期调用）。
+   * 推荐打分（timeContextScore 天气维度）与伪目标文案（「…，下雨天」）随即感知天气。
+   */
+  setWeatherContext(weather: WeatherContext | null): void {
+    this.weatherContext = weather;
   }
 
   private emit(s: OrchestratorState): void {
@@ -375,6 +494,7 @@ export class Orchestrator {
     const recCtx = await buildRecommendationContext(soul, {
       emotionLabels: emotion.labels,
       moodLocked: this.sessionMoodAnchor?.locked ?? false,
+      weather: this.weatherContext ?? undefined,
     });
     const excludeIds = new Set(recCtx.excludeIds);
     const immediateExcludeIds = new Set<string>();
@@ -466,6 +586,7 @@ export class Orchestrator {
         const { livingPortrait, topFacts } = getMemoryContext();
         const recCtx = await buildRecommendationContext(soul, {
           emotionLabels: [],
+          weather: this.weatherContext ?? undefined,
         });
         const chosen = await companion.choose({
           userUtterance: text,
@@ -668,6 +789,7 @@ export class Orchestrator {
 
       const recCtx = await buildRecommendationContext(soul, {
         emotionLabels: [],
+        weather: this.weatherContext ?? undefined,
       });
 
       const candidates = await library.prefilter(
@@ -722,6 +844,7 @@ export class Orchestrator {
     // would finalise the same turn and call playFile twice. Queue it like
     // every other transition.
     return this.enqueueTransition(async () => {
+    this.lastIntent = { kind: "text", text };
     const emotionAgent = this.deps.emotion;
 
     // ── Song name intent: 《山丘》 or short song-name-like input ──
@@ -860,6 +983,7 @@ export class Orchestrator {
    */
   async onLyraStart(): Promise<void> {
     return this.enqueueTransition(async () => {
+    this.lastIntent = { kind: "lyra-start" };
     const kind = this.state.kind;
     if (kind === "thinking" || kind === "playing" || kind === "proactive-pending") {
       return;
@@ -870,7 +994,7 @@ export class Orchestrator {
 
     try {
       const soul = await this.deps.soulStore.load();
-      const timeCtx = computeTimeContext();
+      const timeCtx = computeTimeContext(undefined, this.weatherContext ?? undefined);
       console.log(
         `[lyra] timeCtx: defaultMoodTags=${timeCtx.defaultMoodTags.join(",")} pseudoTarget=${timeCtx.pseudoTarget}`,
       );
@@ -900,6 +1024,42 @@ export class Orchestrator {
       console.error("[lyra] lyra-start error（LLM/选歌/provider 异常）:", err);
       this.emit({ kind: "error", message: msg });
     }
+    });
+  }
+
+  /**
+   * Replay the last user/auto-advance intent after an error — the
+   * “点一下重试” affordance on the error note. No-ops unless we're in the
+   * error state; replays through the transition queue so the retry can never
+   * interleave with an in-flight transition.
+   */
+  async onRetry(): Promise<void> {
+    const intent = this.lastIntent;
+    if (this.state.kind !== "error" || !intent) return;
+
+    if (intent.kind === "text") return this.onUserInput(intent.text);
+    if (intent.kind === "lyra-start") return this.onLyraStart();
+
+    // auto-advance retry: same shape as onLyraStart but carries the ended
+    // turn's emotion + DJ context forward, and keeps the session mood anchor.
+    return this.enqueueTransition(async () => {
+      this.emit({ kind: "thinking", user_utterance: "" });
+      try {
+        const anchorTarget = this.sessionMoodAnchor?.pseudoTarget;
+        const labelsTarget = intent.emotion.labels.join(" ").trim();
+        await this.runTurnWithEmotion(
+          intent.emotion,
+          "",
+          "proactive-open",
+          anchorTarget || labelsTarget || undefined,
+          undefined,
+          intent.autoCtx,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[lyra] retry error:", err);
+        this.emit({ kind: "error", message: msg });
+      }
     });
   }
 
@@ -943,6 +1103,13 @@ export class Orchestrator {
 
     // Emit thinking so UI shows "…" while we pick the next song
     this.emit({ kind: "thinking", user_utterance: "" });
+
+    // Remember this intent so an error can be replayed with 点一下重试.
+    this.lastIntent = {
+      kind: "auto-advance",
+      emotion: endedEmotion,
+      autoCtx,
+    };
 
     try {
       // Finalise: no verbal (skip is silent), same emotion (no shift)
@@ -1222,6 +1389,7 @@ export class Orchestrator {
       const soul = await soulStore.load();
       const recCtx = await buildRecommendationContext(soul, {
         emotionLabels: baseEmotion.labels,
+        weather: this.weatherContext ?? undefined,
       });
       const profileMap = await musicProfileRepo.getBatch([song.id]);
       const { livingPortrait, topFacts } = getMemoryContext();
@@ -1305,6 +1473,11 @@ export class Orchestrator {
       // pseudoTarget 用会话心情锚点（入口心情/时间上下文），连播不走样。
       const anchorTarget = this.sessionMoodAnchor?.pseudoTarget;
       const labelsTarget = baseEmotion.labels.join(" ").trim();
+      this.lastIntent = {
+        kind: "auto-advance",
+        emotion: baseEmotion,
+        autoCtx,
+      };
       await this.runTurnWithEmotion(
         baseEmotion,
         "",

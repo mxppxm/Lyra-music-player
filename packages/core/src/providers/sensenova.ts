@@ -4,6 +4,7 @@ import type {
   ChatOptions,
   ChatResponse,
 } from "../types";
+import { RateLimitError } from "./errors";
 
 const DEFAULT_MODEL = "deepseek-v4-flash";
 // SenseNova OpenAI-compatible gateway. Replaces the retired fxb gateway
@@ -20,6 +21,30 @@ const ENDPOINT = "https://token.sensenova.cn/v1/chat/completions";
  * generous safety margin so a slow reasoning pass doesn't get cut short.
  */
 const TIMEOUT_MS = 20_000;
+
+/** Cap error bodies surfaced to the UI — full gateway JSON blobs (error
+ *  details, request ids, …) are why the note overflowed the small-note box. */
+const MAX_ERROR_BODY_CHARS = 240;
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null;
+  const trimmed = header.trim();
+  // Delta-seconds form: "Retry-After: 30"
+  const secs = Number.parseInt(trimmed, 10);
+  if (Number.isFinite(secs) && secs > 0) return secs * 1000;
+  // HTTP-date form: "Retry-After: Wed, 21 Oct 2015 07:28:00 GMT"
+  const when = Date.parse(trimmed);
+  if (Number.isFinite(when)) {
+    const ms = when - Date.now();
+    return ms > 0 ? ms : null;
+  }
+  return null;
+}
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}…`;
+}
 
 /**
  * SensenovaProvider — OpenAI-compatible gateway (token.sensenova.cn) serving
@@ -75,7 +100,15 @@ export class SensenovaProvider implements ModelProvider {
       });
 
       if (!res.ok) {
-        const text = await res.text();
+        const text = truncate(await res.text(), MAX_ERROR_BODY_CHARS);
+        // 429 = gateway RPM throttle (free tier). Carry retry-after so the
+        // retry layer waits out the window instead of hammering inside it.
+        if (res.status === 429) {
+          throw new RateLimitError(
+            `Sensenova 429: ${text}`,
+            parseRetryAfter(res.headers.get("retry-after")),
+          );
+        }
         throw new Error(`Sensenova ${res.status}: ${text}`);
       }
 

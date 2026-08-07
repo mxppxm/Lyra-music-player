@@ -6,14 +6,21 @@ import type {
   ProviderId,
 } from "../types";
 import { registry as defaultRegistry, ProviderRegistry } from "../providers/registry";
+import { RateLimitError } from "../providers/errors";
 
-export type AgentKind = "emotion" | "companion" | "perception" | "music-profile";
+export type AgentKind =
+  | "emotion"
+  | "companion"
+  | "perception"
+  | "music-profile"
+  | "lyrics";
 
 export const PRIMARY_FOR: Record<AgentKind, ProviderId> = {
   emotion: "sensenova",
   companion: "sensenova",
   perception: "sensenova",
   "music-profile": "sensenova",
+  lyrics: "sensenova",
 };
 
 // Chat uses only the free SenseNova gateway — no paid official DeepSeek /
@@ -23,6 +30,7 @@ export const FALLBACK_FOR: Record<AgentKind, ProviderId[]> = {
   companion: [],
   perception: [],
   "music-profile": [],
+  lyrics: [],
 };
 
 export function routeProvider(
@@ -86,6 +94,30 @@ function isRetryable(err: unknown): boolean {
   return false;
 }
 
+/** True for a 429 rate-limit failure (typed or detected via the message). */
+function isRateLimit(err: unknown): boolean {
+  if (err instanceof RateLimitError) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b429\b/.test(msg);
+}
+
+/**
+ * How long to wait before retrying a 429: the server's retry-after wins;
+ * otherwise fall back to a generous fixed wait. Returns ms or null when the
+ * error is not a rate limit.
+ */
+function rateLimitRetryAfterMs(err: unknown): number | null {
+  if (err instanceof RateLimitError) return err.retryAfterMs;
+  // Some gateways put the hint in the body, e.g. "retry-after: 30s".
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = /retry[-\s]?after[=: ]\s*(\d+)\s*s?/i.exec(msg);
+  if (m) {
+    const secs = Number.parseInt(m[1], 10);
+    if (Number.isFinite(secs) && secs > 0) return secs * 1000;
+  }
+  return null;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -93,6 +125,15 @@ function sleep(ms: number): Promise<void> {
 const DEFAULT_MAX_ATTEMPTS = 3; // 1 initial + 2 retries
 const BASE_DELAY_MS = 600; // exponential backoff: 600ms → 1200ms → … (cap 5s)
 const MAX_DELAY_MS = 5_000;
+// 429 is different from a flaky 5xx: the server wants us to wait out a
+// throttle window (often 10s~60s), so the 600ms→5s backoff just burns
+// retries *inside* the window. Wait retry-after (clamped) instead, with its
+// own budget so a sustained throttle never eats the whole provider retry
+// budget that ordinary 5xx flakiness still needs.
+const RATE_LIMIT_MAX_RETRIES = 3; // 1 initial + 3 rate-limit waits
+const RATE_LIMIT_FALLBACK_DELAY_MS = 10_000;
+const RATE_LIMIT_MIN_DELAY_MS = 5_000;
+const RATE_LIMIT_MAX_DELAY_MS = 30_000;
 
 async function chatWithRetry(
   provider: ModelProvider,
@@ -101,7 +142,12 @@ async function chatWithRetry(
 ): Promise<ChatResponse> {
   const maxAttempts = provider.maxRetries ?? DEFAULT_MAX_ATTEMPTS;
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  // Ordinary failures (timeout / 5xx) are capped at maxAttempts; 429 waits
+  // get a separate budget so a sustained throttle never starves the
+  // flakiness retries, and vice versa.
+  let ordinaryAttempts = 0;
+  let rateLimitHits = 0;
+  while (true) {
     const startedAt = Date.now();
     try {
       const res = await provider.chat(messages, opts);
@@ -112,14 +158,35 @@ async function chatWithRetry(
     } catch (err) {
       lastErr = err;
       const msg = err instanceof Error ? err.message : String(err);
-      if (attempt >= maxAttempts || !isRetryable(err)) {
+      // Rate-limited: wait out the window (retry-after authoritative), then
+      // retry — the ordinary attempts counter stays untouched so a long
+      // throttle doesn't consume the backoff budget that 5xx flakiness needs.
+      if (isRateLimit(err)) {
+        if (rateLimitHits >= RATE_LIMIT_MAX_RETRIES) throw err;
+        rateLimitHits++;
+        const delay = Math.min(
+          Math.max(
+            rateLimitRetryAfterMs(err) ?? RATE_LIMIT_FALLBACK_DELAY_MS,
+            RATE_LIMIT_MIN_DELAY_MS,
+          ),
+          RATE_LIMIT_MAX_DELAY_MS,
+        );
+        console.warn(
+          `[lyra] provider ${provider.id} rate-limited (429), waiting ${Math.round(delay / 1000)}s then retrying: ${msg}`,
+        );
+        await sleep(delay);
+        continue;
+      }
+      // Ordinary failure (timeout / 5xx / network) — bounded by maxAttempts.
+      ordinaryAttempts++;
+      if (ordinaryAttempts >= maxAttempts || !isRetryable(err)) {
         throw err;
       }
       const delay =
-        Math.min(BASE_DELAY_MS * 2 ** (attempt - 1), MAX_DELAY_MS) +
+        Math.min(BASE_DELAY_MS * 2 ** (ordinaryAttempts - 1), MAX_DELAY_MS) +
         Math.random() * 200; // jitter
       console.warn(
-        `[lyra] provider ${provider.id} call failed (attempt ${attempt}/${maxAttempts}), retrying in ${Math.round(delay)}ms: ${msg}`,
+        `[lyra] provider ${provider.id} call failed (attempt ${ordinaryAttempts}/${maxAttempts}), retrying in ${Math.round(delay)}ms: ${msg}`,
       );
       await sleep(delay);
     }

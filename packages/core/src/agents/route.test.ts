@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { ProviderRegistry } from "../providers/registry";
+import { RateLimitError } from "../providers/errors";
 import type { ChatMessage, ChatOptions, ModelProvider } from "../types";
 import {
   routeProvider,
@@ -42,11 +43,13 @@ describe("routeProvider", () => {
   it("PRIMARY_FOR maps every agent→sensenova per routing §3.5", () => {
     expect(PRIMARY_FOR.emotion).toBe("sensenova");
     expect(PRIMARY_FOR.companion).toBe("sensenova");
+    expect(PRIMARY_FOR.lyrics).toBe("sensenova");
   });
 
   it("FALLBACK_FOR keeps no paid fallback per routing §3.5", () => {
     expect(FALLBACK_FOR.emotion).toEqual([]);
     expect(FALLBACK_FOR.companion).toEqual([]);
+    expect(FALLBACK_FOR.lyrics).toEqual([]);
   });
 
   it("returns the primary when registered", () => {
@@ -129,6 +132,48 @@ describe("chatWithFallback", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     // the second script step must never have been reached — chatWithFallback
     // threw; assert via rejection only (call count is internal).
+  });
+
+  it("retries a 429 rate limit after a long wait, then succeeds", async () => {
+    vi.useFakeTimers();
+    // No retry-after hint in the message → fall back to a generous 10s wait.
+    // Plain 600ms→5s backoff would have fired by ~4s, so advancing only 4s
+    // must NOT retry yet — then the 10s window elapses and it succeeds.
+    const provider = scriptedProvider("fxb", [
+      fail("Fxb 429: rate limit exceeded"),
+      ok("a"),
+    ]);
+    const p = chatWithFallback([provider], MSG, OPTS);
+    await vi.advanceTimersByTimeAsync(4_000);
+    await vi.advanceTimersByTimeAsync(7_000);
+    const res = await p;
+    expect(res.content).toBe("a");
+  });
+
+  it("waits the RateLimitError retryAfterMs hint, then succeeds", async () => {
+    vi.useFakeTimers();
+    const provider = scriptedProvider("fxb", [
+      () => Promise.reject(new RateLimitError("Sensenova 429: throttle", 25_000)),
+      ok("b"),
+    ]);
+    const p = chatWithFallback([provider], MSG, OPTS);
+    await vi.advanceTimersByTimeAsync(24_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+    const res = await p;
+    expect(res.content).toBe("b");
+  });
+
+  it("gives 429 its own budget even when ordinary retries are exhausted", async () => {
+    vi.useFakeTimers();
+    const provider = scriptedProvider("fxb", [
+      fail("Fxb 429: limit"),
+      ok("recovered"),
+    ]);
+    provider.maxRetries = 1; // ordinary budget exhausted after the 1st call
+    const p = chatWithFallback([provider], MSG, OPTS);
+    await vi.advanceTimersByTimeAsync(11_000); // past the 10s rate-limit wait
+    const res = await p;
+    expect(res.content).toBe("recovered");
   });
 
   it("falls back to the next provider after primary exhausts retries", async () => {

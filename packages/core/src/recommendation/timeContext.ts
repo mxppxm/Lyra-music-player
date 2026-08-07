@@ -17,12 +17,66 @@ export type TimePeriod =
 
 export type Season = "spring" | "summer" | "autumn" | "winter";
 
-/** Reserved for future weather-aware recommendation. */
+/** 天气上下文 —— 推荐与文案的天气维度（Open-Meteo / 用户输入）。 */
 export type WeatherContext = {
   condition: string; // e.g. "晴", "雨", "多云"
   tempC: number;
   source: "user-input" | "api";
+  /** Open-Meteo WMO 天气代码（source=api 时存在）。 */
+  code?: number;
 };
+
+/** WMO 天气代码 → 中文天气词（0 晴 / 1-3 多云 / 45-48 雾 / 51-67 雨 / 71-77 雪 / 80-82 阵雨 / 85-86 阵雪 / 95-99 雷雨）。 */
+export function weatherZhFromCode(code: number | undefined): string {
+  if (code === 0) return "晴";
+  if (code !== undefined && code >= 1 && code <= 3) return "多云";
+  if (code === 45 || code === 48) return "雾";
+  if (code !== undefined && code >= 51 && code <= 67) return "雨";
+  if (
+    code !== undefined &&
+    ((code >= 71 && code <= 77) || code === 85 || code === 86)
+  )
+    return "雪";
+  if (code !== undefined && code >= 80 && code <= 82) return "阵雨";
+  if (code !== undefined && code >= 95 && code <= 99) return "雷雨";
+  return "多云";
+}
+
+/** 天气词 → 适合文案的自然标签（雨天/雪天/晴天…）。 */
+const WEATHER_LABELS: Record<string, string> = {
+  晴: "晴天",
+  多云: "多云",
+  雾: "雾天",
+  雨: "雨天",
+  阵雨: "阵雨天",
+  雪: "雪天",
+  雷雨: "雷雨天",
+};
+
+function weatherLabel(weather: WeatherContext): string {
+  const word =
+    weather.code !== undefined ? weatherZhFromCode(weather.code) : weather.condition;
+  return WEATHER_LABELS[word] ?? `${word}天`;
+}
+
+/** 天气 → 中文标签组，用于曲库 best_for / time_color 场景匹配（雨天 → [雨天,下雨,雨]）。 */
+export function weatherTagsFromWeather(weather: WeatherContext): string[] {
+  const word = weather.code !== undefined ? weatherZhFromCode(weather.code) : weather.condition;
+  const base: Record<string, string[]> = {
+    晴: ["晴天", "晴"],
+    多云: ["多云"],
+    雾: ["雾天", "雾"],
+    雨: ["雨天", "下雨", "雨"],
+    阵雨: ["阵雨", "雨天", "雨"],
+    雪: ["雪天", "下雪", "雪"],
+    雷雨: ["雷雨", "雷雨天"],
+  };
+  const tags = [...(base[word] ?? [`${word}天`, word])];
+  // 温度边界 → 极热/极冷标签（配合「夏天/冬天」场景词）。
+  if (weather.tempC >= 30) tags.push("炎热");
+  else if (weather.tempC <= 5) tags.push("寒冷");
+  return tags;
+}
 
 export type TimeContext = {
   /** 当前时刻（调用方注入，便于测试）。 */
@@ -141,7 +195,10 @@ const PERIOD_SCENE_TAGS: Record<TimePeriod, string[]> = {
   "late-night": ["深夜", "凌晨", "独处", "睡前"],
 };
 
-export function computeTimeContext(now: Date = new Date()): TimeContext {
+export function computeTimeContext(
+  now: Date = new Date(),
+  weather?: WeatherContext,
+): TimeContext {
   const month = now.getMonth() + 1; // 1-12
   const season: Season = SEASON_BY_MONTH[month] ?? "spring";
   const seasonZh = SEASON_ZH[season];
@@ -174,7 +231,8 @@ export function computeTimeContext(now: Date = new Date()): TimeContext {
   const periodZh = PERIOD_ZH[period];
   const isWorkTime = isWorkday && hour >= 9 && hour < 18;
 
-  // 标签组：季节 + 星期 + 时段 + 工作/休息 + 场景词
+  // 标签组：季节 + 星期 + 时段 + 工作/休息 + 场景词 + 天气
+  const weatherTags = weather ? weatherTagsFromWeather(weather) : [];
   const tags = [
     `${seasonZh}季`,
     `${seasonZh}天`,
@@ -182,13 +240,20 @@ export function computeTimeContext(now: Date = new Date()): TimeContext {
     periodZh,
     isWorkTime ? "上班时间" : isWorkday ? "工作时间之外" : "休息日",
     ...PERIOD_SCENE_TAGS[period],
+    ...weatherTags,
   ];
 
   const defaultMoodTags = [...PERIOD_MOOD_TAGS[period]];
 
-  // 伪目标文案：如「夏日的周三下午，上班时间」
+  // 伪目标文案：如「夏日的周三下午，上班时间，下雨天」
   const dayWord = isWorkday ? (isWorkTime ? "上班时间" : "下班后的") : "休息日";
-  const pseudoTarget = `${seasonZh}日的${weekdayZh}${periodZh}，${dayWord}`;
+  const pseudoTarget = [
+    `${seasonZh}日的${weekdayZh}${periodZh}`,
+    dayWord,
+    weather ? weatherLabel(weather) : null,
+  ]
+    .filter((s): s is string => Boolean(s))
+    .join("，");
 
   return {
     now,
@@ -203,6 +268,7 @@ export function computeTimeContext(now: Date = new Date()): TimeContext {
     tags,
     defaultMoodTags,
     pseudoTarget,
+    weather,
   };
 }
 
@@ -220,10 +286,15 @@ export function timeContextScore(
   let score = 0;
   const lowerColor = timeColor.toLowerCase();
 
-  // 1) best_for 场景词匹配（每个命中 +0.5，封顶 1）
+  // 1) best_for 场景词匹配（每个命中 +0.5，封顶 1）—— 天气标签不在此计分，
+  //    由下方第 3 维度单独计分，避免同一 best_for 天气词被计两次。
   if (bestFor.length > 0) {
+    const weatherTagSet = ctx.weather
+      ? new Set(weatherTagsFromWeather(ctx.weather))
+      : new Set<string>();
     let hits = 0;
     for (const t of ctx.tags) {
+      if (weatherTagSet.has(t)) continue;
       for (const b of bestFor) {
         const lowerB = b.toLowerCase();
         if (lowerB.includes(t.toLowerCase()) || t.toLowerCase().includes(lowerB)) {
@@ -255,6 +326,25 @@ export function timeContextScore(
     (isEvening && /晚|夕|暮/i.test(lowerColor))
   ) {
     score += 0.25;
+  }
+
+  // 3) 天气场景匹配：best_for 命中 雨天/下雪/晴/炎热 等天气词 → 加分。
+  //    曲库画像里的 best_for 常见「雨天通勤」「下雪天」「大晴天」这类场景。
+  if (ctx.weather) {
+    const wxTags = weatherTagsFromWeather(ctx.weather);
+    let wxHits = 0;
+    for (const t of wxTags) {
+      for (const b of bestFor) {
+        const lb = b.toLowerCase();
+        if (lb.includes(t) || t.includes(lb)) {
+          wxHits++;
+          break;
+        }
+      }
+    }
+    if (wxHits > 0) {
+      score += Math.min(wxHits / Math.min(wxTags.length, 3), 1) * 0.25;
+    }
   }
 
   return Math.min(score, 1);

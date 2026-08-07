@@ -258,6 +258,56 @@ describe("Orchestrator.onUserInput error paths", () => {
   });
 });
 
+describe("Orchestrator.onRetry", () => {
+  const chosen = {
+    song_id: "t1",
+    target_profile: "x",
+    rationale: "y",
+    needed_shift: "接住" as const,
+  };
+
+  it("replays the last text input after an error", async () => {
+    const choose = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Sensenova 429: throttle"))
+      .mockResolvedValueOnce(chosen);
+    const deps = makeDeps({ companion: { choose } });
+    const orc = new Orchestrator(deps as any);
+    let last: any = null;
+    orc.subscribe((s) => (last = s));
+    await orc.onUserInput("来一首歌");
+    expect(last.kind).toBe("error");
+    await orc.onRetry();
+    expect(last.kind).toBe("playing");
+    expect(choose).toHaveBeenCalledTimes(2);
+  });
+
+  it("replays lyra-start after an error", async () => {
+    const choose = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Sensenova 429: throttle"))
+      .mockResolvedValueOnce(chosen);
+    const deps = makeDeps({ companion: { choose } });
+    const orc = new Orchestrator(deps as any);
+    let last: any = null;
+    orc.subscribe((s) => (last = s));
+    await orc.onLyraStart();
+    expect(last.kind).toBe("error");
+    await orc.onRetry();
+    expect(last.kind).toBe("playing");
+    expect(choose).toHaveBeenCalledTimes(2);
+  });
+
+  it("no-ops when not in the error state", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    expect(orc.getState().kind).toBe("playing");
+    await orc.onRetry();
+    expect(deps.companion.choose).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("Orchestrator T7: reaction capture", () => {
   it("onSkip finalises turn and auto-advances to next song", async () => {
     const deps = makeDeps();
@@ -395,6 +445,20 @@ describe("Orchestrator.fulfillProactive", () => {
     expect(deps.library.prefilter).not.toHaveBeenCalled();
     expect(deps.companion.choose).not.toHaveBeenCalled();
     expect(orc.getState().kind).toBe("playing");
+  });
+
+  it("setWeatherContext → prefilter 收到携带天气的 recCtx", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    orc.setWeatherContext({ condition: "雨", tempC: 18, source: "api", code: 61 });
+
+    await orc.fulfillProactive(morningIntent());
+
+    expect(deps.library.prefilter).toHaveBeenCalledOnce();
+    const recCtx = deps.library.prefilter.mock.calls[0][3] as {
+      timeContext?: { weather?: { condition: string; code?: number } };
+    };
+    expect(recCtx.timeContext?.weather).toMatchObject({ condition: "雨", code: 61 });
   });
 });
 
@@ -964,5 +1028,119 @@ describe("Orchestrator transition serialisation (播放竞态)", () => {
     expect(orc.getState().kind).toBe("playing");
     expect(deps.audio.playFile).toHaveBeenCalledTimes(2);
     expect(deps.emotion.analyze).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Orchestrator.getLyrics", () => {
+  const FULL_LYRICS = [
+    "故事的小黄花",
+    "从出生那年就飘着",
+    "童年的荡秋千",
+    "随记忆一直晃到现在",
+    "Re So So Si Do Si La",
+    "So La Si Si Si Si La Si La So",
+    "吹着前奏望着天空",
+    "我想起花瓣试着掉落",
+    "为你翘课的那一天",
+    "花落的那一天",
+    "教室的那一间",
+    "我怎么看不见",
+    "消失的下雨天",
+    "我好想再淋一遍",
+    "没想到失去的风景",
+    "习惯在回忆里看见",
+  ].join("\n");
+
+  function playingDeps() {
+    const updateTurn = vi.fn(async () => {});
+    const listRecentTurns = vi.fn(async () => []);
+    const fetch = vi.fn(async () => FULL_LYRICS);
+    const deps = makeDeps({
+      turnRepo: {
+        insertTurn: vi.fn(async () => {}),
+        updateTurn,
+        listRecentTurns,
+      },
+      lyrics: { fetch },
+    });
+    return { deps, updateTurn, listRecentTurns, fetch };
+  }
+
+  it("fetches via LLM and persists onto the playing turn", async () => {
+    const { deps, updateTurn, fetch } = playingDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("最近有点累");
+    expect(orc.getState().kind).toBe("playing");
+
+    const text = await orc.getLyrics();
+    expect(text).toBe(FULL_LYRICS);
+    expect(fetch).toHaveBeenCalledWith({ title: "T1", artist: undefined });
+    expect(updateTurn).toHaveBeenCalledOnce();
+    const saved = updateTurn.mock.calls[0]![0] as DialogueTurn;
+    expect(saved.agent_response.lyrics).toBe(FULL_LYRICS);
+
+    // Second call hits in-memory cache — no extra LLM.
+    fetch.mockClear();
+    await expect(orc.getLyrics()).resolves.toBe(FULL_LYRICS);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("reuses lyrics from a recent turn with the same song_id", async () => {
+    const { deps, updateTurn, listRecentTurns, fetch } = playingDeps();
+    listRecentTurns.mockImplementation(async () => [
+      {
+        id: "older",
+        timestamp: 1,
+        current_emotion: {
+          pad: { p: 0, a: 0, d: 0 },
+          labels: [],
+          confidence: 1,
+          source: "emotion-agent-inferred" as const,
+        },
+        user_utterance: { modality: "text" as const, content: "x" },
+        agent_response: {
+          song_id: "t1",
+          rationale: "old",
+          lyrics: FULL_LYRICS,
+        },
+        user_reaction: {
+          behavioral: {
+            listen_duration_ms: 0,
+            completed: false,
+            skipped: false,
+            repeated: 0,
+            volume_delta: 0,
+          },
+          silence_positive: false,
+        },
+        emotion_delta: { p: 0, a: 0, d: 0 },
+      },
+    ]);
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("最近有点累");
+
+    await expect(orc.getLyrics()).resolves.toBe(FULL_LYRICS);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(updateTurn).toHaveBeenCalledOnce();
+  });
+
+  it("throws when not playing", async () => {
+    const { deps } = playingDeps();
+    const orc = new Orchestrator(deps as any);
+    await expect(orc.getLyrics()).rejects.toThrow(/playing/i);
+  });
+
+  it("force re-fetches even when lyrics are already cached", async () => {
+    const { deps, fetch } = playingDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("最近有点累");
+    await orc.getLyrics();
+    fetch.mockClear();
+    fetch.mockResolvedValueOnce(`${FULL_LYRICS}\n尾奏`);
+
+    await expect(orc.getLyrics({ force: true })).resolves.toBe(
+      `${FULL_LYRICS}\n尾奏`,
+    );
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

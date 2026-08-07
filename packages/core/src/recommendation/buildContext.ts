@@ -3,7 +3,7 @@ import { getFeedbackStats } from "../db/repo/musicProfileRepo";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import type { RecommendationContext, TrackFeedbackCounts } from "./types";
 import { RECOMMENDATION_DEFAULTS } from "./types";
-import { computeTimeContext } from "./timeContext";
+import { computeTimeContext, type WeatherContext } from "./timeContext";
 import {
   buildExcludeSet,
   buildFatigueMap,
@@ -18,6 +18,8 @@ export type BuildContextOpts = {
   emotionLabels?: readonly string[];
   /** When true, mood/pad weighting is amplified (mood-lock mode). */
   moodLocked?: boolean;
+  /** 天气上下文（Open-Meteo / 用户输入）—— 注入推荐打分与文案。 */
+  weather?: WeatherContext;
 };
 
 /**
@@ -70,7 +72,7 @@ export async function buildRecommendationContext(
     feedbackStats,
     soul,
     emotionLabels: opts.emotionLabels ?? [],
-    timeContext: computeTimeContext(),
+    timeContext: computeTimeContext(undefined, opts.weather),
     moodLocked: opts.moodLocked ?? false,
   };
 }

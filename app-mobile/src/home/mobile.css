@@ -398,6 +398,7 @@ body,
   padding: env(safe-area-inset-top) 16px
     calc(env(safe-area-inset-bottom) + 16px);
   gap: 16px;
+  position: relative; /* anchor for the weather badge */
 }
 
 .lyra-mobile-stage--centered {
@@ -593,6 +594,300 @@ button.lyra-mobile-idle-slogan:hover {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.42);
   box-shadow: 0 10px 28px rgba(24, 18, 12, 0.05);
+}
+
+/* Flippable note — outer shell is only a perspective stage; each face is a
+ * full glass card so the whole card (bg / border / shadow) rotates together.
+ * Size is locked to the front (mood) face — the back is absolute so lyrics
+ * never resize the mood card. */
+.lyra-mobile-small-note--flippable {
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  perspective: 1400px;
+  padding: 0;
+  max-width: min(34em, 92vw);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.lyra-mobile-small-note--flippable:active {
+  transform: none;
+}
+
+.lyra-mobile-small-note__scene {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 520ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lyra-mobile-small-note__scene--flipped {
+  transform: rotateY(180deg);
+}
+
+.lyra-mobile-small-note__card {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  padding: 10px 22px;
+  border-radius: 16px;
+  background: var(--lyra-note-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 10px 28px rgba(24, 18, 12, 0.05);
+}
+
+.lyra-mobile-small-note__card--front {
+  position: relative;
+}
+
+.lyra-mobile-small-note__card--back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-align: left;
+  font-size: calc(var(--lyra-note-font-size) * 0.95);
+  line-height: 1.7;
+  padding-top: 12px;
+  padding-right: 40px;
+}
+
+.lyra-mobile-small-note__lyrics-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.lyra-mobile-small-note__lyrics-body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.lyra-mobile-small-note__loading {
+  display: inline-flex;
+  align-items: baseline;
+  font-style: italic;
+  letter-spacing: 0.04em;
+}
+
+.lyra-mobile-small-note__expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--lyra-color-small-note);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.lyra-mobile-small-note__expand:hover,
+.lyra-mobile-small-note__expand:focus,
+.lyra-mobile-small-note__expand:focus-visible {
+  background: transparent;
+  outline: none;
+  opacity: 1;
+}
+
+.lyra-mobile-small-note__expand:active {
+  transform: scale(0.94);
+  background: transparent;
+  opacity: 0.65;
+}
+
+/* While a floating morph clone is animating, keep layout but hide the source. */
+.lyra-mobile-small-note--morphing {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Lyrics expand/collapse — same glass card morphs from origin rect → large. */
+.lyra-mobile-lyrics-morph {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+
+.lyra-mobile-lyrics-morph__backdrop {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.lyra-mobile-lyrics-morph__card {
+  position: fixed;
+  z-index: 1;
+  box-sizing: border-box;
+  padding: 0;
+  /* Same glass as .lyra-mobile-small-note__card — no fill/radius swap. */
+  border-radius: 16px;
+  background: var(--lyra-note-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 10px 28px rgba(24, 18, 12, 0.05);
+  color: var(--lyra-color-small-note);
+  font-family: var(--lyra-note-family);
+  overflow: hidden;
+  pointer-events: auto;
+  /* Grow from the small card's center — size + position ease together. */
+  transition:
+    top 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    left 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 480ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: top, left, width, height;
+}
+
+/* Match the small lyrics face so text doesn't jump when the morph starts. */
+.lyra-mobile-lyrics-morph__content {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 12px 40px 16px 22px;
+  font-size: calc(var(--lyra-note-font-size) * 0.95);
+  line-height: 1.7;
+  text-align: left;
+}
+
+/* Expand control rides the card's top-right as the sheet morphs. */
+.lyra-mobile-lyrics-morph__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  left: auto;
+  z-index: 2;
+}
+
+/* Expand ↔ collapse icon flip. */
+.lyra-expand-flip {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  perspective: 160px;
+  transform-style: preserve-3d;
+}
+
+.lyra-expand-flip__face {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: transform 420ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.lyra-expand-flip__face--expand {
+  transform: rotateX(0deg);
+}
+
+.lyra-expand-flip__face--collapse {
+  transform: rotateX(180deg);
+}
+
+.lyra-expand-flip--collapsed .lyra-expand-flip__face--expand {
+  transform: rotateX(-180deg);
+}
+
+.lyra-expand-flip--collapsed .lyra-expand-flip__face--collapse {
+  transform: rotateX(0deg);
+}
+
+/* Refresh follows the lyrics, centered under the copy. */
+.lyra-mobile-lyrics-morph__refresh {
+  position: static;
+  flex-shrink: 0;
+  margin: 14px auto 0;
+}
+
+.lyra-mobile-lyrics-morph__refresh:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.lyra-mobile-lyrics-morph__refresh--spin {
+  animation: lyra-refresh-spin 0.85s linear infinite;
+}
+
+@keyframes lyra-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lyra-mobile-lyrics-morph__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  white-space: pre-wrap;
+  transition: opacity 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lyra-mobile-lyrics-morph__body--refreshing {
+  opacity: 0.48;
+}
+
+.lyra-mobile-lyrics-morph__body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.lyra-mobile-lyrics-morph__body .lyra-text-in {
+  display: block;
+  align-self: stretch;
+  white-space: pre-wrap;
+  text-align: left;
+  animation: lyra-mobile-text-in 340ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1))
+    both;
+}
+
+/* Error notes: clickable retry affordance + height-clamped so a long
+ * provider error body (429 JSON, timeouts, …) scrolls inside the note
+ * instead of pushing the dock / overflowing the layout. */
+.lyra-mobile-small-note--error {
+  max-height: 6.2em;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.lyra-mobile-small-note--error:active {
+  transform: scale(0.98);
 }
 
 /* Thinking — plain copy + animated dots */
@@ -835,6 +1130,57 @@ button.lyra-mobile-idle-slogan:hover {
 
 .lyra-mobile-control-btn--primary:not(:disabled):active {
   transform: scale(0.96);
+}
+
+/* ── Weather badge ─────────────────────────────────────────────────────
+ * 播放时 stage 顶部右侧，绝对定位不参与 content 布局 —— 不推挤封面 /
+ * 歌曲信息 / dock。沉浸式下隐藏，让位于封面。 */
+.lyra-mobile-weather-badge {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 12px);
+  right: max(14px, env(safe-area-inset-right));
+  left: auto;
+  transform: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: var(--lyra-color-song-info);
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  opacity: 0.72;
+  transition: opacity 480ms cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lyra-mobile-weather-badge__icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.lyra-mobile-weather-badge__icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.lyra-mobile-weather-badge__temp {
+  font-size: 11px;
+  font-family: var(--lyra-note-family);
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+/* 沉浸式：彻底隐藏 —— 不参与沉浸画面，退出时随 transition 平滑出现 */
+.lyra-mobile-stage--immersive .lyra-mobile-weather-badge {
+  display: none;
 }
 
 /* ── Immersive mode ───────────────────────────────────────────────────── */

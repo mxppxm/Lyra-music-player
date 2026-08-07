@@ -2,6 +2,7 @@ import { Orchestrator } from "./Orchestrator";
 import { EmotionAgent } from "../agents/EmotionAgent";
 import { CompanionAgent } from "../agents/CompanionAgent";
 import { LibraryAgent } from "../agents/LibraryAgent";
+import { LyricsAgent } from "../agents/LyricsAgent";
 import { createSoulStore } from "./soulStore";
 import * as turnRepo from "../db/repo/turnRepo";
 import { getLyraPlatform } from "@lyra/platform";
@@ -39,10 +40,12 @@ export function createDefaultOrchestrator(): Orchestrator | null {
 
   let emotion: EmotionAgent;
   let companion: CompanionAgent;
+  let lyricsAgent: LyricsAgent;
 
   try {
     emotion = new EmotionAgent();
     companion = new CompanionAgent();
+    lyricsAgent = new LyricsAgent();
   } catch {
     // routeProvider throws when neither primary nor fallback is registered
     return null;
@@ -327,7 +330,11 @@ export function createDefaultOrchestrator(): Orchestrator | null {
     turnRepo: {
       insertTurn: turnRepo.insertTurn,
       updateTurn: turnRepo.updateTurn,
+      listRecentTurns: turnRepo.listRecentTurns,
       setTurnLatency: turnRepo.setTurnLatency,
+    },
+    lyrics: {
+      fetch: (input) => lyricsAgent.fetch(input),
     },
     audio: orchestratorAudio,
     eventBus: perceptionBus,

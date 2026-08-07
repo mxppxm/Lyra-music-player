@@ -3,6 +3,8 @@ import {
   computeTimeContext,
   timeContextScore,
   timeContextToPseudoTarget,
+  weatherZhFromCode,
+  weatherTagsFromWeather,
 } from "./timeContext";
 
 // 2026-08-05 是周三（工作日）
@@ -62,6 +64,68 @@ describe("computeTimeContext", () => {
     expect(t).toContain("下午");
     expect(t).toContain("上班");
   });
+
+  it("注入雨天天气 → 标签含 雨天/下雨，伪目标文案含 雨天", () => {
+    const ctx = computeTimeContext(at(15, 3, 8), {
+      condition: "雨",
+      tempC: 18,
+      source: "api",
+      code: 61,
+    });
+    expect(ctx.tags).toContain("雨天");
+    expect(ctx.tags).toContain("下雨");
+    expect(ctx.weather?.code).toBe(61);
+    const t = timeContextToPseudoTarget(ctx);
+    expect(t).toContain("雨天");
+  });
+
+  it("极热/极冷天气 → 炎热/寒冷标签", () => {
+    const hot = computeTimeContext(at(15, 3, 8), {
+      condition: "晴",
+      tempC: 33,
+      source: "api",
+      code: 0,
+    });
+    expect(hot.tags).toContain("炎热");
+    expect(hot.tags).toContain("晴天");
+
+    const cold = computeTimeContext(at(15, 3, 8), {
+      condition: "雪",
+      tempC: -3,
+      source: "api",
+      code: 71,
+    });
+    expect(cold.tags).toContain("寒冷");
+    expect(cold.tags).toContain("雪天");
+  });
+});
+
+describe("weather helpers", () => {
+  it("WMO code → 中文天气词", () => {
+    expect(weatherZhFromCode(0)).toBe("晴");
+    expect(weatherZhFromCode(3)).toBe("多云");
+    expect(weatherZhFromCode(45)).toBe("雾");
+    expect(weatherZhFromCode(61)).toBe("雨");
+    expect(weatherZhFromCode(71)).toBe("雪");
+    expect(weatherZhFromCode(80)).toBe("阵雨");
+    expect(weatherZhFromCode(85)).toBe("雪"); // 阵雪
+    expect(weatherZhFromCode(86)).toBe("雪"); // 阵雪
+    expect(weatherZhFromCode(95)).toBe("雷雨");
+    expect(weatherZhFromCode(undefined)).toBe("多云");
+  });
+
+  it("天气标签组覆盖场景词变体", () => {
+    expect(weatherTagsFromWeather({ condition: "雨", tempC: 18, source: "api", code: 61 })).toEqual(
+      expect.arrayContaining(["雨天", "下雨", "雨"]),
+    );
+    expect(weatherTagsFromWeather({ condition: "雪", tempC: 0, source: "api", code: 71 })).toEqual(
+      expect.arrayContaining(["雪天", "下雪"]),
+    );
+    // 无 code（用户输入 source）→ 从 condition 派生
+    expect(weatherTagsFromWeather({ condition: "晴", tempC: 22, source: "user-input" })).toEqual(
+      expect.arrayContaining(["晴天"]),
+    );
+  });
 });
 
 describe("timeContextScore", () => {
@@ -86,5 +150,20 @@ describe("timeContextScore", () => {
   it("分数封顶 1", () => {
     const ctx = computeTimeContext(at(15, 3, 8));
     expect(timeContextScore(ctx, ["下午茶", "午后"], "午后")).toBeLessThanOrEqual(1);
+  });
+
+  it("雨天天气 → best_for 命中 雨天通勤 加分（高于无天气）", () => {
+    const rainy = computeTimeContext(at(15, 3, 8), {
+      condition: "雨",
+      tempC: 18,
+      source: "api",
+      code: 61,
+    });
+    const plain = computeTimeContext(at(15, 3, 8));
+    // 同一首歌，天气场景词只在雨天命中
+    const withRain = timeContextScore(rainy, ["雨天通勤", "安静"], "");
+    const withoutRain = timeContextScore(plain, ["雨天通勤", "安静"], "");
+    expect(withRain).toBeGreaterThan(withoutRain);
+    expect(withRain).toBeLessThanOrEqual(1);
   });
 });

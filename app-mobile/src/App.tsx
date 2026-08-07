@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { getLyraPlatform, setLyraPlatform } from "@lyra/platform";
 import { createIosPlatform } from "@lyra/platform-ios";
 import { bootProviders } from "@lyra/core/providers/boot";
+import { ensureWeatherSnapshot } from "@lyra/core/perception/weather";
+import { weatherZhFromCode } from "@lyra/core/recommendation/timeContext";
+import type { WeatherContext } from "@lyra/core/recommendation/timeContext";
 import { createDefaultOrchestrator } from "@lyra/core";
 import type { Orchestrator } from "@lyra/core";
 import { MobileHomeView } from "./home/MobileHomeView";
@@ -183,6 +186,8 @@ export function App() {
   const [orchestrator, setOrchestrator] = useState<Orchestrator | null>(null);
   /** boot → leaving (home mounted beneath, boot dissolves) → home */
   const [phase, setPhase] = useState<"boot" | "leaving" | "home">("boot");
+  /** 当前天气 —— 天气 tick 拉取后同时注入 orchestrator 并交给 UI 展示。 */
+  const [weather, setWeather] = useState<WeatherContext | null>(null);
   /** The single Lyra wordmark hides once a playback session starts. */
   const [brandHidden, setBrandHidden] = useState(false);
   const bootMountedAtRef = useRef(0);
@@ -278,12 +283,46 @@ export function App() {
     return orchestrator.subscribe((s) => setBrandHidden(s.kind !== "idle"));
   }, [orchestrator]);
 
+  // 天气 tick —— 复用 @lyra/core 的 Open-Meteo 拉取（内置 45min 缓存），
+  // 周期把天气注入 orchestrator，让推荐打分与伪目标文案感知天气。
+  // 定位走 WKWebView 的 navigator.geolocation（Info.plist 已声明权限）；
+  // 授权失败时静默降级（返回 null，不打扰）。
+  useEffect(() => {
+    if (!orchestrator) return;
+    let cancelled = false;
+    const pushWeather = async () => {
+      try {
+        const snap = await ensureWeatherSnapshot({ enabled: true });
+        if (cancelled || !snap) return;
+        const wx: WeatherContext = {
+          condition: weatherZhFromCode(snap.weatherCode),
+          tempC: snap.temperatureC,
+          source: "api",
+          code: snap.weatherCode,
+        };
+        orchestrator.setWeatherContext(wx);
+        setWeather(wx);
+        console.log(
+          `[lyra-ios] weather: code=${snap.weatherCode} temp=${snap.temperatureC}°C source=${snap.source}`,
+        );
+      } catch (err) {
+        console.warn("[lyra-ios] weather tick failed:", err);
+      }
+    };
+    void pushWeather();
+    const t = window.setInterval(pushWeather, 45 * 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [orchestrator]);
+
   const bootShown = phase !== "home";
 
   return (
     <>
       {phase !== "boot" && orchestrator && (
-        <MobileHomeView orchestrator={orchestrator} />
+        <MobileHomeView orchestrator={orchestrator} weather={weather} />
       )}
       {bootShown && (
         <BootScreen

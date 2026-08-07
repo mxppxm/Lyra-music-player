@@ -70,3 +70,97 @@ export function IconShare({ size = 20 }: { size?: number }) {
     </svg>
   );
 }
+
+/** Expand / fullscreen — corners of a rectangle pulling outward. */
+export function IconExpand({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
+  );
+}
+
+export function IconCollapse({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <polyline points="4 14 10 14 10 20" />
+      <polyline points="20 10 14 10 14 4" />
+      <line x1="10" y1="14" x2="3" y2="21" />
+      <line x1="14" y1="10" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+/** Expand ↔ collapse with a short axial flip. */
+export function IconExpandCollapse({
+  collapsed,
+  size = 18,
+}: {
+  collapsed: boolean;
+  size?: number;
+}) {
+  return (
+    <span
+      className={[
+        "lyra-expand-flip",
+        collapsed ? "lyra-expand-flip--collapsed" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={{ width: size, height: size }}
+      aria-hidden
+    >
+      <span className="lyra-expand-flip__face lyra-expand-flip__face--expand">
+        <IconExpand size={size} />
+      </span>
+      <span className="lyra-expand-flip__face lyra-expand-flip__face--collapse">
+        <IconCollapse size={size} />
+      </span>
+    </span>
+  );
+}
+
+/** Circular arrows — refresh / retry. */
+export function IconRefresh({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+      <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
+    </svg>
+  );
+}
