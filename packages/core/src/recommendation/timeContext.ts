@@ -17,6 +17,13 @@ export type TimePeriod =
 
 export type Season = "spring" | "summer" | "autumn" | "winter";
 
+/** Reserved for future weather-aware recommendation. */
+export type WeatherContext = {
+  condition: string; // e.g. "晴", "雨", "多云"
+  tempC: number;
+  source: "user-input" | "api";
+};
+
 export type TimeContext = {
   /** 当前时刻（调用方注入，便于测试）。 */
   now: Date;
@@ -42,6 +49,8 @@ export type TimeContext = {
   defaultMoodTags: string[];
   /** 伪目标文案 —— 「夏日的周三下午，上班时间」这类开场白。 */
   pseudoTarget: string;
+  /** 天气上下文 —— 预留，后续接 wttr.in / Open-Meteo + 定位。 */
+  weather?: WeatherContext;
 };
 
 const SEASON_BY_MONTH: Record<number, Season> = {

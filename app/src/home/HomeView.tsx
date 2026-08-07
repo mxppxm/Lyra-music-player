@@ -19,7 +19,7 @@ import { bindGlobalKeys } from "./keyboard";
 import { parseSlashCommand } from "./slashCommand";
 import { isZeroConfigRelease } from "../config/zeroConfig";
 import { useTurn } from "../turn/useTurn";
-import type { Orchestrator } from "../turn/Orchestrator";
+import type { Orchestrator } from "@lyra/core/turn/Orchestrator.ts";
 import * as turnRepo from "../db/repo/turnRepo";
 import { songDisplayTitle, songDisplayArtist } from "../library/display";
 import type { PAD } from "../types";

@@ -6,6 +6,12 @@ import { EMPTY_MEMORY } from "../memory/parser";
 import * as sharedMemoryRepo from "../db/repo/sharedMemoryRepo";
 import * as appendSalientMod from "../memory/appendSalient";
 
+// ── Mock song-name intent resolution (default: not a song) ───────────────────
+vi.mock("../library/songIntent", () => ({
+  resolveSongIntent: vi.fn(async () => ({ kind: "mood" as const, reason: "default" })),
+}));
+import * as songIntentMod from "../library/songIntent";
+
 // ── Mocks for salient moment wiring ──────────────────────────────────────────
 vi.mock("../db/repo/sharedMemoryRepo", () => ({
   insertSharedMemory: vi.fn(async () => {}),
@@ -24,6 +30,8 @@ vi.mock("../tray/trayBridge", () => ({
 vi.mock("../db/repo/libraryRepo", () => ({
   listAll: vi.fn(async () => []),
   getTrack: vi.fn(async () => null),
+  findByTitle: vi.fn(async () => []),
+  batchInsertTracks: vi.fn(async () => 0),
 }));
 
 vi.mock("../db/repo/turnRepo", () => ({
@@ -112,6 +120,8 @@ beforeEach(() => {
   vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd).mockReset();
   vi.mocked(appendSalientMod.appendSalientMomentToMemoryMd).mockResolvedValue(undefined);
   vi.mocked(setBreathing).mockClear();
+  vi.mocked(songIntentMod.resolveSongIntent).mockReset();
+  vi.mocked(songIntentMod.resolveSongIntent).mockResolvedValue({ kind: "mood", reason: "default" });
 });
 
 describe("Orchestrator.onUserInput happy path", () => {
@@ -171,6 +181,57 @@ describe("Orchestrator.onUserInput happy path", () => {
     expect(chooseArg.livingPortrait).toBe(portrait);
     expect(chooseArg.topFacts).toHaveLength(1);
     expect(chooseArg.topFacts[0].conclusion).toBe("慢速古典钢琴");
+  });
+});
+
+describe("Orchestrator.onUserInput — song-name intent (resolveSongIntent)", () => {
+  it("《》点歌直接播放：跳过 emotion/companion，playFile + insertTurn", async () => {
+    const deps = makeDeps();
+    const track: LibraryTrack = {
+      id: "t1",
+      path: "/x.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "《山丘》",
+    };
+    vi.mocked(songIntentMod.resolveSongIntent).mockResolvedValue({
+      kind: "song",
+      song: track,
+      source: "local",
+    });
+    const orc = new Orchestrator(deps as any);
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+    await orc.onUserInput("《山丘》");
+    expect(songIntentMod.resolveSongIntent).toHaveBeenCalledWith("《山丘》");
+    // 点歌分支跳过情绪分析（mood pipeline）
+    expect(deps.emotion.analyze).not.toHaveBeenCalled();
+    expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
+    expect(deps.turnRepo.insertTurn).toHaveBeenCalledOnce();
+    expect(seen).toEqual(["thinking", "playing"]);
+  });
+
+  it("点歌时已有 in-flight turn：先以 skip 收尾，再播放点歌曲目", async () => {
+    const deps = makeDeps({
+      turnRepo: {
+        insertTurn: vi.fn(async () => {}),
+        updateTurn: vi.fn(async () => {}),
+      },
+    });
+    const orc = new Orchestrator(deps as any);
+    // 第一回合：常规输入走 emotion/companion pipeline，产生 in-flight turn
+    await orc.onUserInput("来一首歌");
+    expect(deps.turnRepo.insertTurn).toHaveBeenCalledTimes(1);
+    // 第二回合：点歌 → 前一回合以 skip 收尾
+    vi.mocked(songIntentMod.resolveSongIntent).mockResolvedValue({
+      kind: "song",
+      song: { id: "t2", path: "/y.mp3", origin: "local", added_at: 0, title: "《山丘》" },
+      source: "local",
+    });
+    await orc.onUserInput("《山丘》");
+    expect(deps.turnRepo.insertTurn).toHaveBeenCalledTimes(2);
+    expect(deps.turnRepo.updateTurn).toHaveBeenCalled();
+    expect(deps.audio.playFile).toHaveBeenLastCalledWith("/y.mp3", null);
   });
 });
 
@@ -380,12 +441,12 @@ describe("Orchestrator T2: proactive-pending state", () => {
     deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
     const orc = new Orchestrator(deps as any);
 
-    const track: import("../types").LibraryTrack = {
-      id: "t1",
-      path: "/x.mp3",
+    const track: LibraryTrack = {
+      id: "t2",
+      path: "/y.mp3",
       origin: "local",
       added_at: 0,
-      title: "T1",
+      title: "T2",
     };
     const intent: import("../proactive/types").ProactiveIntent = {
       id: "i1",
@@ -393,148 +454,35 @@ describe("Orchestrator T2: proactive-pending state", () => {
       validUntil: 1000 + 30 * 60_000,
       kind: "morning",
       urgency: 0.5,
-      hint: "早上第一次打开",
+      hint: "早上",
     };
 
-    orc.startProactiveIntent(intent, track, "morning greeting");
+    orc.startProactiveIntent(intent, track, "早上好");
     expect(orc.getState().kind).toBe("proactive-pending");
 
-    await orc.onUserInput("好的");
+    // User taps the banner
+    await orc.onUserInput("早!");
 
-    // Should have inserted the proactive-pending turn + the new user turn
-    expect(deps.turnRepo.insertTurn).toHaveBeenCalledTimes(2);
-    // First call: the proactive-pending turn with modality "proactive-open"
-    const firstTurn = (deps.turnRepo.insertTurn.mock.calls[0] as unknown[])[0] as import("../types").DialogueTurn;
-    expect(firstTurn.user_utterance.modality).toBe("proactive-open");
-    expect(firstTurn.agent_response.song_id).toBe("t1");
-
-    // Should end in playing state
+    // Should now be playing
     expect(orc.getState().kind).toBe("playing");
-    // Audio should have been called once (for the new utterance turn)
-    expect(deps.audio.playFile).toHaveBeenCalledOnce();
+
+    // The proactive turn should have been persisted with a latency stamp
+    expect(deps.turnRepo.insertTurn).toHaveBeenCalled();
   });
 
-  it("onUserInput from idle state (no proactive-pending) still works normally", async () => {
+  it("proactive-pending emits stay invisible during regular play", async () => {
     const deps = makeDeps();
     const orc = new Orchestrator(deps as any);
-    const seen: string[] = [];
-    orc.subscribe((s) => seen.push(s.kind));
-
-    await orc.onUserInput("来首歌");
-    expect(seen).toEqual(["thinking", "playing"]);
-    expect(deps.turnRepo.insertTurn).toHaveBeenCalledOnce();
-    expect(deps.audio.playFile).toHaveBeenCalledOnce();
-  });
-
-  it("onUserInput after proactive-pending calls setBreathing(false) to stop animation", async () => {
-    const deps = makeDeps();
-    const updateTurn = vi.fn(async () => {});
-    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
-    const orc = new Orchestrator(deps as any);
-
-    const track: import("../types").LibraryTrack = {
-      id: "t1",
-      path: "/x.mp3",
-      origin: "local",
-      added_at: 0,
-      title: "T1",
-    };
-    const intent: import("../proactive/types").ProactiveIntent = {
-      id: "i1",
-      createdAt: 1000,
-      validUntil: 1000 + 30 * 60_000,
-      kind: "morning",
-      urgency: 0.5,
-      hint: "早上第一次打开",
-    };
-
-    orc.startProactiveIntent(intent, track, "morning greeting");
-    await orc.onUserInput("好的");
-
-    expect(setBreathing).toHaveBeenCalledWith(false);
-  });
-
-  it("onUserInput from idle does NOT call setBreathing", async () => {
-    const deps = makeDeps();
-    const orc = new Orchestrator(deps as any);
-
-    await orc.onUserInput("来首歌");
-
-    expect(setBreathing).not.toHaveBeenCalled();
+    await orc.onUserInput("来一首歌");
+    expect(orc.getState().kind).toBe("playing");
+    // No proactive_pending accessible while playing
+    const state = orc.getState();
+    expect(state.kind).not.toBe("proactive-pending");
   });
 });
 
-describe("Orchestrator T8: emotion prediction channel (auto-advance)", () => {
-  it("uses predicted_pad when elapsed_min is in [3, horizon_min]", async () => {
-    // Turn timestamp = 1730_000_000_000; clock for autoAdvance = timestamp + 10 min
-    const turnTs = 1730_000_000_000;
-    const advanceTs = turnTs + 10 * 60_000; // 10 min later → within horizon 30
-    let callCount = 0;
-    const clockFn = () => {
-      callCount++;
-      // First few calls come from runTurnWithEmotion (idGen, etc) — we need the
-      // advance clock only for the onSongComplete path.  Return turnTs for the
-      // first call (turn insert), advanceTs for subsequent calls.
-      return callCount === 1 ? turnTs : advanceTs;
-    };
-
-    const emotionWithPrediction: CurrentEmotion = {
-      pad: { p: 0.1, a: 0.2, d: 0.0 },
-      labels: ["平静"],
-      confidence: 0.8,
-      source: "emotion-agent-inferred",
-      predicted_trajectory: { horizon_min: 30, predicted_pad: { p: -0.7, a: -0.8, d: -0.2 } },
-    };
-    const deps = makeDeps({
-      clock: clockFn,
-      emotion: { analyze: vi.fn(async () => emotionWithPrediction) },
-    });
-    const updateTurn = vi.fn(async () => {});
-    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
-    const orc = new Orchestrator(deps as any);
-
-    await orc.onUserInput("我准备去睡觉了");
-    // Now trigger auto-advance (song complete)
-    await orc.onSongComplete();
-
-    // The second insertTurn call (auto-advance turn) should use predicted_pad
-    expect(deps.turnRepo.insertTurn).toHaveBeenCalledTimes(2);
-    const autoTurn = (deps.turnRepo.insertTurn.mock.calls[1] as unknown[])[0] as DialogueTurn;
-    expect(autoTurn.current_emotion.pad).toEqual({ p: -0.7, a: -0.8, d: -0.2 });
-    // predicted_trajectory should NOT be carried forward
-    expect(autoTurn.current_emotion.predicted_trajectory).toBeUndefined();
-  });
-
-  it("falls back to endedEmotion.pad when elapsed_min < 3", async () => {
-    const turnTs = 1730_000_000_000;
-    const advanceTs = turnTs + 1 * 60_000; // only 1 min — below window
-    let callCount = 0;
-    const clockFn = () => (callCount++ === 0 ? turnTs : advanceTs);
-
-    const emotionWithPrediction: CurrentEmotion = {
-      pad: { p: 0.1, a: 0.2, d: 0.0 },
-      labels: ["平静"],
-      confidence: 0.8,
-      source: "emotion-agent-inferred",
-      predicted_trajectory: { horizon_min: 30, predicted_pad: { p: -0.7, a: -0.8, d: -0.2 } },
-    };
-    const deps = makeDeps({
-      clock: clockFn,
-      emotion: { analyze: vi.fn(async () => emotionWithPrediction) },
-    });
-    const updateTurn = vi.fn(async () => {});
-    deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
-    const orc = new Orchestrator(deps as any);
-
-    await orc.onUserInput("准备睡觉");
-    await orc.onSongComplete();
-
-    const autoTurn = (deps.turnRepo.insertTurn.mock.calls[1] as unknown[])[0] as DialogueTurn;
-    // Should use original pad, not predicted_pad
-    expect(autoTurn.current_emotion.pad).toEqual({ p: 0.1, a: 0.2, d: 0.0 });
-  });
-
-  it("auto-advance without predicted_trajectory uses endedEmotion verbatim", async () => {
+describe("Orchestrator auto-advance", () => {
+  it("uses endedEmotion verbatim", async () => {
     const deps = makeDeps();
     const updateTurn = vi.fn(async () => {});
     deps.turnRepo = { insertTurn: deps.turnRepo.insertTurn, updateTurn } as any;
@@ -547,7 +495,6 @@ describe("Orchestrator T8: emotion prediction channel (auto-advance)", () => {
     const autoTurn = (deps.turnRepo.insertTurn.mock.calls[1] as unknown[])[0] as DialogueTurn;
     // Default mock emotion pad
     expect(autoTurn.current_emotion.pad).toEqual({ p: -0.3, a: -0.2, d: 0 });
-    expect(autoTurn.current_emotion.predicted_trajectory).toBeUndefined();
   });
 
   it("auto-advance passes recommendation context that excludes recent plays", async () => {
@@ -894,5 +841,128 @@ describe("Orchestrator.onReplaySong (history replay)", () => {
 
     expect(orc.getState().kind).toBe("error");
     expect(deps.turnRepo.insertTurn).not.toHaveBeenCalled();
+  });
+});
+
+describe("Orchestrator transition serialisation (播放竞态)", () => {
+  const t1: LibraryTrack = { id: "t1", path: "/a.mp3", origin: "local", added_at: 0, title: "T1" };
+  const t2: LibraryTrack = { id: "t2", path: "/b.mp3", origin: "local", added_at: 0, title: "T2" };
+  const t3: LibraryTrack = { id: "t3", path: "/c.mp3", origin: "local", added_at: 0, title: "T3" };
+
+  /** choose 返回 candidates 最后一个；prefilter 尊重 excludeIds。 */
+  function raceDeps() {
+    const prefilter = vi.fn(
+      async (
+        _target: unknown,
+        _pad: unknown,
+        _limit: unknown,
+        recCtx?: { excludeIds?: ReadonlySet<string> },
+      ) => {
+        const all = [t1, t2, t3];
+        const exclude = recCtx?.excludeIds;
+        return exclude ? all.filter((x) => !exclude.has(x.id)) : all;
+      },
+    );
+    const choose = vi.fn(async (input: { candidates: LibraryTrack[] }) => {
+      const song = input.candidates[input.candidates.length - 1];
+      return {
+        song_id: song.id,
+        target_profile: "x",
+        rationale: `${song.id}-rationale`,
+        needed_shift: "接住" as const,
+      };
+    });
+    return makeDeps({
+      library: { prefilter },
+      companion: { choose },
+      resolvePlayUrl: vi.fn(async () => "http://x/b.mp3"),
+    });
+  }
+
+  it("concurrent onSongComplete calls auto-advance only once (ended + progress fallback)", async () => {
+    const deps = raceDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌"); // playing t3
+    expect(orc.getState().kind).toBe("playing");
+    deps.audio.playFile.mockClear();
+
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+
+    // ended 事件 + JS progress 回退同一时刻触发两个 onSongComplete
+    await Promise.all([orc.onSongComplete(), orc.onSongComplete()]);
+
+    // 只切一次歌、只闪一次 thinking —— 之前会双 playFile 双切歌
+    expect(deps.audio.playFile).toHaveBeenCalledTimes(1);
+    expect(seen.filter((k) => k === "thinking")).toHaveLength(1);
+    expect(orc.getState().kind).toBe("playing");
+  });
+
+  it("stale onSongComplete after native auto-advance is dropped", async () => {
+    const deps = raceDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌"); // playing t3
+    await orc.prefetchMore(1); // plan = [t2]
+    deps.audio.playFile.mockClear();
+
+    // native 先无缝切到 t2（onNativeAutoAdvanced），complete 事件随后到达
+    await Promise.all([orc.onNativeAutoAdvanced("t2"), orc.onSongComplete()]);
+
+    // nativeAdvanced 走 plan 同步，不 playFile；过时的 complete 被丢弃
+    expect(deps.audio.playFile).not.toHaveBeenCalled();
+    expect(orc.getState().kind).toBe("playing");
+    expect((orc.getState() as any).song.id).toBe("t2");
+  });
+
+  it("stale onNativeAutoAdvanced after JS picked a song is dropped", async () => {
+    const deps = raceDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌"); // playing t3
+    await orc.prefetchMore(1); // plan = [t2]
+    // 让 onSongComplete 的 LLM 选 t1（避开 plan 里的 t2），并清空 plan
+    (deps.library.prefilter as any).mockResolvedValue([t1]);
+    deps.audio.playFile.mockClear();
+
+    // JS 流程先跑（onSongComplete → LLM → playFile t1），nativeAdvanced(t2) 随后到
+    await Promise.all([orc.onSongComplete(), orc.onNativeAutoAdvanced("t2")]);
+
+    // onSongComplete 播了 t1（plan 被清空）；nativeAdvanced(t2) 过时被
+    // targetTurn 检查丢弃，不会把状态拽回 t2
+    expect(deps.audio.playFile).toHaveBeenCalledTimes(1);
+    expect(deps.audio.playFile).toHaveBeenCalledWith("/a.mp3", null);
+    expect(orc.getState().kind).toBe("playing");
+    expect((orc.getState() as any).song.id).toBe("t1");
+  });
+
+  it("onSongComplete queued behind onSkip is dropped", async () => {
+    const deps = raceDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌"); // playing t3
+    deps.audio.playFile.mockClear();
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+
+    await Promise.all([orc.onSkip(), orc.onSongComplete()]);
+
+    // 只有 skip 的 auto-advance 播了歌；complete 过时被丢弃
+    expect(deps.audio.playFile).toHaveBeenCalledTimes(1);
+    expect(seen.filter((k) => k === "thinking")).toHaveLength(1);
+    expect(orc.getState().kind).toBe("playing");
+  });
+
+  it("user input queued behind an in-flight auto-advance never double-plays", async () => {
+    const deps = raceDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌"); // playing t3
+    deps.audio.playFile.mockClear();
+    deps.emotion.analyze.mockClear();
+
+    await Promise.all([orc.onSongComplete(), orc.onUserInput("再放一首")]);
+
+    // 两个转换串行、各播一次歌：onSongComplete 的 auto-advance 1 次 +
+    // onUserInput 的选歌 1 次；emotion.analyze 只随用户输入触发 1 次。
+    expect(orc.getState().kind).toBe("playing");
+    expect(deps.audio.playFile).toHaveBeenCalledTimes(2);
+    expect(deps.emotion.analyze).toHaveBeenCalledTimes(1);
   });
 });

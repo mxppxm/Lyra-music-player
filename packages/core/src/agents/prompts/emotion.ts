@@ -78,18 +78,6 @@ ${CN_UNDERSTATEMENT_TABLE}
 
 ${CN_FEWSHOT}
 
-Do not include any text before or after the JSON. Do not use markdown code fences.
-
-If the utterance also hints at a near-future trajectory (e.g. "I'm about to
-sleep", "I'm going into a work sprint", "I want to gradually calm down"),
-INCLUDE an optional field:
-
-  "predicted_trajectory": {
-    "horizon_min": integer 5-120,
-    "predicted_pad": { "p": ..., "a": ..., "d": ... }
-  }
-
-Only include it when you have real confidence about the direction. If you
-don't know, omit the field entirely — do NOT emit a placeholder.`;
+Do not include any text before or after the JSON. Do not use markdown code fences.`;
 
 export const EMOTION_JSON_SCHEMA_HINT = `Return JSON: { "pad": {"p":n,"a":n,"d":n}, "labels": [...], "confidence": n, "source": "emotion-agent-inferred" }`;

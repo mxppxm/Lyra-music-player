@@ -1,20 +1,35 @@
 import type { TrackFeedbackCounts } from "./types";
 
-/** How much of the candidate pool comes from deep catalog vs top scores. */
-export function diversitySplit(noveltySeeking: number): { topRatio: number; diverseRatio: number } {
+/** How much of the candidate pool comes from deep catalog vs top scores.
+ *  When mood is locked, diversity is severely constrained — nearly all
+ *  picks come from the top band to keep the vibe tightly on-mood. */
+export function diversitySplit(
+  noveltySeeking: number,
+  moodLocked = false,
+): { topRatio: number; diverseRatio: number } {
   const ns = clamp01(noveltySeeking);
-  const diverseRatio = 0.15 + ns * 0.55; // 15% – 70% from outside top band
-  return { topRatio: 1 - diverseRatio, diverseRatio };
+  const maxDiverse = moodLocked ? 0.05 + ns * 0.15 : 0.15 + ns * 0.55;
+  // locked: 5%–20% from outside top band; normal: 15%–70%
+  return { topRatio: 1 - maxDiverse, diverseRatio: maxDiverse };
 }
 
-/** Weight applied to fatigue penalty — higher novelty → less penalty, more exploration. */
-export function fatiguePenaltyWeight(noveltySeeking: number): number {
+/** Weight applied to fatigue penalty — higher novelty → less penalty, more exploration.
+ *  When mood is locked, fatigue penalty is barely applied (0.10 constant). */
+export function fatiguePenaltyWeight(
+  noveltySeeking: number,
+  moodLocked = false,
+): number {
+  if (moodLocked) return 0.1;
   const ns = clamp01(noveltySeeking);
   return 0.45 - ns * 0.25; // 0.45 (conservative) → 0.20 (exploratory)
 }
 
 /** Weight applied to historical skip feedback. */
-export function feedbackPenaltyWeight(noveltySeeking: number): number {
+export function feedbackPenaltyWeight(
+  noveltySeeking: number,
+  moodLocked = false,
+): number {
+  if (moodLocked) return 0.1;
   const ns = clamp01(noveltySeeking);
   return 0.15 + (1 - ns) * 0.15; // 0.30 → 0.15
 }
@@ -23,6 +38,7 @@ export function feedbackPenaltyWeight(noveltySeeking: number): number {
 export function feedbackPenalty(
   stats: TrackFeedbackCounts | undefined,
   noveltySeeking: number,
+  moodLocked = false,
 ): number {
   if (!stats) return 0;
   const total = stats.skipped + stats.completed + stats.repeated;
@@ -30,7 +46,7 @@ export function feedbackPenalty(
 
   const skipRatio = stats.skipped / total;
   const repeatRatio = stats.repeated / total;
-  const weight = feedbackPenaltyWeight(noveltySeeking);
+  const weight = feedbackPenaltyWeight(noveltySeeking, moodLocked);
   return Math.min(weight, skipRatio * weight + repeatRatio * weight * 0.5);
 }
 
@@ -53,11 +69,12 @@ export function stratifiedSample<T>(
   scored: { item: T; score: number }[],
   limit: number,
   noveltySeeking: number,
+  moodLocked = false,
 ): T[] {
   if (scored.length === 0) return [];
   if (scored.length <= limit) return scored.map((s) => s.item);
 
-  const { topRatio } = diversitySplit(noveltySeeking);
+  const { topRatio } = diversitySplit(noveltySeeking, moodLocked);
   const topCount = Math.round(limit * topRatio);
   const diverCount = limit - topCount;
 

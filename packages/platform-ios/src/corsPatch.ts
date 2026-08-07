@@ -28,7 +28,7 @@ const SENSENOVA_PREFIX = "https://token.sensenova.cn/";
 //  - SensenovaProvider: 40s (packages/core/src/providers/sensenova.ts) —
 //    generous safety margin for the free reasoning model when it's slow.
 const NATIVE_TIMEOUT_MS = 45_000;
-const SENSENOVA_TIMEOUT_MS = 40_000;
+const SENSENOVA_TIMEOUT_MS = 20_000;
 
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;

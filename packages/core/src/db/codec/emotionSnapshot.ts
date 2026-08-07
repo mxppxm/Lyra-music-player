@@ -35,6 +35,5 @@ export function fromRow(r: EmotionSnapshotRow): CurrentEmotion {
     labels: JSON.parse(r.labels_json),
     confidence: r.confidence,
     source: r.source,
-    // predicted_trajectory intentionally omitted; Sprint 1a doesn't persist it
   };
 }

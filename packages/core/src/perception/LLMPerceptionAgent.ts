@@ -84,7 +84,7 @@ export class LLMPerceptionAgent implements PerceptionAgent {
       ];
       const t0 = performance.now();
       const chatPromise = chatWithFallback(this.providers, messages, {
-        max_tokens: 300,
+        max_tokens: 2048,
         temperature: 0.2,
       });
       const timeoutPromise = new Promise<never>((_, reject) => {

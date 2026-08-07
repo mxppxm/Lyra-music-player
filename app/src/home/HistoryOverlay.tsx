@@ -8,7 +8,7 @@ import { songDisplayTitle, songDisplayArtist } from "../library/display";
 import { padHSL } from "../lib/color";
 import { IconHistory } from "./icons";
 import type { DialogueTurn, LibraryTrack } from "../types";
-import type { Orchestrator } from "../turn/Orchestrator";
+import type { Orchestrator } from "@lyra/core/turn/Orchestrator.ts";
 
 const MAX_HISTORY = 50;
 

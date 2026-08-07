@@ -26,6 +26,8 @@ Lyra-music-player/                  # pnpm monorepo (pnpm-workspace.yaml)
 │   ├── feature-gaps.md
 │   ├── music-licensing-policy.md
 │   ├── promotion-strategy.md
+│   ├── recommendation-improvement-plan.md
+│   ├── song-recommendation.md
 │   └── superpowers/                # plans/ and specs/
 ├── scripts/                        # shared build / resource scripts
 ├── start.sh                        # Convenience launcher — cd app && pnpm tauri dev
@@ -39,7 +41,7 @@ The full desktop developer guide lives in [`app/README.md`](./app/README.md).
 - **Personal Music Library** — SQLite-backed storage (desktop: `tauri-plugin-sql`; iOS: `@capacitor-community/sqlite`) with metadata and listening history; bigram tokenization + lyrics embeddings for fast Chinese song matching
 - **Emotional Agent State** — Tracks mood with the PAD model (pleasure / arousal / dominance), listening patterns, and aesthetic preferences; a perception layer blends LLM reads, rule-based signals, and Open-Meteo weather into the current emotional state
 - **Multi-LLM Support** — Pluggable providers (Anthropic, DeepSeek, Zhipu) plus OpenAI-compatible gateways (SupaNet `fxb` on desktop, SenseNova on iOS/core), with automatic fallback and retry on transient errors; OpenAI embeddings for lyrics search
-- **Song Recommender** — Recommends songs by time-of-day and mood via the `song-recommender` strategy
+- **Song Recommender** — Three-pronged strategy: the one-tap start uses time/season/date context; an explicit mood input locks the mood (`moodLocked`) so every follow-up song stays on it (no trajectory prediction); a song-name request (e.g. "山丘") plays the matching track first — local library first, Bilibili search fallback if missing — then returns to mood/time-driven flow
 - **Bilibili Integration** — CORS proxy to `api.bilibili.com`, DASH audio streaming, FFT-extracted audio features (energy, spectral centroid → real PAD), and lyrics extraction with semantic embeddings
 - **Native iOS Playback** — Custom `LyraAudioPlugin` with a native playback queue for long background listening, lock-screen controls, and Live Activity (Dynamic Island)
 - **Immersive Player** — One-tap Lyra start, immersive chrome that persists across song switches, emotion-glow backdrop, and restrained motion (crossfades, AnimatedMount overlays, collapsing dock)
@@ -174,6 +176,8 @@ chore(lyra):    build, dependencies, tooling
 - [Feature gaps](./docs/feature-gaps.md)
 - [Music licensing policy](./docs/music-licensing-policy.md)
 - [Promotion strategy](./docs/promotion-strategy.md)
+- [Song recommendation architecture](./docs/song-recommendation.md)
+- [Recommendation strategy improvement plan](./docs/recommendation-improvement-plan.md)
 - [Design specs & plans](./docs/superpowers/)
 
 ## License

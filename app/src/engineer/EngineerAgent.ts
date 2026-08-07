@@ -103,7 +103,7 @@ export class EngineerAgent {
     const t0 = performance.now();
     try {
       const res = await chatWithFallback(this.providers, messages, {
-        max_tokens: 2048,
+        max_tokens: 8192,
         temperature: 0.5,
       });
       rawContent = res.content;

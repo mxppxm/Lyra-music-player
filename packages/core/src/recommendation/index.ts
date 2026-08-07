@@ -23,7 +23,7 @@ export {
   timeContextToPseudoTarget,
   timeContextScore,
 } from "./timeContext";
-export type { TimeContext, TimePeriod, Season } from "./timeContext";
+export type { TimeContext, TimePeriod, Season, WeatherContext } from "./timeContext";
 export {
   profileQualityMultiplier,
   tagOverlap,

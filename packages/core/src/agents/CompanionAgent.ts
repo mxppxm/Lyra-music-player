@@ -140,7 +140,7 @@ function buildBrief(i: CompanionInput): string {
   const recentPlaysBlock = buildRecentPlaysBlock(i);
 
   const parts = [
-    `用户的话: ${i.userUtterance || "(她/他刚打开 app,还没说话)"}`,
+    `用户的话: ${i.userUtterance || "(无)"}`,
     `此刻情绪: PAD=(p=${pad.p.toFixed(2)}, a=${pad.a.toFixed(2)}, d=${pad.d.toFixed(2)}), labels=[${labels.join(",")}], confidence=${confidence.toFixed(2)}`,
     `你的灵魂状态:`,
     `- backbone: ${soul.musical_taste_base.backbone}`,
@@ -168,6 +168,13 @@ function buildBrief(i: CompanionInput): string {
         : "休息日";
     parts.push(
       `现在是什么时候: ${timeCtx.pseudoTarget}（${timeCtx.seasonZh}季 · ${timeCtx.weekdayZh} · ${timeCtx.periodZh} · ${workState}）`,
+    );
+  }
+
+  // Mood-lock hint: when user explicitly set a mood,选的歌必须紧扣
+  if (i.recommendation?.moodLocked) {
+    parts.push(
+      `⚠ 心情锁定模式：用户当前处于心情锁定状态，选歌必须严格贴合 labels=[${labels.join(",")}] 与 PAD 方向，不要偏离。rationale 也要呼应这个锁定情绪。`,
     );
   }
 
@@ -249,7 +256,7 @@ export class CompanionAgent {
     const res = await chatWithFallback(this.providers, messages, {
       // Bumped 1024 → 3000 to survive GLM-5.x reasoning burn on the Zhipu
       // fallback path. Anthropic (primary) treats this as an upper cap.
-      max_tokens: 3000,
+      max_tokens: 8192,
       temperature: 0.7,
       response_format: { type: "json_object" },
       enable_thinking: false,
@@ -276,7 +283,7 @@ export class CompanionAgent {
         { role: "user", content: buildCorrectionBrief(picked, candidateIds) },
       ];
       const retryRes = await chatWithFallback(this.providers, retryMessages, {
-        max_tokens: 1500,
+        max_tokens: 8192,
         temperature: 0.3,
         response_format: { type: "json_object" },
         enable_thinking: false,

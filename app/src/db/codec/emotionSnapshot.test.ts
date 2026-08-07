@@ -29,12 +29,6 @@ describe("emotionSnapshot codec", () => {
     expect(fromRow(row)).toEqual(sampleEmotion);
   });
 
-  it("fromRow drops predicted_trajectory (v0.2 feature; not persisted in 1a)", () => {
-    const row = toRow(sampleEmotion, { id: "snap-3", timestamp: 3000 });
-    const restored = fromRow(row);
-    expect(restored.predicted_trajectory).toBeUndefined();
-  });
-
   it("preserves unicode labels", () => {
     const withUnicode: CurrentEmotion = {
       ...sampleEmotion,

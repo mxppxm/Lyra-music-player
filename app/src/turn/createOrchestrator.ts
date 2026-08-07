@@ -1,7 +1,5 @@
-import { Orchestrator } from "./Orchestrator";
-import { EmotionAgent } from "../agents/EmotionAgent";
-import { CompanionAgent } from "../agents/CompanionAgent";
-import { LibraryAgent } from "../agents/LibraryAgent";
+import { Orchestrator } from "@lyra/core";
+import { EmotionAgent, CompanionAgent, LibraryAgent } from "@lyra/core";
 import { createSoulStore } from "./soulStore";
 import * as turnRepo from "../db/repo/turnRepo";
 import { playFile, stopPlayback, pausePlayback, resumePlayback } from "../audio/player";

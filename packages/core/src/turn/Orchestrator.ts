@@ -20,6 +20,9 @@ import { buildRecommendationContext } from "../recommendation";
 import { computeTimeContext } from "../recommendation/timeContext";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import { parseArtistIntent } from "../library/parseArtistIntent";
+import {
+  resolveSongIntent,
+} from "../library/songIntent";
 
 export type PrefetchNextResult = {
   url: string;
@@ -99,6 +102,12 @@ export class Orchestrator {
   private perceptionBias: PerceptionBias | null = null;
   /** Guard against concurrent fulfillProactive calls. */
   private proactiveInFlight = false;
+  /** Serialises all state transitions (auto-advance, native sync, skip, user
+   *  input). Without this, concurrent play events (onSongComplete vs
+   *  onNativeAutoAdvanced, ended + progress fallback) interleave mid-flight
+   *  and stomp each other's currentTurn / pendingEvents / nativeQueuePlan /
+   *  emit — visible as "thinking…" while audio plays, then a sudden swap. */
+  private transitionChain: Promise<void> = Promise.resolve();
   /** Ordered plan for native queue — head plays after the current track. */
   private nativeQueuePlan: Array<{
     song: LibraryTrack;
@@ -119,7 +128,7 @@ export class Orchestrator {
    * 连播时持续用它做 pseudoTarget，保证整条流都和入口心情相关，
    * 直到用户下一次新输入才更新。
    */
-  private sessionMoodAnchor: { labels: string[]; pseudoTarget: string } | null = null;
+  private sessionMoodAnchor: { labels: string[]; pseudoTarget: string; locked: boolean } | null = null;
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
@@ -217,6 +226,18 @@ export class Orchestrator {
   private emit(s: OrchestratorState): void {
     this.state = s;
     for (const cb of this.subs) cb(s);
+  }
+
+  /** Run a state transition serially: later transitions wait for earlier
+   *  ones to finish, so two play events can never interleave. The chain stays
+   *  alive even when a transition rejects. */
+  private enqueueTransition<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.transitionChain.then(fn, fn);
+    this.transitionChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   /** Finalise the previous turn: fold events, optionally apply verbal, update soul, persist. */
@@ -353,6 +374,7 @@ export class Orchestrator {
 
     const recCtx = await buildRecommendationContext(soul, {
       emotionLabels: emotion.labels,
+      moodLocked: this.sessionMoodAnchor?.locked ?? false,
     });
     const excludeIds = new Set(recCtx.excludeIds);
     const immediateExcludeIds = new Set<string>();
@@ -420,21 +442,117 @@ export class Orchestrator {
     return { song, rationale: chosen.rationale };
   }
 
+  /**
+   * Play a song matched by name (principles 3: "山丘" → 《山丘》).
+   * Skips emotion analysis — single-candidate companion.choose for a natural
+   * rationale, with template fallback. Does NOT update sessionMoodAnchor
+   * (点歌不覆盖心情锚点).
+   */
+  private async playSongByIntent(
+    song: LibraryTrack,
+    text: string,
+  ): Promise<void> {
+    this.emit({ kind: "thinking", user_utterance: text });
+    const clock = this.deps.clock ?? Date.now;
+    const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
+
+    try {
+      // ── Rationale: companion.choose single-candidate, or template ──
+      let rationale = "";
+      try {
+        const { companion, soulStore } = this.deps;
+        const soul = await soulStore.load();
+        const profileMap = await musicProfileRepo.getBatch([song.id]);
+        const { livingPortrait, topFacts } = getMemoryContext();
+        const recCtx = await buildRecommendationContext(soul, {
+          emotionLabels: [],
+        });
+        const chosen = await companion.choose({
+          userUtterance: text,
+          currentEmotion: {
+            pad: soul.dynamic_mood.current_pad,
+            labels: [],
+            confidence: 0.2,
+            source: "emotion-agent-inferred",
+          },
+          soul,
+          candidates: [
+            { ...song, musicProfile: profileMap.get(song.id) ?? null },
+          ],
+          livingPortrait,
+          topFacts,
+          recommendation: recCtx,
+        });
+        rationale = chosen.rationale;
+      } catch {
+        // companion failed — use template
+      }
+      if (!rationale) {
+        const display =
+          song.title?.match(/《([^》]+)》/)?.[1] ??
+          song.title ??
+          "这首歌";
+        rationale = `你点的《${display}》`;
+      }
+
+      // ── Build & insert turn ──
+      const pad = { p: 0, a: 0, d: 0 };
+      const turn: DialogueTurn = {
+        id: idGen(),
+        timestamp: clock(),
+        current_emotion: {
+          pad,
+          labels: [],
+          confidence: 0.2,
+          source: "emotion-agent-inferred",
+        },
+        user_utterance: { modality: "text", content: text },
+        agent_response: { song_id: song.id, rationale },
+        user_reaction: {
+          behavioral: {
+            listen_duration_ms: 0,
+            completed: false,
+            skipped: false,
+            repeated: 0,
+            volume_delta: 0,
+          },
+          silence_positive: false,
+        },
+        emotion_delta: ZERO_PAD,
+      };
+      await this.deps.turnRepo.insertTurn(turn);
+
+      // ── Play ──
+      try {
+        await this.deps.audio.playFile(song.path, song.duration_ms ?? null);
+      } catch (err) {
+        console.error("[lyra] playSongByIntent playback failed:", err);
+        this.emit({
+          kind: "error",
+          message: "播放失败，检查下网络或音频设备？",
+        });
+        return;
+      }
+
+      this.currentTurn = turn;
+      this.currentSong = song;
+      this.pendingEvents = [];
+      this.rationaleBySongId.set(song.id, rationale);
+      this.emit({ kind: "playing", turn, song });
+
+      // NOTE: sessionMoodAnchor intentionally NOT updated here.
+      // 点歌不覆盖心情锚点——播完连播回到原有的心情锁定或时间驱动。
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[lyra] playSongByIntent error:", err);
+      this.emit({ kind: "error", message: msg });
+    }
+  }
+
   private computeAutoAdvanceBaseEmotion(
-    turnTimestamp: number,
+    _turnTimestamp: number,
     endedEmotion: import("../types").CurrentEmotion,
   ): import("../types").CurrentEmotion {
-    const clock = this.deps.clock ?? Date.now;
-    const elapsed_min = (clock() - turnTimestamp) / 60_000;
-    const pt = endedEmotion.predicted_trajectory;
-    if (pt !== undefined && elapsed_min >= 3 && elapsed_min <= pt.horizon_min) {
-      return {
-        pad: pt.predicted_pad,
-        labels: endedEmotion.labels,
-        confidence: endedEmotion.confidence,
-        source: "emotion-agent-inferred",
-      };
-    }
     return endedEmotion;
   }
 
@@ -599,7 +717,30 @@ export class Orchestrator {
   }
 
   async onUserInput(text: string): Promise<void> {
+    // User input is always valid — but it must not interleave with an
+    // in-flight auto-advance / native-sync / skip transition, or two of them
+    // would finalise the same turn and call playFile twice. Queue it like
+    // every other transition.
+    return this.enqueueTransition(async () => {
     const emotionAgent = this.deps.emotion;
+
+    // ── Song name intent: 《山丘》 or short song-name-like input ──
+    // Check BEFORE emotion analysis — if it's a song name, skip the mood pipeline.
+    const songIntent = await resolveSongIntent(text);
+    if (songIntent.kind === "song") {
+      // Finalise any in-flight turn as a skip so stats stay honest
+      if (this.currentTurn) {
+        this.pendingEvents.push({ kind: "skip" });
+        await this.finalisePreviousTurn(
+          undefined,
+          this.currentTurn.current_emotion.pad,
+        );
+      }
+      this.nativeQueuePlan = [];
+      this.activeArtistFilter = null;
+      await this.playSongByIntent(songIntent.song, text);
+      return;
+    }
 
     // If we have a proactive-pending intent, commit it as a real turn first
     // (backdated with modality "proactive-open"), then process the utterance.
@@ -691,6 +832,7 @@ export class Orchestrator {
             this.sessionMoodAnchor = {
               labels: [...blended.labels],
               pseudoTarget: text.trim() || blended.labels.join(" "),
+              locked: true,
             };
           }
           await this.finalisePreviousTurn(text, blended.pad);
@@ -703,6 +845,7 @@ export class Orchestrator {
       console.error("[lyra] orchestrator error:", err);
       this.emit({ kind: "error", message: msg });
     }
+    });
   }
 
   /** Record listen progress — keeps running maximum of ms listened. */
@@ -716,6 +859,7 @@ export class Orchestrator {
    * No-ops while already thinking / playing / pending.
    */
   async onLyraStart(): Promise<void> {
+    return this.enqueueTransition(async () => {
     const kind = this.state.kind;
     if (kind === "thinking" || kind === "playing" || kind === "proactive-pending") {
       return;
@@ -742,6 +886,7 @@ export class Orchestrator {
       this.sessionMoodAnchor = {
         labels: defaultLabels,
         pseudoTarget: timeCtx.pseudoTarget,
+        locked: false,
       };
       await this.runTurnWithEmotion(
         emotion,
@@ -755,15 +900,20 @@ export class Orchestrator {
       console.error("[lyra] lyra-start error（LLM/选歌/provider 异常）:", err);
       this.emit({ kind: "error", message: msg });
     }
+    });
   }
 
   /**
    * User skipped the song. Fold skip event into current turn, finalise it,
-   * then auto-advance to the next song — same flow as onSongComplete but
-   * without the predicted_trajectory carry-forward (skip = rejection signal,
-   * keep the baseline emotion unchanged).
+   * then auto-advance to the next song — same flow as onSongComplete.
    */
   async onSkip(): Promise<void> {
+    // Capture the turn being skipped. If another transition already advanced
+    // past it while we were queued, the song the user wanted to skip is
+    // already gone — stop() must never kill the audio that replaced it.
+    const targetTurn = this.currentTurn;
+    return this.enqueueTransition(async () => {
+    if (this.currentTurn !== targetTurn) return;
     if (!this.currentTurn) return;
 
     // Emit perception skip event (best-effort, optional bus).
@@ -812,6 +962,7 @@ export class Orchestrator {
       console.error("[lyra] skip auto-advance error:", err);
       this.emit({ kind: "error", message: msg });
     }
+    });
   }
 
   /**
@@ -827,6 +978,9 @@ export class Orchestrator {
     rationale: string,
     emotion: CurrentEmotion,
   ): Promise<void> {
+    // User replay is a full transition (stop + playFile) — must not interleave
+    // with an in-flight auto-advance, or stop() would kill the wrong audio.
+    return this.enqueueTransition(async () => {
     await this.deps.audio.stop();
 
     // Finalise any in-flight turn as a skip so its stats stay honest.
@@ -871,6 +1025,7 @@ export class Orchestrator {
     this.currentSong = track;
     this.pendingEvents = [];
     this.emit({ kind: "playing", turn, song: track });
+    });
   }
 
   async onPause(): Promise<void> {
@@ -958,6 +1113,16 @@ export class Orchestrator {
    * Fold the completed turn and sync Orchestrator state without calling play.
    */
   async onNativeAutoAdvanced(songId: string): Promise<void> {
+    // Duplicate event — native already synced this song.
+    if (this.currentSong?.id === songId) return;
+    // Capture the turn this native advance refers to. If another transition
+    // (manual playFile, skip, completion) already moved past it while we were
+    // queued, the prefetched track is no longer next — drop the event instead
+    // of re-emitting a stale "playing" and fighting the audio that's on.
+    const targetTurn = this.currentTurn;
+    return this.enqueueTransition(async () => {
+    if (this.currentSong?.id === songId) return;
+    if (this.currentTurn !== targetTurn) return;
     if (!this.currentTurn) return;
     if (this.state.kind === "playing" && this.state.paused) return;
 
@@ -1038,6 +1203,7 @@ export class Orchestrator {
       console.error("[lyra] native auto-advance sync error:", err);
       this.emit({ kind: "error", message: msg });
     }
+    });
   }
 
   /**
@@ -1089,6 +1255,13 @@ export class Orchestrator {
    * we're in idle/error state and the event arrived stale).
    */
   async onSongComplete(): Promise<void> {
+    // Capture the turn this completion refers to. If another transition
+    // (native auto-advance, skip, a prior completion) already advanced past
+    // it while we were queued, this completion is stale — drop it instead of
+    // picking a second song and stomping the one already playing.
+    const targetTurn = this.currentTurn;
+    return this.enqueueTransition(async () => {
+    if (this.currentTurn !== targetTurn) return;
     if (!this.currentTurn) return;
     // Manual pause takes priority — never auto-advance while paused.
     if (this.state.kind === "playing" && this.state.paused) return;
@@ -1145,6 +1318,7 @@ export class Orchestrator {
       console.error("[lyra] auto-advance error:", err);
       this.emit({ kind: "error", message: msg });
     }
+    });
   }
 }
 

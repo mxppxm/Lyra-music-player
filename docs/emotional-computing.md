@@ -73,12 +73,10 @@ CurrentEmotion {
   labels: string[]                             // 2-3 个中文标签
   confidence: number                           // [0, 1]
   source: "emotion-agent-inferred" | "user-declared" | "ring-signal"
-  predicted_trajectory?: {                     // 5-120 分钟前瞻预测
-    horizon_min: number
-    predicted_pad: { p, a, d }
-  }
 }
 ```
+
+> 更新（2026-07-15）：`predicted_trajectory` 字段已随推荐策略改造彻底移除（见 `docs/recommendation-improvement-plan.md` M1）——心情锁定模式下不再允许 LLM 猜测情绪走向。
 
 **中文情绪捕获的关键设计**（`prompts/emotion.ts:6–24`）：
 
@@ -126,7 +124,7 @@ valence (0..1)  ↔  pleasure  (-1..1)     targetP = (p + 1) / 2
 | `app/src/db/codec/emotionSnapshot.ts` | `emotion_snapshots(id, timestamp, turn_id, pad_p/a/d, labels_json, confidence, source)` |
 | `app/src/db/repo/emotionRepo.ts` | `insertSnapshot` / `listSnapshotsForTurn` |
 
-**注意**：`predicted_trajectory` 字段**目前不落盘**（codec 第 38 行显式跳过）。Sprint 1a 只存已发生的 PAD，预测轨迹仅用于当次决策。
+**注意**（2026-07-15 更新）：`predicted_trajectory` 已从类型与 prompt 中彻底移除（推荐策略改造 M1），不再存在“不落盘”的说法。
 
 ### 2.5 编排层：情绪 → 音乐 → 反馈 闭环
 
@@ -171,7 +169,7 @@ valence (0..1)  ↔  pleasure  (-1..1)     targetP = (p + 1) / 2
 
 以下四项是当前 emotional computing 的显性 gap，任何后续 sprint 都应从这里挑：
 
-1. **`predicted_trajectory` 未落盘** — 类型已定义，codec 显式跳过；后果：无法做跨 turn 的预测精度评估。
+1. **~~`predicted_trajectory` 未落盘~~ → 已移除** — 2026-07-15 推荐策略改造中彻底删除该字段（心情锁定下禁止轨迹漂移）；此前的跨 turn 预测精度评估 TODO 一并关闭。
 2. **Confidence calibration** — `pad-scoring-rubric.md` 的评分细则尚未接入 prompt；等 7 天使用观察后再调。
 3. **多模态融合** — 智能戒指 HRV / 心率作为 **arousal 轴** 的物理校准输入（`需求.md` 已列为创新方向），尚未接线。
 4. **Appraisal-theoretic 推理** — CAPE 数据集"先描述事件、再推情绪"的路径未尝试；对复杂事件驱动情绪的准确率有潜在提升。

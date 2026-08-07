@@ -50,10 +50,16 @@ async function biliGet(path: string, params: Record<string, string>): Promise<an
  * 搜索 B 站"百万豪装录音棚"系列歌曲。
  * 使用搜索 API（/x/web-interface/search/type），不需要 WBI 签名，
  * 从海外也能正常访问。
+ *
+ * `forceKeyword`：可选，提供时直接用该词搜索（跳过 hint 判断）。
+ * 用于歌名点播等场景，保证永远限定在频道内按歌名搜——
+ * 否则 hint 判断对长歌名/含空格/含"累烦有点"等词的歌名会退化为
+ * 只搜频道名（结果与歌名无关）。
  */
 export async function searchBilibili(
   query: string,
   limit = 200,
+  forceKeyword?: string,
 ): Promise<BilibiliSearchResult> {
   const seen = new Set<string>();
   const tracks: BilibiliTrack[] = [];
@@ -66,7 +72,8 @@ export async function searchBilibili(
     hint.length <= 12 &&
     !hint.includes(" ") &&
     !/有点|累|烦|延续|lyra/i.test(hint);
-  const searchKeyword = useHint ? `百万豪装录音棚 ${hint}` : "百万豪装录音棚";
+  const searchKeyword =
+    forceKeyword ?? (useHint ? `百万豪装录音棚 ${hint}` : "百万豪装录音棚");
 
   // 10 页 ≈ 200 个视频，扩大曲库减少重复
   const MAX_PAGES = 10;

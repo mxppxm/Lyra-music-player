@@ -16,6 +16,8 @@ export type BuildContextOpts = {
   turns?: DialogueTurn[];
   /** EmotionAgent labels for mood matching in LibraryAgent. */
   emotionLabels?: readonly string[];
+  /** When true, mood/pad weighting is amplified (mood-lock mode). */
+  moodLocked?: boolean;
 };
 
 /**
@@ -44,7 +46,7 @@ export async function buildRecommendationContext(
 
   const recentPlays = extractPlayHistory(turns);
   const excludeIds = buildExcludeSet(recentPlays, {
-    librarySize: opts.librarySize,
+    librarySize,
   });
   const fatigueByTrack = buildFatigueMap(recentPlays);
 
@@ -69,6 +71,7 @@ export async function buildRecommendationContext(
     soul,
     emotionLabels: opts.emotionLabels ?? [],
     timeContext: computeTimeContext(),
+    moodLocked: opts.moodLocked ?? false,
   };
 }
 

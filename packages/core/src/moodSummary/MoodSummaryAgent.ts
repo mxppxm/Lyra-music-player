@@ -91,7 +91,7 @@ export class MoodSummaryAgent {
     ];
     const t0 = performance.now();
     const res = await chatWithFallback(this.providers, messages, {
-      max_tokens: 1500,
+      max_tokens: 8192,
       temperature: 0.7,
       response_format: { type: "json_object" },
       enable_thinking: false,

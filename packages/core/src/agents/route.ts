@@ -106,7 +106,7 @@ async function chatWithRetry(
     try {
       const res = await provider.chat(messages, opts);
       console.log(
-        `[lyra] provider ${provider.id} responded in ${Date.now() - startedAt}ms`,
+        `[lyra] provider ${provider.id} responded in ${Date.now() - startedAt}ms (model=${res.model ?? opts?.model ?? "unknown"})`,
       );
       return res;
     } catch (err) {
@@ -145,7 +145,9 @@ export async function chatWithFallback(
   for (const provider of providers) {
     try {
       const res = await chatWithRetry(provider, messages, opts);
-      console.log(`[lyra] answer from provider: ${provider.id}`);
+      console.log(
+        `[lyra] answer from provider: ${provider.id} (model=${res.model ?? opts?.model ?? "unknown"})`,
+      );
       return res;
     } catch (err) {
       lastErr = err;

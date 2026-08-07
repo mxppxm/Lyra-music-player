@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { HomeView } from "./HomeView";
-import type { Orchestrator, OrchestratorState } from "../turn/Orchestrator";
+import type { Orchestrator, OrchestratorState } from "@lyra/core/turn/Orchestrator.ts";
 
 // ── Stub orchestrator factory ─────────────────────────────────────────────────
 

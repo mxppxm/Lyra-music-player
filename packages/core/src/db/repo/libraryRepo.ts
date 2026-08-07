@@ -94,3 +94,27 @@ export async function deleteTrackCascade(id: string): Promise<void> {
   await db.execute("DELETE FROM library_features WHERE track_id = ?", [id]);
   await db.execute("DELETE FROM library_tracks WHERE id = ?", [id]);
 }
+
+/**
+ * Find tracks whose title contains any of the given query strings.
+ * Matching is case-insensitive substring. Results sorted by play_count desc.
+ * Use for "歌名优先匹配": user types "山丘" → finds 《山丘》in library.
+ */
+export async function findByTitle(queries: string[]): Promise<LibraryTrack[]> {
+  if (queries.length === 0) return [];
+  const all = await listAll();
+  const norm = queries
+    .map((q) => q.toLowerCase().trim())
+    .filter((q) => q.length >= 2);
+  if (norm.length === 0) return [];
+  return all
+    .filter((t) => {
+      const title = (t.title ?? "").toLowerCase();
+      return norm.some((q) => title.includes(q));
+    })
+    .sort(
+      (a, b) =>
+        ((b.metadata as any)?.play_count ?? 0) -
+        ((a.metadata as any)?.play_count ?? 0),
+    );
+}

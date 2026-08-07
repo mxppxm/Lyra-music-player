@@ -5,25 +5,25 @@ import type {
   ChatResponse,
 } from "../types";
 
-const DEFAULT_MODEL = "sensenova-6.7-flash-lite";
+const DEFAULT_MODEL = "deepseek-v4-flash";
 // SenseNova OpenAI-compatible gateway. Replaces the retired fxb gateway
 // (fxb.supa.net.cn:6443 — no CORS preflight support + 37% requests hung 50s+).
-// Standard 443 port; measured latency 0.5~3s, stable.
+// Standard 443 port. Latency is bursty — measured 0.5~21s TTFB (2026-08) — so
+// CoT is disabled by default (see chat()) and the retry/fallback layer in
+// agents/route.ts absorbs the tail.
 // CSP connect-src allowlist in tauri.conf.json must include this host.
 //
-// Default model is SenseNova's own free-tier `sensenova-6.7-flash-lite`
-// (NOT DeepSeek's paid `deepseek-v4-flash`) so this provider costs nothing.
+// Default model: gateway-proxied `deepseek-v4-flash`（用户指定优先 flash）。
 const ENDPOINT = "https://token.sensenova.cn/v1/chat/completions";
 /**
- * Per-request timeout — the gateway is stable (0.5~3s measured), so 40s is a
+ * Per-request timeout — the gateway is stable (0.5~3s measured), so 20s is a
  * generous safety margin so a slow reasoning pass doesn't get cut short.
  */
-const TIMEOUT_MS = 40_000;
+const TIMEOUT_MS = 20_000;
 
 /**
  * SensenovaProvider — OpenAI-compatible gateway (token.sensenova.cn) serving
- * sensenova-6.7-flash-lite (SenseNova's free model). Default provider per
- * routing §3.5.
+ * deepseek-v4-flash（用户指定，flash 优先）。Default provider per routing §3.5.
  */
 export class SensenovaProvider implements ModelProvider {
   readonly id = "sensenova" as const;
@@ -49,6 +49,16 @@ export class SensenovaProvider implements ModelProvider {
     if (opts?.max_tokens != null) body.max_tokens = opts.max_tokens;
     if (opts?.temperature != null) body.temperature = opts.temperature;
     if (opts?.response_format) body.response_format = opts.response_format;
+    // SenseNova's gateway only honors the OpenAI-style `thinking` param —
+    // `enable_thinking` (Zhipu's knob) is silently ignored and the model
+    // still burns time on CoT. Map ChatOptions.enable_thinking=false →
+    // thinking:{type:"disabled"}: measured latency 18s → 0.8s on this
+    // gateway (2026-08, token.sensenova.cn).
+    if (opts?.enable_thinking === false) {
+      body.thinking = { type: "disabled" };
+    }
+
+    console.log(`[lyra] sensenova request: model=${String(body.model)} (max_tokens=${String(body.max_tokens ?? "-")})`);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -71,7 +81,7 @@ export class SensenovaProvider implements ModelProvider {
 
       const data = await res.json();
       const message = data.choices?.[0]?.message;
-      // sensenova-6.7-flash-lite is a reasoning model: the final answer lands in
+      // deepseek-v4-flash is a reasoning model: the final answer lands in
       // `content`; when the token budget is fully burned by the CoT phase,
       // `content` can be empty while the thoughts live in `reasoning`
       // (older DeepSeek responses used `reasoning_content` — keep both).

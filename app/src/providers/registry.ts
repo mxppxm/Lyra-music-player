@@ -1,25 +1,5 @@
-import type { ModelProvider, ProviderId } from "../types";
-
-export class ProviderRegistry {
-  private providers = new Map<ProviderId, ModelProvider>();
-
-  register(p: ModelProvider): void {
-    this.providers.set(p.id, p);
-  }
-
-  get(id: ProviderId): ModelProvider {
-    const p = this.providers.get(id);
-    if (!p) throw new Error(`provider not registered: ${id}`);
-    return p;
-  }
-
-  has(id: ProviderId): boolean {
-    return this.providers.has(id);
-  }
-
-  list(): ProviderId[] {
-    return [...this.providers.keys()];
-  }
-}
-
-export const registry = new ProviderRegistry();
+// providers/registry.ts — 统一使用 @lyra/core 的 ProviderRegistry 单例
+// （app 桌面端 bootProviders 注册与 core Orchestrator/agents 查询必须
+//   命中同一 registry，否则桌面端 new EmotionAgent() 会因 core registry
+//   为空而抛错、createDefaultOrchestrator 返回 null）
+export * from "@lyra/core/providers/registry";

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import type { Orchestrator, OrchestratorState } from "./Orchestrator";
+import type { Orchestrator, OrchestratorState } from "@lyra/core/turn/Orchestrator.ts";
 
 export function useTurn(orc: Orchestrator): {
   state: OrchestratorState;

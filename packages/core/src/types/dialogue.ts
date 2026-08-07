@@ -6,10 +6,6 @@ export type CurrentEmotion = {
   labels: string[];
   confidence: number;
   source: "emotion-agent-inferred" | "user-declared" | "ring-signal";
-  predicted_trajectory?: {
-    horizon_min: number;
-    predicted_pad: PAD;
-  };
 };
 
 export type UserUtterance = {

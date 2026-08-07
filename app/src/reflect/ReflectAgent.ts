@@ -198,7 +198,7 @@ export class ReflectAgent {
     ];
     const t0 = performance.now();
     const res = await chatWithFallback(this.providers, messages, {
-      max_tokens: 4096,
+      max_tokens: 8192,
       temperature: 0.5,
       response_format: { type: "json_object" },
       enable_thinking: false,

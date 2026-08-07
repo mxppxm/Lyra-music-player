@@ -26,6 +26,8 @@ Lyra-music-player/                  # pnpm monorepo（pnpm-workspace.yaml）
 │   ├── feature-gaps.md
 │   ├── music-licensing-policy.md
 │   ├── promotion-strategy.md
+│   ├── recommendation-improvement-plan.md
+│   ├── song-recommendation.md
 │   └── superpowers/                # plans/ 与 specs/
 ├── scripts/                        # 共享构建 / 资源脚本
 ├── start.sh                        # 便捷启动脚本 — cd app && pnpm tauri dev
@@ -39,7 +41,7 @@ Lyra-music-player/                  # pnpm monorepo（pnpm-workspace.yaml）
 - **本地音乐库** — 基于 SQLite 存储（桌面：`tauri-plugin-sql`；iOS：`@capacitor-community/sqlite`）元数据与收听历史；通过 bigram 分词 + 歌词语义嵌入快速匹配中文歌曲
 - **情感 agent 状态** — 用 PAD 模型（愉悦度 / 激活度 / 支配度）追踪心境、收听模式与审美偏好；感知层将 LLM 判断、规则信号与 Open-Meteo 天气融合进当前情绪状态
 - **多 LLM 支持** — 可插拔 provider（Anthropic、DeepSeek、智谱），外加 OpenAI 兼容网关（桌面为 SupaNet `fxb`，iOS/core 为 SenseNova），支持自动 fallback 与瞬时错误重试；歌词搜索使用 OpenAI 嵌入
-- **歌曲推荐** — 通过 `song-recommender` 策略按时间段与心境推荐歌曲
+- **歌曲推荐** — 三重策略：「点我试试」按时间/季节/日期驱动；输入心情后进入心情锁定（`moodLocked`），后续连播全部围绕该心情（已移除轨迹预测）；输入歌名（如「山丘」）优先直接播放匹配曲目（本地优先，未命中自动搜 B 站），播完再回到心情/时间驱动
 - **Bilibili 集成** — 访问 `api.bilibili.com` 的 CORS 代理、DASH 音频流播放、FFT 提取音频特征（能量、频谱质心 → 真实 PAD），以及歌词提取与语义嵌入
 - **iOS 原生播放** — 自研 `LyraAudioPlugin`，配套原生播放队列，支持后台长时收听、锁屏控制与灵动岛（Live Activity）
 - **沉浸式播放器** — 一键启动 Lyra、跨切歌保持的沉浸式界面、情绪光晕背景，以及克制的动效（crossfade、AnimatedMount 蒙层、可折叠 dock）
@@ -174,6 +176,8 @@ chore(lyra):    构建、依赖、工具
 - [功能缺口](./docs/feature-gaps.md)
 - [音乐授权策略](./docs/music-licensing-policy.md)
 - [推广策略](./docs/promotion-strategy.md)
+- [歌曲推荐架构](./docs/song-recommendation.md)
+- [推荐策略改造方案](./docs/recommendation-improvement-plan.md)
 - [设计规格与计划](./docs/superpowers/)
 
 ## 许可

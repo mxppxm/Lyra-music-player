@@ -28,7 +28,7 @@ function stripNoise(s: string): string {
 }
 
 /** 《下雨天》→ 下雨天 */
-function unwrapBookTitle(s: string): { song?: string; rest: string } {
+export function unwrapBookTitle(s: string): { song?: string; rest: string } {
   const m = s.match(/《([^》]+)》/);
   if (!m) return { rest: s };
   const rest = s.replace(/《[^》]+》/, " ").replace(/\s+/g, " ").trim();

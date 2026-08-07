@@ -56,13 +56,13 @@ describe("ReflectAgent.run", () => {
     expect(out.dreamNarrative).toBe(validResult.dreamNarrative);
   });
 
-  it("uses max_tokens 4096 and temperature 0.5", async () => {
+  it("uses max_tokens 8192 and temperature 0.5", async () => {
     const p = stubProvider(JSON.stringify(validResult));
     const agent = new ReflectAgent({ provider: p });
     await agent.run(baseInput);
     const call = (p.chat as ReturnType<typeof vi.fn>).mock.calls[0];
     const opts = call[1];
-    expect(opts.max_tokens).toBe(4096);
+    expect(opts.max_tokens).toBe(8192);
     expect(opts.temperature).toBe(0.5);
   });
 

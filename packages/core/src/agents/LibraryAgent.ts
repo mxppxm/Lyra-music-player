@@ -103,6 +103,7 @@ function profileScore(
   recCtx: RecommendationContext | undefined,
   audioPad?: PADProfile,
   noveltySeeking = 0.5,
+  moodLocked = false,
 ): number {
   const effectivePad = audioPad ?? profile?.pad_estimate;
 
@@ -120,14 +121,14 @@ function profileScore(
 
   let padScore = 0;
   if (effectivePad) {
-    padScore = padDistance(pad, effectivePad) * 0.28;
+    padScore = padDistance(pad, effectivePad) * (moodLocked ? 0.38 : 0.28);
   }
 
-  const moodScore = tagOverlap(emotionLabels, queryTokens, profile?.mood ?? []) * 0.22;
+  const moodScore = tagOverlap(emotionLabels, queryTokens, profile?.mood ?? []) * (moodLocked ? 0.32 : 0.22);
   const themeScore =
-    tagOverlap(emotionLabels, queryTokens, profile?.lyrical_themes ?? []) * 0.1;
-  const genreScore = genreAffinityScore(profile, recCtx?.soul) * 0.08;
-  const energyScore = energyMatchScore(profile, pad.a) * 0.07;
+    tagOverlap(emotionLabels, queryTokens, profile?.lyrical_themes ?? []) * (moodLocked ? 0.08 : 0.1);
+  const genreScore = genreAffinityScore(profile, recCtx?.soul) * (moodLocked ? 0.06 : 0.08);
+  const energyScore = energyMatchScore(profile, pad.a) * (moodLocked ? 0.06 : 0.07);
 
   // 时间维度：优先用时间上下文（季节/星期/时段/上班休息 → best_for + time_color），
   // 无上下文时退回原有「小时 × time_color」匹配。
@@ -135,10 +136,10 @@ function profileScore(
   const timeMatch = timeCtx
     ? timeContextScore(timeCtx, profile?.best_for ?? [], profile?.time_color ?? "")
     : timeColorScore(nowHour, profile?.time_color ?? "");
-  const timeScore = timeMatch * 0.12;
-  const scenario = scenarioScore(queryTokens, profile?.best_for ?? []) * 0.1;
+  const timeScore = timeMatch * (moodLocked ? 0.06 : 0.12);
+  const scenario = scenarioScore(queryTokens, profile?.best_for ?? []) * (moodLocked ? 0.04 : 0.1);
 
-  const jitterMax = 0.08 + noveltySeeking * 0.18;
+  const jitterMax = moodLocked ? 0.04 + noveltySeeking * 0.06 : 0.08 + noveltySeeking * 0.18;
   const jitter = Math.random() * jitterMax;
 
   let total =
@@ -163,13 +164,14 @@ function applyRecommendationAdjustments(
   if (!recCtx) return baseScore;
 
   let score = baseScore;
+  const moodLocked = recCtx.moodLocked ?? false;
   const fatigue = recCtx.fatigueByTrack.get(trackId) ?? 0;
   if (fatigue > 0) {
-    score -= fatigue * fatiguePenaltyWeight(recCtx.noveltySeeking);
+    score -= fatigue * fatiguePenaltyWeight(recCtx.noveltySeeking, moodLocked);
   }
 
   const fb = recCtx.feedbackStats.get(trackId);
-  const fbPen = feedbackPenalty(fb, recCtx.noveltySeeking);
+  const fbPen = feedbackPenalty(fb, recCtx.noveltySeeking, moodLocked);
   score -= fbPen;
 
   return score;
@@ -242,6 +244,7 @@ export class LibraryAgent {
     const queryTokens = tokenize(target);
     const nowHour = new Date().getHours();
     const noveltySeeking = recCtx?.noveltySeeking ?? 0.5;
+    const moodLocked = recCtx?.moodLocked ?? false;
 
     const scored = filtered.map((track) => {
       const bvid = track.id.startsWith("bili:") ? track.id.slice(5) : null;
@@ -257,6 +260,7 @@ export class LibraryAgent {
         recCtx,
         audioPad,
         noveltySeeking,
+        moodLocked,
       );
       return {
         track,
@@ -270,6 +274,7 @@ export class LibraryAgent {
       scored.map((s) => ({ item: s.track, score: s.score })),
       limit,
       noveltySeeking,
+      moodLocked,
     );
   }
 }

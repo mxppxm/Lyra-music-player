@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { HistoryOverlay, formatRelativeTime } from "./HistoryOverlay";
-import type { Orchestrator } from "../turn/Orchestrator";
+import type { Orchestrator } from "@lyra/core/turn/Orchestrator.ts";
 
 vi.mock("../db/repo/turnRepo", () => ({
   listRecentTurns: vi.fn(),

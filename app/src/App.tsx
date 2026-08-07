@@ -5,7 +5,7 @@ import { isZeroConfigRelease } from "./config/zeroConfig";
 import { HomeView } from "./home/HomeView";
 import { bootProviders } from "./providers/boot";
 import { createDefaultOrchestrator } from "./turn/createOrchestrator";
-import type { Orchestrator } from "./turn/Orchestrator";
+import type { Orchestrator } from "@lyra/core";
 import { bindGlobalKeys } from "./home/keyboard";
 import { reflectNow } from "./reflect/trigger";
 import { readMemoryFile } from "./memory/fileIO";

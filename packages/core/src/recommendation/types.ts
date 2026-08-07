@@ -46,6 +46,9 @@ export type RecommendationContext = {
   artistSessionPlayedIds?: ReadonlySet<string>;
   /** Current + queued ids — used in artist cycle mode to avoid immediate repeats only. */
   immediateExcludeIds?: ReadonlySet<string>;
+  /** When true, mood/pad scoring weights are amplified and penalty/diversity is
+   *  constrained — user explicitly set a mood and wants it locked. */
+  moodLocked?: boolean;
 };
 
 export const RECOMMENDATION_DEFAULTS = {

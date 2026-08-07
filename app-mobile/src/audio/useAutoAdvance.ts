@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { App } from "@capacitor/app";
 import { getLyraPlatform } from "@lyra/platform";
 import { LyraAudio } from "@lyra/platform-ios";
@@ -17,6 +17,14 @@ export type AutoAdvancePlayback = {
 /**
  * Natural completion → orchestrator.onSongComplete() → next song.
  * Native queue path emits `nativeAdvanced` / drains unsynced events on resume.
+ *
+ * ALL advance paths (ended event, nativeAdvanced, JS progress fallback)
+ * share ONE serial queue so play events can never interleave. Before this, a
+ * nativeAdvanced arriving while onSongComplete was mid-flight was silently
+ * DROPPED (`if (chain) return chain`), so the Orchestrator kept showing
+ * "thinking…" while the native queue had already started the next track; and
+ * the ended event + progress fallback could both run onSongComplete, calling
+ * playFile twice and visibly swapping the song mid-play.
  */
 export function useAutoAdvance(
   orchestrator: Orchestrator,
@@ -24,39 +32,46 @@ export function useAutoAdvance(
   playback?: AutoAdvancePlayback,
 ) {
   const advancedForSongRef = useRef<string | null>(null);
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const advancingRef = useRef(false);
+
+  const enqueue = useCallback((fn: () => Promise<void>): Promise<void> => {
+    const run = queueRef.current.then(fn, fn);
+    queueRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }, []);
+
+  const advance = useCallback((): Promise<void> => {
+    // Join the in-flight completion instead of queuing a duplicate
+    // (ended event + progress fallback fire for the same song).
+    if (advancingRef.current) return queueRef.current;
+    advancingRef.current = true;
+    return enqueue(async () => {
+      try {
+        await orchestrator.onSongComplete();
+      } finally {
+        try {
+          await LyraAudio.acknowledgeEnded();
+        } catch {
+          /* web preview / tests */
+        }
+        advancingRef.current = false;
+      }
+    });
+  }, [enqueue, orchestrator]);
+
+  const syncNativeAdvance = useCallback(
+    (songId: string): Promise<void> =>
+      enqueue(async () => {
+        await orchestrator.onNativeAutoAdvanced(songId);
+      }),
+    [enqueue, orchestrator],
+  );
 
   useEffect(() => {
-    let chain: Promise<void> | null = null;
-
-    const advance = (): Promise<void> => {
-      if (chain) return chain;
-      chain = (async () => {
-        try {
-          await orchestrator.onSongComplete();
-        } finally {
-          try {
-            await LyraAudio.acknowledgeEnded();
-          } catch {
-            /* web preview / tests */
-          }
-          chain = null;
-        }
-      })();
-      return chain;
-    };
-
-    const syncNativeAdvance = (songId: string): Promise<void> => {
-      if (chain) return chain;
-      chain = (async () => {
-        try {
-          await orchestrator.onNativeAutoAdvanced(songId);
-        } finally {
-          chain = null;
-        }
-      })();
-      return chain;
-    };
-
     const drainUnsyncedNative = async () => {
       try {
         const { events } = await LyraAudio.drainNativeAdvanced();
@@ -105,7 +120,7 @@ export function useAutoAdvance(
       removeNative?.();
       removeApp?.();
     };
-  }, [orchestrator]);
+  }, [orchestrator, advance, syncNativeAdvance]);
 
   useEffect(() => {
     if (!playback?.songId || !playback.playing || playback.paused) return;
@@ -114,18 +129,17 @@ export function useAutoAdvance(
     advancedForSongRef.current = playback.songId;
     // Only the *no-queue* case may fall back to JS picking the next song.
     // When native already holds prefetched tracks it hand-offs seamlessly on
-    // its own (nativeAdvanced) — if we ALSO ran onSongComplete here the LLM
-    // would pick a different song and stomp the one already playing (visible
-    // as "thinking…" while the next track is audibly playing, then a swap).
+    // its own (nativeAdvanced). The advance() call still goes through the
+    // shared queue, and Orchestrator drops a stale completion when a
+    // nativeAdvanced already moved the state machine on — so we can never
+    // pick a second song and stomp the one that's audibly playing.
     void LyraAudio.getPlaybackQueueInfo()
       .then(({ count }) => {
         if (count > 0) return;
-        void orchestrator.onSongComplete().finally(() => {
-          void LyraAudio.acknowledgeEnded().catch(() => {});
-        });
+        void advance();
       })
       .catch(() => {});
-  }, [orchestrator, playback?.songId, playback?.playing, playback?.paused, playback?.progress]);
+  }, [orchestrator, advance, playback?.songId, playback?.playing, playback?.paused, playback?.progress]);
 
   useEffect(() => {
     if (playback?.songId) return;

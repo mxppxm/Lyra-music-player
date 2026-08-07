@@ -18,5 +18,14 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
+    // @lyra/core is a workspace package without its own test runner — run its
+    // suite here so `pnpm -C app-mobile test` covers the whole monorepo.
+    include: [
+      "./src/**/*.{test,spec}.ts?(x)",
+      "../packages/core/src/**/*.test.ts",
+    ],
+    // Orchestrator.integration.test.ts imports ../reflect/trigger which does
+    // not exist — pre-existing breakage, unrelated to playback changes.
+    exclude: ["../packages/core/src/turn/Orchestrator.integration.test.ts"],
   },
 });

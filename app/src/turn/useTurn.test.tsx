@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useTurn } from "./useTurn";
-import { Orchestrator } from "./Orchestrator";
+import { Orchestrator } from "@lyra/core";
 
 // Uses the Orchestrator stub-friendly constructor
 function makeOrchestrator() {
@@ -42,7 +42,7 @@ function makeOrchestrator() {
       })),
     },
     turnRepo: { insertTurn: vi.fn(async () => {}) },
-    audio: { playFile: vi.fn(async () => {}), stop: vi.fn(async () => {}) },
+    audio: { playFile: vi.fn(async () => {}), stop: vi.fn(async () => {}), pause: vi.fn(async () => {}), resume: vi.fn(async () => {}) },
     clock: () => 1,
     idGen: () => "id",
   };

@@ -86,7 +86,7 @@ export class MusicProfileAgent {
 
     try {
       const res = await chatWithFallback(this.providers, messages, {
-        max_tokens: 1024,
+        max_tokens: 8192,
         temperature: 0.3,
         response_format: { type: "json_object" },
         agent: "music-profile",
