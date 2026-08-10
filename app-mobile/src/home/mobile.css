@@ -18,6 +18,8 @@
   /* Input */
   --lyra-input-height: 46px;
   --lyra-input-radius: 14px;
+  /* Round send button — also drives the capsule's single-line height. */
+  --lyra-send-size: 38px;
 
   /* Dock space the progress row will claim: its 44px height plus the 14px
    * dock gap it cancels while collapsed. */
@@ -1415,28 +1417,51 @@ html[data-lyra-immersive="true"] body {
 
 /* ── Input ────────────────────────────────────────────────────────────── */
 
+/* Unified capsule: the textarea and the round send button live inside one
+ * frosted pill (was two separate rects). The capsule hugs the send button —
+ * a single-line textarea is exactly as tall as the button (see the padding /
+ * line-height math below), so the icon reads as vertically centred instead of
+ * sitting low in a taller field. align-items:flex-end keeps the button pinned
+ * to the bottom edge once the textarea grows past one line. */
 .lyra-mobile-input-wrap {
   display: flex;
+  align-items: flex-end;
   gap: 8px;
-  align-items: stretch;
-}
-
-.lyra-mobile-input {
-  flex: 1;
-  min-height: var(--lyra-input-height);
-  max-height: 120px;
-  padding: 12px 18px;
-  border-radius: var(--lyra-input-radius);
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  outline: none;
-  resize: none;
+  padding: 6px 6px 6px 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
   background: var(--lyra-color-input-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.lyra-mobile-input-wrap:focus-within {
+  border-color: rgba(28, 24, 20, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 0 0 3px rgba(28, 24, 20, 0.06);
+}
+
+/* 8 + 22 + 8 = 38px — the send button's exact height, so one line of text and
+ * the button are the same box and the capsule has no dead space above it. */
+.lyra-mobile-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--lyra-send-size);
+  max-height: 120px;
+  padding: 8px 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
   font-family: var(--lyra-song-family);
   font-size: 16px; /* ≥16px keeps iOS from auto-zooming on focus */
+  line-height: 22px;
   color: var(--lyra-color-song-info);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
   display: block;
 }
 
@@ -1444,28 +1469,39 @@ html[data-lyra-immersive="true"] body {
   color: var(--lyra-color-placeholder);
 }
 
-.lyra-mobile-input:focus {
-  border-color: rgba(28, 24, 20, 0.14);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 0 0 3px rgba(28, 24, 20, 0.06);
-}
-
 .lyra-mobile-send-btn {
-  padding: 12px 18px;
-  border-radius: var(--lyra-input-radius);
+  flex: none;
+  width: var(--lyra-send-size);
+  height: var(--lyra-send-size);
+  padding: 0;
+  border-radius: 50%;
   border: none;
+  display: grid;
+  place-items: center;
+  line-height: 0; /* no inline baseline slack under the icon */
   background: var(--lyra-control-primary-bg);
   color: var(--lyra-control-primary-fg);
-  font: inherit;
-  font-size: 15px;
-  box-shadow: 0 10px 24px rgba(24, 18, 12, 0.18);
-  transition: var(--lyra-transition-control);
+  box-shadow: 0 8px 18px rgba(24, 18, 12, 0.22);
+  transition:
+    transform 160ms ease,
+    opacity 200ms ease,
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.lyra-mobile-send-btn:not(:disabled):active {
+  transform: scale(0.9);
 }
 
 .lyra-mobile-send-btn:disabled {
-  opacity: 0.28;
+  opacity: 0.22;
   box-shadow: none;
+}
+
+.lyra-mobile-send-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 /* ── Motion ─────────────────────────────────────────────────────────────
@@ -1525,7 +1561,13 @@ html[data-lyra-immersive="true"] body {
  * keeps the pre-animation state during the stagger delay without locking
  * the end state, so immersive's own opacity/transform transitions keep
  * working afterwards. */
-.lyra-mobile-content > *:not(.lyra-mobile-cover-shift),
+/* The intro class is only on for the scene change itself. It used to sit on
+ * `.lyra-mobile-content` unconditionally, which made leaving immersive
+ * re-trigger the keyframes: dropping the immersive `animation: none` override
+ * changed animation-name back to module-in, so the copy sat invisible through
+ * a 520ms delay and then popped in — instead of riding its own 480ms opacity
+ * transition back. Off by then, there is no animation left to restart. */
+.lyra-mobile-content--intro > *:not(.lyra-mobile-cover-shift),
 .lyra-mobile-dock,
 .lyra-mobile-idle-slogan {
   animation: lyra-mobile-module-in 420ms var(--lyra-ease-zen) backwards;
@@ -1533,11 +1575,11 @@ html[data-lyra-immersive="true"] body {
 
 /* Scene-change stagger: the dock's FLIP glide takes 560ms, so content waits
  * for it to settle before appearing instead of playing on top of it. */
-.lyra-mobile-content > :nth-child(2) {
+.lyra-mobile-content--intro > :nth-child(2) {
   animation-delay: 520ms;
 }
 
-.lyra-mobile-content > :nth-child(3) {
+.lyra-mobile-content--intro > :nth-child(3) {
   animation-delay: 600ms;
 }
 
@@ -1644,7 +1686,7 @@ html[data-lyra-immersive="true"] body {
 @media (prefers-reduced-motion: reduce) {
   .lyra-text-in,
   .lyra-mobile-stage,
-  .lyra-mobile-content > *:not(.lyra-mobile-cover-shift),
+  .lyra-mobile-content--intro > *:not(.lyra-mobile-cover-shift),
   .lyra-mobile-dock,
   .lyra-mobile-idle-slogan,
   .lyra-mobile-idle-slogan--leaving,

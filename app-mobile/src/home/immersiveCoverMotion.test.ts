@@ -1,11 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
+  bridgePinnedCoverTransform,
   canToggleImmersive,
   centeredRailRole,
   compensateImmersiveCoverPosition,
+  coverTransformCss,
   shouldCenterThinkingPlaceholder,
   shouldShowInlineThinking,
 } from "./immersiveCoverMotion";
+
+describe("bridgePinnedCoverTransform", () => {
+  it("reproduces the pinned rect from the flow box it drops back into", () => {
+    // Pinned visual center (200, 250); the flow box drifted to center (200, 350).
+    const bridge = bridgePinnedCoverTransform(
+      { left: 50, top: 100, width: 300, height: 300 },
+      { left: 100, top: 250, width: 200, height: 200 },
+    );
+
+    expect(bridge).toEqual({ x: 0, y: -100, scale: 1.5 });
+    expect(coverTransformCss(bridge)).toBe("translate(0px, -100px) scale(1.5)");
+  });
+
+  it("is identity when the flow box never moved", () => {
+    const box = { left: 100, top: 200, width: 200, height: 200 };
+    expect(bridgePinnedCoverTransform(box, box)).toEqual({
+      x: 0,
+      y: 0,
+      scale: 1,
+    });
+  });
+});
 
 describe("compensateImmersiveCoverPosition", () => {
   it("cancels layout movement so the visible cover stays screen-centered", () => {

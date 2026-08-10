@@ -11,6 +11,27 @@ export type CoverRect = {
   height: number;
 };
 
+export function coverTransformCss(motion: ImmersiveCoverTransform): string {
+  return `translate(${motion.x}px, ${motion.y}px) scale(${motion.scale})`;
+}
+
+/**
+ * Bridge for un-pinning: the transform that reproduces the pinned element's
+ * on-screen rect from the flow box it falls back into. Transform origin is
+ * the box center, so scaling never moves the center — the translate is a
+ * plain center-to-center delta.
+ */
+export function bridgePinnedCoverTransform(
+  visual: CoverRect,
+  natural: CoverRect,
+): ImmersiveCoverTransform {
+  return {
+    x: visual.left + visual.width / 2 - (natural.left + natural.width / 2),
+    y: visual.top + visual.height / 2 - (natural.top + natural.height / 2),
+    scale: visual.width / Math.max(natural.width, 1),
+  };
+}
+
 export function compensateImmersiveCoverPosition(
   current: ImmersiveCoverTransform,
   rect: CoverRect,

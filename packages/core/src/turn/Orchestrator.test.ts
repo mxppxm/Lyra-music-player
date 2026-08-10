@@ -143,6 +143,30 @@ describe("Orchestrator.onUserInput happy path", () => {
     expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
   });
 
+  it("stops the current track on submit — before the new pick is analysed", async () => {
+    const deps = makeDeps();
+    const order: string[] = [];
+    (deps.audio.stop as any).mockImplementation(async () => {
+      order.push("stop");
+    });
+    (deps.emotion.analyze as any).mockImplementation(async () => {
+      order.push("analyze");
+      return { pad: { p: 0, a: 0, d: 0 }, labels: ["疲惫"], confidence: 1, source: "emotion-agent-inferred" };
+    });
+    const orc = new Orchestrator(deps as any);
+
+    // First song is playing; the second submit must silence it immediately.
+    await orc.onUserInput("来一首歌");
+    (deps.audio.stop as any).mockClear();
+    order.length = 0;
+    await orc.onUserInput("换个心情");
+
+    expect(deps.audio.stop).toHaveBeenCalled();
+    // Silence lands before we spend seconds analysing the next mood.
+    expect(order[0]).toBe("stop");
+    expect(order.indexOf("stop")).toBeLessThan(order.indexOf("analyze"));
+  });
+
   it("inserts a DialogueTurn with all the right fields", async () => {
     const deps = makeDeps();
     const orc = new Orchestrator(deps as any);

@@ -1070,6 +1070,16 @@ export class Orchestrator {
     //  via the proactive engine's recordOutcome path — this is the Orchestrator's
     //  responsibility boundary in v0.2.)
 
+    // The user just asked for something new, so silence the current track the
+    // moment they hit send instead of letting it play through the whole
+    // thinking gap (emotion analysis + pick can take seconds). Unlike
+    // auto-advance there is no continuity to preserve here — hearing the old
+    // song keep going after submitting reads as the input being ignored. Only
+    // the "playing" path has live audio; proactive-pending never started any.
+    if (currentState.kind === "playing") {
+      await this.deps.audio.stop();
+    }
+
     this.emit({ kind: "thinking", user_utterance: text });
 
     await this.updateArtistFilterFromUserInput(text);

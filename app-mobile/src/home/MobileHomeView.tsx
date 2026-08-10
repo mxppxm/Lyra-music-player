@@ -35,9 +35,11 @@ import {
   type CoverRailSlot,
 } from "./ImmersiveCoverRail";
 import {
+  bridgePinnedCoverTransform,
   canToggleImmersive,
   centeredRailRole,
   compensateImmersiveCoverPosition,
+  coverTransformCss,
   shouldCenterThinkingPlaceholder,
   shouldShowInlineThinking,
   type ImmersiveCoverTransform,
@@ -45,6 +47,10 @@ import {
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 const LYRA_START_LABEL = "点我试试";
+/** Matches the `.lyra-mobile-cover-shift` transform transition. */
+const IMMERSIVE_FLIP_MS = 560;
+/** Dock FLIP (560ms) + the last module's delay (600ms) + its own 420ms. */
+const CONTENT_INTRO_MS = 1100;
 
 type MobileHomeViewProps = {
   orchestrator: Orchestrator;
@@ -69,7 +75,12 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   const [lyricsFailed, setLyricsFailed] = useState(false);
   const [lyricsRefreshing, setLyricsRefreshing] = useState(false);
   const coverShiftRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const swipeTrackRef = useRef<HTMLDivElement>(null);
+  const recenterRetryRef = useRef<number | null>(null);
+  const recenterRef = useRef<() => void>(() => {});
+  const coverPinnedRef = useRef(false);
+  const pinTimerRef = useRef<number | null>(null);
   const coverScaleRef = useRef(1);
   const coverMotionRef = useRef<ImmersiveCoverTransform>({
     x: 0,
@@ -109,10 +120,70 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     };
   }, [immersive]);
 
+  // Once the enter glide has landed, take the vinyl out of flow at exactly
+  // the box it already occupies — same transform, same pixels, so nothing
+  // moves. From here on, note height and progress reflows cannot reach it.
+  // Pinning happens strictly between the two glides, never during one.
+  const pinImmersiveCover = useCallback(() => {
+    const el = coverShiftRef.current;
+    if (!el || coverPinnedRef.current) return;
+    const held = el.style.transform;
+    el.style.transition = "none";
+    el.style.transform = "none";
+    const natural = el.getBoundingClientRect();
+    el.style.position = "fixed";
+    el.style.margin = "0";
+    el.style.left = "0px";
+    el.style.top = "0px";
+    el.style.width = `${natural.width}px`;
+    el.style.height = `${natural.height}px`;
+    // An ancestor transform would make `fixed` resolve against that box
+    // instead of the viewport, so measure where left/top 0 actually lands.
+    const origin = el.getBoundingClientRect();
+    el.style.left = `${natural.left - origin.left}px`;
+    el.style.top = `${natural.top - origin.top}px`;
+    el.style.transform = held;
+    void el.offsetWidth;
+    el.style.transition = "";
+    coverPinnedRef.current = true;
+  }, []);
+
+  // Drop back into flow without moving a pixel: whatever the column did to
+  // its layout while we were pinned is absorbed into a bridge transform, so
+  // the exit glide can start from the vinyl's real on-screen position.
+  const releaseImmersiveCover = useCallback((): string | null => {
+    const el = coverShiftRef.current;
+    if (!el || !coverPinnedRef.current) return null;
+    coverPinnedRef.current = false;
+    const visual = el.getBoundingClientRect();
+    el.style.transition = "none";
+    el.style.position = "";
+    el.style.margin = "";
+    el.style.left = "";
+    el.style.top = "";
+    el.style.width = "";
+    el.style.height = "";
+    el.style.transform = "none";
+    const bridge = bridgePinnedCoverTransform(
+      visual,
+      el.getBoundingClientRect(),
+    );
+    const css = coverTransformCss(bridge);
+    el.style.transform = css;
+    // Flush the bridge as the transition's start value — without this the
+    // browser only ever sees the final transform and skips the glide.
+    void el.offsetWidth;
+    el.style.transition = "";
+    coverScaleRef.current = bridge.scale;
+    coverMotionRef.current = bridge;
+    return css;
+  }, []);
+
   // FLIP: glide the cover to the screen center and scale it up when
   // entering immersive mode; "none" on exit animates it back.
   useLayoutEffect(() => {
     if (!immersive) {
+      releaseImmersiveCover();
       coverScaleRef.current = 1;
       coverMotionRef.current = { x: 0, y: 0, scale: 1 };
       setCoverTransform("none");
@@ -128,11 +199,48 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     coverScaleRef.current = scale;
     coverMotionRef.current = { x: dx, y: dy, scale };
     setCoverTransform(`translate(${dx}px, ${dy}px) scale(${scale})`);
-  }, [immersive]);
+  }, [immersive, releaseImmersiveCover]);
 
-  // The disc turns on playback state alone. Gating it on the first progress
-  // tick would stall every freshly centered CD for a beat before it spins.
-  const discPlaying = state.kind === "playing" && !state.paused;
+  const schedulePin = useCallback(
+    (delay: number) => {
+      if (pinTimerRef.current !== null) {
+        window.clearTimeout(pinTimerRef.current);
+      }
+      pinTimerRef.current = window.setTimeout(() => {
+        pinTimerRef.current = null;
+        pinImmersiveCover();
+      }, delay);
+    },
+    [pinImmersiveCover],
+  );
+
+  useEffect(() => {
+    if (!immersive) return;
+    schedulePin(IMMERSIVE_FLIP_MS + 32);
+    // Pinned coordinates are viewport-absolute, so a rotation would strand
+    // the vinyl off-center: fall back into flow, re-center, pin again.
+    const onResize = () => {
+      const bridge = releaseImmersiveCover();
+      if (bridge) setCoverTransform(bridge);
+      recenterRef.current();
+      schedulePin(IMMERSIVE_FLIP_MS + 32);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (pinTimerRef.current === null) return;
+      window.clearTimeout(pinTimerRef.current);
+      pinTimerRef.current = null;
+    };
+  }, [immersive, releaseImmersiveCover, schedulePin]);
+
+  // Turn only once audio is actually moving. The session flips to "playing"
+  // while the track is still loading, and a disc spinning in silence reads as
+  // a bug — the first position poll lands within half a second.
+  const discPlaying =
+    state.kind === "playing" &&
+    !state.paused &&
+    (progress?.elapsedMs ?? 0) > 0;
 
   const title: string =
     state.kind === "playing" || state.kind === "proactive-pending"
@@ -485,16 +593,23 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   // Chrome stays in flow (opacity only) so immersive enter/exit FLIP can
   // measure real boxes. When song/note height changes mid-immersive, nudge
   // the already-applied FLIP translate so the vinyl stays visually pinned.
-  useLayoutEffect(() => {
-    if (!immersive) {
-      stabilizedCoverSongRef.current = currentSongId;
-      return;
-    }
-    const songChanged = stabilizedCoverSongRef.current !== currentSongId;
-    if (!swipePending && !songChanged) return;
-    stabilizedCoverSongRef.current = currentSongId;
+  const recenterImmersiveCover = useCallback(() => {
     const shell = coverShiftRef.current;
     if (!shell) return;
+    // Pinned covers are immune to the column's layout by construction.
+    if (coverPinnedRef.current) return;
+    // The enter/exit FLIP owns the transform while it plays — nudging it
+    // mid-glide would snap the vinyl to center. Retry once it has landed.
+    const sinceToggle = performance.now() - immersiveToggleAtRef.current;
+    if (sinceToggle < IMMERSIVE_FLIP_MS) {
+      if (recenterRetryRef.current === null) {
+        recenterRetryRef.current = window.setTimeout(() => {
+          recenterRetryRef.current = null;
+          recenterRef.current();
+        }, IMMERSIVE_FLIP_MS - sinceToggle + 16);
+      }
+      return;
+    }
     const next = compensateImmersiveCoverPosition(
       coverMotionRef.current,
       shell.getBoundingClientRect(),
@@ -516,7 +631,44 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
         shell.classList.remove("lyra-mobile-cover-shift--repositioning");
       });
     });
-  }, [currentSongId, immersive, swipeDirection, swipePending]);
+  }, []);
+  recenterRef.current = recenterImmersiveCover;
+
+  useLayoutEffect(() => {
+    if (!immersive) {
+      stabilizedCoverSongRef.current = currentSongId;
+      return;
+    }
+    const songChanged = stabilizedCoverSongRef.current !== currentSongId;
+    if (!swipePending && !songChanged) return;
+    stabilizedCoverSongRef.current = currentSongId;
+    recenterImmersiveCover();
+  }, [
+    currentSongId,
+    immersive,
+    recenterImmersiveCover,
+    swipeDirection,
+    swipePending,
+  ]);
+
+  // The song-change hook above only fires on the frame the id changes, but
+  // the note text (and its height) lands later — rationale and lyrics arrive
+  // async, and every reflow of the centered column moves the vinyl's flow
+  // box. Watch the column itself so late layout changes get compensated too.
+  useEffect(() => {
+    if (!immersive) {
+      if (recenterRetryRef.current !== null) {
+        window.clearTimeout(recenterRetryRef.current);
+        recenterRetryRef.current = null;
+      }
+      return;
+    }
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => recenterImmersiveCover());
+    for (const child of Array.from(content.children)) observer.observe(child);
+    return () => observer.disconnect();
+  }, [currentSongId, immersive, noteFlipped, recenterImmersiveCover, state.kind]);
 
   const railStride = swipeStride / coverScaleRef.current;
 
@@ -612,6 +764,25 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     return () => window.clearTimeout(t);
   }, [isSparseIdle, idleLeaving]);
 
+  // The stagger intro belongs to the idle → playing scene change only. Set it
+  // before paint so the very first frame of the content already carries it,
+  // and drop it once it has played out — a class that lingers would re-fire
+  // the keyframes every time an immersive-scoped `animation: none` is lifted.
+  const [contentIntro, setContentIntro] = useState(false);
+  useLayoutEffect(() => {
+    if (isSparseIdle) {
+      setContentIntro(false);
+      return;
+    }
+    setContentIntro(true);
+    const t = window.setTimeout(() => setContentIntro(false), CONTENT_INTRO_MS);
+    return () => window.clearTimeout(t);
+  }, [isSparseIdle]);
+
+  useEffect(() => {
+    if (immersive) setContentIntro(false);
+  }, [immersive]);
+
   const handleLyraStart = () => {
     dockFromRectRef.current = dockRef.current?.getBoundingClientRect() ?? null;
     setIdleLeaving(true);
@@ -664,15 +835,29 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
           if (shouldSuppressClick()) return;
           if (!canToggleImmersive(state.kind)) return;
           const now = performance.now();
-          if (now - immersiveToggleAtRef.current < 560) return;
+          if (now - immersiveToggleAtRef.current < IMMERSIVE_FLIP_MS) return;
           immersiveToggleAtRef.current = now;
-          // Unlock swipe + snap before exit so FLIP isn't fighting the rail.
-          if (immersive) resetSlide();
+          if (immersive) {
+            // Unlock swipe + snap before exit so FLIP isn't fighting the rail,
+            // then hand the exit glide the bridge as its start value. Both
+            // happen in this frame, so chrome fades in step with the vinyl.
+            resetSlide();
+            const bridge = releaseImmersiveCover();
+            if (bridge) setCoverTransform(bridge);
+          }
           setImmersive((v) => !v);
         }}
       >
         {!isSparseIdle && (
-          <div className="lyra-mobile-content">
+          <div
+            className={[
+              "lyra-mobile-content",
+              contentIntro ? "lyra-mobile-content--intro" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            ref={contentRef}
+          >
             {/* One persistent cover shell — never remount on immersive toggle. */}
             <ImmersiveCoverRail
               shiftRef={coverShiftRef}
@@ -697,9 +882,9 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
               centeredRole={centeredRailRole(swipeDirection, handingOff)}
               flipTransform={coverTransform}
               stride={railStride}
-              // Keep turning through the handoff so the arriving disc is
-              // already alive when it reaches the center.
-              spinning={discPlaying || swipePending}
+              // The arriving disc stays still through the handoff: nothing is
+              // playing yet while Lyra picks the next track.
+              spinning={discPlaying}
               trackRef={swipeTrackRef}
               onPointerDown={handleSwipePointerDown}
             />

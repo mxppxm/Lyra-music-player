@@ -54,6 +54,21 @@ describe("mobile progress layout", () => {
   });
 });
 
+describe("input capsule", () => {
+  it("sizes a single line of text to the send button so the icon reads centred", () => {
+    const send = pixels(css, /--lyra-send-size:\s*(\d+)px/);
+    const input = ruleBody(".lyra-mobile-input");
+    const padding = pixels(input, /padding:\s*(\d+)px 0/);
+    const lineHeight = pixels(input, /line-height:\s*(\d+)px/);
+
+    // Any slack here shows up as dead space above the flex-end button.
+    expect(padding * 2 + lineHeight).toBe(send);
+    expect(ruleBody(".lyra-mobile-send-btn")).toMatch(
+      /height:\s*var\(--lyra-send-size\)/,
+    );
+  });
+});
+
 describe("immersive copy modules", () => {
   it("stops a remounted copy module from replaying its intro over the vinyl", () => {
     const suppressed = ruleBody(
@@ -61,6 +76,21 @@ describe("immersive copy modules", () => {
     );
 
     expect(suppressed).toMatch(/animation:\s*none/);
+  });
+
+  it("scopes the stagger intro to the scene change so leaving immersive only fades", () => {
+    // An unscoped `.lyra-mobile-content > *` intro would restart the keyframes
+    // the moment the immersive `animation: none` override is dropped, holding
+    // the copy invisible through its 520ms delay instead of fading it back in.
+    expect(css).toMatch(
+      /\.lyra-mobile-content--intro > \*:not\(\.lyra-mobile-cover-shift\),[\s\S]*?animation: lyra-mobile-module-in/,
+    );
+    expect(css).not.toMatch(
+      /^\.lyra-mobile-content > \*:not\(\.lyra-mobile-cover-shift\),$/m,
+    );
+
+    const copy = ruleBody(".lyra-mobile-song-info,\n.lyra-mobile-small-note");
+    expect(copy).toMatch(/opacity 480ms/);
   });
 
   it("keeps immersive chrome in normal flow so enter/exit FLIP is measured against real boxes", () => {
