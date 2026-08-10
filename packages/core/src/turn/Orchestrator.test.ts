@@ -665,6 +665,45 @@ describe("Orchestrator native auto-advance: rationale never falls back to canned
     expect(libraryRepo.getTrack).not.toHaveBeenCalled();
   });
 
+  it("jumps straight to the native-current song when several queued tracks already played", async () => {
+    const t3: LibraryTrack = { id: "t3", path: "/c.mp3", origin: "local", added_at: 0, title: "T3" };
+    const deps = nativeDeps();
+    let pick = 0;
+    (deps.companion.choose as ReturnType<typeof vi.fn>).mockImplementation(
+      async (input: { candidates: LibraryTrack[] }) => {
+        const preferred = ["t2", "t3"][pick++] ?? input.candidates[0]?.id;
+        const song =
+          input.candidates.find((c) => c.id === preferred) ?? input.candidates[0]!;
+        return {
+          song_id: song.id,
+          target_profile: "x",
+          rationale: `${song.id}-rationale`,
+          needed_shift: "接住" as const,
+        };
+      },
+    );
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+
+    const tracks: LibraryTrack[] = [t1, t2, t3];
+    (deps.library.prefilter as ReturnType<typeof vi.fn>).mockResolvedValue([...tracks]);
+    // onUserInput already consumed one choose — reset for prefetch picks.
+    pick = 0;
+    const queued = await orc.prefetchMore(2);
+    expect(queued.map((q) => q.songId)).toEqual(["t2", "t3"]);
+
+    // Background already played through t2 — foreground reconciles once to t3.
+    await orc.onNativeAutoAdvanced("t3");
+
+    const state = orc.getState();
+    expect(state.kind).toBe("playing");
+    if (state.kind === "playing") {
+      expect(state.song.id).toBe("t3");
+      expect(state.turn.agent_response.rationale).toBe("t3-rationale");
+    }
+    expect(orc.peekNext()).toBeNull();
+  });
+
   it("uses the cached LLM rationale after the plan is cleared (background→foreground)", async () => {
     const deps = nativeDeps();
     const orc = new Orchestrator(deps as any);
@@ -978,24 +1017,23 @@ describe("Orchestrator transition serialisation (播放竞态)", () => {
     expect((orc.getState() as any).song.id).toBe("t2");
   });
 
-  it("stale onNativeAutoAdvanced after JS picked a song is dropped", async () => {
+  it("stale native event is dropped after JS consumes the same planned song", async () => {
     const deps = raceDeps();
     const orc = new Orchestrator(deps as any);
     await orc.onUserInput("来一首歌"); // playing t3
     await orc.prefetchMore(1); // plan = [t2]
-    // 让 onSongComplete 的 LLM 选 t1（避开 plan 里的 t2），并清空 plan
+    // 即使候选只剩 t1，现存 plan t2 仍应优先于重新推荐。
     (deps.library.prefilter as any).mockResolvedValue([t1]);
     deps.audio.playFile.mockClear();
 
-    // JS 流程先跑（onSongComplete → LLM → playFile t1），nativeAdvanced(t2) 随后到
+    // JS 流程先消费 t2，nativeAdvanced(t2) 随后到达。
     await Promise.all([orc.onSongComplete(), orc.onNativeAutoAdvanced("t2")]);
 
-    // onSongComplete 播了 t1（plan 被清空）；nativeAdvanced(t2) 过时被
-    // targetTurn 检查丢弃，不会把状态拽回 t2
+    // nativeAdvanced 对应旧 turn，被 targetTurn 检查丢弃，不会重复切歌。
     expect(deps.audio.playFile).toHaveBeenCalledTimes(1);
-    expect(deps.audio.playFile).toHaveBeenCalledWith("/a.mp3", null);
+    expect(deps.audio.playFile).toHaveBeenCalledWith("http://x/b.mp3", null);
     expect(orc.getState().kind).toBe("playing");
-    expect((orc.getState() as any).song.id).toBe("t1");
+    expect((orc.getState() as any).song.id).toBe("t2");
   });
 
   it("onSongComplete queued behind onSkip is dropped", async () => {
@@ -1142,5 +1180,274 @@ describe("Orchestrator.getLyrics", () => {
       `${FULL_LYRICS}\n尾奏`,
     );
     expect(fetch).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Orchestrator play stack (previous)", () => {
+  const t1: LibraryTrack = { id: "t1", path: "/a.mp3", origin: "local", added_at: 0, title: "T1" };
+  const t2: LibraryTrack = { id: "t2", path: "/b.mp3", origin: "local", added_at: 0, title: "T2" };
+  const t3: LibraryTrack = { id: "t3", path: "/c.mp3", origin: "local", added_at: 0, title: "T3" };
+
+  function stackDeps(chooseDelayMs = 0) {
+    const prefilter = vi.fn(
+      async (
+        _target: unknown,
+        _pad: unknown,
+        _limit: unknown,
+        recCtx?: { excludeIds?: ReadonlySet<string> },
+      ) => {
+        const all = [t1, t2, t3];
+        const exclude = recCtx?.excludeIds;
+        return exclude ? all.filter((x) => !exclude.has(x.id)) : all;
+      },
+    );
+    const choose = vi.fn(async (input: { candidates: LibraryTrack[] }) => {
+      if (chooseDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, chooseDelayMs));
+      }
+      const song = input.candidates[input.candidates.length - 1];
+      return {
+        song_id: song.id,
+        target_profile: "x",
+        rationale: `${song.id}-rationale`,
+        needed_shift: "接住" as const,
+      };
+    });
+    return makeDeps({
+      library: { prefilter },
+      companion: { choose },
+      idGen: () => `turn-${Math.random().toString(36).slice(2, 8)}`,
+    });
+  }
+
+  it("onSkip pushes current song; onPrevious restores it", async () => {
+    const deps = stackDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    const first = orc.getState();
+    expect(first.kind).toBe("playing");
+    const firstId = first.kind === "playing" ? first.song.id : "";
+    expect(orc.canGoPrevious()).toBe(false);
+
+    await orc.onSkip();
+    expect(orc.getState().kind).toBe("playing");
+    expect(orc.canGoPrevious()).toBe(true);
+
+    await orc.onPrevious();
+    const again = orc.getState();
+    expect(again.kind).toBe("playing");
+    if (again.kind === "playing") expect(again.song.id).toBe(firstId);
+    expect(orc.canGoPrevious()).toBe(false);
+  });
+
+  it("keeps the forward queue when going previous, then reuses it on next", async () => {
+    const deps = stackDeps();
+    deps.resolvePlayUrl = vi.fn(
+      async (path: string) => `https://audio.example/${path}`,
+    );
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    const first = orc.getState();
+    expect(first.kind).toBe("playing");
+    const firstId = first.kind === "playing" ? first.song.id : "";
+
+    const queued = await orc.prefetchMore(2);
+    expect(queued).toHaveLength(2);
+    await orc.onSkip();
+    const second = orc.getState();
+    expect(second.kind).toBe("playing");
+    const secondId = second.kind === "playing" ? second.song.id : "";
+    expect(secondId).toBe(queued[0]!.songId);
+
+    await orc.onPrevious();
+    const previous = orc.getState();
+    expect(previous.kind).toBe("playing");
+    if (previous.kind === "playing") expect(previous.song.id).toBe(firstId);
+    expect(orc.peekNext()?.songId).toBe(secondId);
+
+    const chooseCallsBeforeForward = deps.companion.choose.mock.calls.length;
+    deps.audio.playFile.mockClear();
+    await orc.onSkip();
+    const forward = orc.getState();
+    expect(forward.kind).toBe("playing");
+    if (forward.kind === "playing") expect(forward.song.id).toBe(secondId);
+    expect(deps.companion.choose).toHaveBeenCalledTimes(
+      chooseCallsBeforeForward,
+    );
+    expect(deps.audio.playFile).toHaveBeenLastCalledWith(
+      queued[0]!.url,
+      null,
+    );
+    expect(orc.peekNext()?.songId).toBe(queued[1]!.songId);
+  });
+
+  it("native auto-advance records the completed song as previous", async () => {
+    const deps = stackDeps();
+    deps.resolvePlayUrl = vi.fn(async () => "https://audio.example/next.mp3");
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    const first = orc.getState();
+    expect(first.kind).toBe("playing");
+    const firstId = first.kind === "playing" ? first.song.id : "";
+    const [next] = await orc.prefetchMore(1);
+
+    await orc.onNativeAutoAdvanced(next!.songId);
+
+    expect(orc.peekPrevious()?.songId).toBe(firstId);
+    expect(orc.canGoPrevious()).toBe(true);
+  });
+
+  it("JS completion consumes the known forward head before recommending", async () => {
+    const deps = stackDeps();
+    deps.resolvePlayUrl = vi.fn(async () => "https://audio.example/next.mp3");
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    const [next] = await orc.prefetchMore(1);
+    const chooseCalls = deps.companion.choose.mock.calls.length;
+    deps.audio.playFile.mockClear();
+
+    await orc.onSongComplete();
+
+    const state = orc.getState();
+    expect(state.kind).toBe("playing");
+    if (state.kind === "playing") expect(state.song.id).toBe(next!.songId);
+    expect(deps.companion.choose).toHaveBeenCalledTimes(chooseCalls);
+    expect(deps.audio.playFile).toHaveBeenCalledWith(
+      next!.url,
+      null,
+    );
+  });
+
+  it("does not reappend the native-current plan head behind its successors", async () => {
+    const deps = stackDeps();
+    deps.resolvePlayUrl = vi.fn(
+      async (path: string) => `https://audio.example/${path}`,
+    );
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    const queued = await orc.prefetchMore(2);
+    expect(queued).toHaveLength(2);
+
+    // Native already advanced to queued[0], so only queued[1] remains in its
+    // AV queue while Orchestrator has not processed nativeAdvanced yet.
+    const refill = await orc.prefetchMore(1, [queued[1]!.songId]);
+
+    expect(refill.map((track) => track.songId)).not.toContain(
+      queued[0]!.songId,
+    );
+  });
+
+  it("onPrevious during thinking cancels in-flight advance and restores stack top", async () => {
+    const deps = stackDeps(80);
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    const first = orc.getState();
+    expect(first.kind).toBe("playing");
+    const firstId = first.kind === "playing" ? first.song.id : "";
+
+    const skipPromise = orc.onSkip();
+    // Let skip enter thinking + start slow choose
+    await vi.waitFor(() => {
+      expect(orc.getState().kind).toBe("thinking");
+      expect(orc.canGoPrevious()).toBe(true);
+    });
+
+    await orc.onPrevious();
+    await skipPromise;
+
+    const state = orc.getState();
+    expect(state.kind).toBe("playing");
+    if (state.kind === "playing") expect(state.song.id).toBe(firstId);
+  });
+
+  it("onPrevious during thinking plays without waiting for the in-flight pick", async () => {
+    const deps = stackDeps();
+    const baseChoose = deps.companion.choose;
+    let gatePick = false;
+    let releasePick!: () => void;
+    const pickGate = new Promise<void>((resolve) => {
+      releasePick = resolve;
+    });
+    deps.companion.choose = vi.fn(async (input: any) => {
+      if (gatePick) await pickGate;
+      return baseChoose(input);
+    });
+
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    const first = orc.getState();
+    expect(first.kind).toBe("playing");
+    const firstId = first.kind === "playing" ? first.song.id : "";
+
+    gatePick = true;
+    const skipPromise = orc.onSkip();
+    await vi.waitFor(() => {
+      expect(orc.getState().kind).toBe("thinking");
+    });
+
+    const outcome = await Promise.race([
+      orc.onPrevious().then(() => "restored" as const),
+      new Promise<"blocked">((resolve) =>
+        setTimeout(() => resolve("blocked"), 200),
+      ),
+    ]);
+    expect(outcome).toBe("restored");
+
+    const restored = orc.getState();
+    expect(restored.kind).toBe("playing");
+    if (restored.kind === "playing") expect(restored.song.id).toBe(firstId);
+
+    releasePick();
+    await skipPromise;
+    const settled = orc.getState();
+    expect(settled.kind).toBe("playing");
+    if (settled.kind === "playing") expect(settled.song.id).toBe(firstId);
+  });
+
+  it("onPrevious no-ops when stack empty", async () => {
+    const orc = new Orchestrator(makeDeps() as any);
+    await orc.onPrevious();
+    expect(orc.getState().kind).toBe("idle");
+    expect(orc.canGoPrevious()).toBe(false);
+  });
+
+  it("peekPrevious / peekNext and skip consume prefetched head", async () => {
+    const deps = stackDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首歌");
+    expect(orc.peekPrevious()).toBeNull();
+    expect(orc.canGoNext()).toBe(false);
+
+    // Simulate prefetch filling the native plan via prefetchMore path:
+    // inject by skipping once with a hand-rolled queue is hard; instead
+    // call prefetchMore with a resolvePlayUrl.
+    deps.resolvePlayUrl = vi.fn(async () => "http://x/next.mp3");
+    const batch = await orc.prefetchMore(1);
+    expect(batch.length).toBe(1);
+    expect(orc.canGoNext()).toBe(true);
+    expect(orc.peekNext()?.songId).toBe(batch[0]!.songId);
+    expect(orc.peekNext()?.title).toBeTruthy();
+    expect(orc.peekNext()?.artist).toBeDefined();
+    expect(orc.peekNext()?.rationale).toBeTruthy();
+    expect(orc.peekNext()?.pad).toEqual(
+      expect.objectContaining({ p: expect.any(Number) }),
+    );
+
+    const before = orc.getState();
+    expect(before.kind).toBe("playing");
+    const beforeId = before.kind === "playing" ? before.song.id : "";
+
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+    await orc.onSkip();
+
+    // Prefetched skip should not flash thinking.
+    expect(seen).toEqual(["playing"]);
+    expect(orc.peekPrevious()?.songId).toBe(beforeId);
+    const after = orc.getState();
+    expect(after.kind).toBe("playing");
+    if (after.kind === "playing") {
+      expect(after.song.id).toBe(batch[0]!.songId);
+    }
   });
 });

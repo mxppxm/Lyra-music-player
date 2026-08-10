@@ -15,23 +15,35 @@ export function usePrefetchNext(
 ) {
   const refillForSongRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
+  const rerunRef = useRef(false);
+  const playbackRef = useRef(playback);
+  playbackRef.current = playback;
 
   const runRefill = async (reason: string) => {
-    if (inFlightRef.current) return;
-    if (!playback.songId || !playback.playing || playback.paused) return;
-    inFlightRef.current = true;
-    try {
-      await refillPlaybackQueue(orchestrator);
-      refillForSongRef.current = playback.songId;
-      console.log(`[lyra-ios] prefetch refill (${reason})`);
-    } catch (e) {
-      console.warn("[lyra-ios] prefetch refill failed:", e);
-    } finally {
-      inFlightRef.current = false;
+    if (inFlightRef.current) {
+      rerunRef.current = true;
+      return;
     }
+    do {
+      rerunRef.current = false;
+      const current = playbackRef.current;
+      if (!current.songId || !current.playing || current.paused) return;
+      inFlightRef.current = true;
+      try {
+        await refillPlaybackQueue(orchestrator);
+        refillForSongRef.current = current.songId;
+        console.log(`[lyra-ios] prefetch refill (${reason})`);
+      } catch (e) {
+        console.warn("[lyra-ios] prefetch refill failed:", e);
+      } finally {
+        inFlightRef.current = false;
+      }
+    } while (rerunRef.current);
   };
 
-  // New track → reset queue plan and fill immediately (no progress gate).
+  // New track → reconcile and top up immediately. Keep the JS forward plan:
+  // manual previous/next may clear native AVQueuePlayer, but known songs and
+  // resolved URLs must survive so refill can append them again in order.
   useEffect(() => {
     if (!playback.songId) {
       refillForSongRef.current = null;
@@ -40,11 +52,7 @@ export function usePrefetchNext(
     if (!playback.playing || playback.paused) return;
     if (refillForSongRef.current === playback.songId) return;
 
-    void (async () => {
-      await LyraAudio.clearNextTrack().catch(() => {});
-      orchestrator.clearPrefetchedNext();
-      await runRefill("song-start");
-    })();
+    void runRefill("song-start");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orchestrator, playback.songId, playback.playing, playback.paused]);
 
@@ -53,19 +61,6 @@ export function usePrefetchNext(
     let remove: (() => void) | undefined;
     void LyraAudio.addListener("refillQueue", () => {
       void runRefill("native-refill");
-    }).then((r) => {
-      remove = r.remove;
-    });
-    return () => remove?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orchestrator, playback.songId, playback.playing, playback.paused]);
-
-  // After native auto-advance, top up again if JS is awake.
-  useEffect(() => {
-    let remove: (() => void) | undefined;
-    void LyraAudio.addListener("nativeAdvanced", () => {
-      refillForSongRef.current = null;
-      void runRefill("native-advanced");
     }).then((r) => {
       remove = r.remove;
     });

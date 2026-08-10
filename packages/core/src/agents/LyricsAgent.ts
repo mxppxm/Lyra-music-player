@@ -1,4 +1,5 @@
 import type { ModelProvider, ChatMessage } from "../types";
+import { parseTrackIdentity } from "../library/parseTrackIdentity";
 import { resolveProviders, chatWithFallback } from "./route";
 import {
   LYRICS_COMPLETE_RETRY_PROMPT,
@@ -22,6 +23,8 @@ export type LyricsFetchInput = {
 
 /** Strip Bilibili / channel wrappers so the LLM sees a cleaner song name. */
 export function cleanTitleForLyricsQuery(title: string): string {
+  const identity = parseTrackIdentity(title);
+  if (identity.songTitle.trim()) return identity.songTitle.trim();
   const unwrapped = title.match(/《([^》]+)》/);
   if (unwrapped?.[1]?.trim()) return unwrapped[1].trim();
   return title
@@ -31,6 +34,13 @@ export function cleanTitleForLyricsQuery(title: string): string {
     .replace(/\([^)]*(hq|mv|live|cover)[^)]*\)/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Pull a short quoted lyric line from Bilibili titles for disambiguation. */
+export function extractLyricHintFromTitle(title: string): string | undefined {
+  const m = title.match(/[“"]([^”"]{4,48})[”"]/u);
+  const hint = m?.[1]?.trim();
+  return hint || undefined;
 }
 
 /**
@@ -91,14 +101,36 @@ export class LyricsAgent {
 
   async fetch(input: LyricsFetchInput): Promise<string> {
     const rawTitle = input.title.trim();
-    const title = cleanTitleForLyricsQuery(rawTitle) || rawTitle;
-    const artist = (input.artist ?? "").trim();
+    const metaArtist = (input.artist ?? "").trim();
+    const identity = parseTrackIdentity(rawTitle, {
+      uploader: metaArtist || undefined,
+    });
+    const title =
+      identity.songTitle.trim() ||
+      cleanTitleForLyricsQuery(rawTitle) ||
+      rawTitle;
+    // Prefer artist parsed from the video title (王菲). Metadata artist is often
+    // the Bilibili uploader on studio reposts — only trust it when title parse
+    // found nothing and this does not look like a studio-cover channel row.
+    const artist =
+      identity.artist.trim() ||
+      (metaArtist && !identity.isStudioCover ? metaArtist : "");
+    const uploaderForHint =
+      metaArtist && metaArtist !== artist ? metaArtist : "";
+    const lyricHint = extractLyricHintFromTitle(rawTitle);
 
     const lines = [
       `歌名：${title}`,
-      ...(artist ? [`歌手：${artist}`] : []),
-      ...(title !== rawTitle ? [`原始标题（供参考）：${rawTitle}`] : []),
+      ...(artist ? [`原唱歌手：${artist}`] : []),
+      ...(lyricHint ? [`歌词锚点：${lyricHint}`] : []),
+      ...(uploaderForHint
+        ? [`B站上传者/频道（不是歌手）：${uploaderForHint}`]
+        : []),
+      ...(rawTitle !== title ? [`原始标题（供参考）：${rawTitle}`] : []),
       "请返回完整歌词（主歌+副歌+桥段等全部段落），不要只返回高潮/副歌。",
+      ...(lyricHint
+        ? ["输出必须包含上述歌词锚点原句，据此锁定正确版本，禁止串到同名其他歌。"]
+        : []),
     ];
 
     const messages: ChatMessage[] = [

@@ -13,8 +13,13 @@ export type PlayerControlsProps = {
   paused: boolean;
   /** Stream is still loading / buffering — nothing audible yet. */
   loading?: boolean;
+  /** When false, next is disabled (e.g. thinking / selecting next). */
+  canSkip?: boolean;
+  /** Session stack has a previous song. */
+  canGoPrevious?: boolean;
   onTogglePlay: () => void;
   onSkip: () => void;
+  onPrevious?: () => void;
   onHistory?: () => void;
   /** Share the currently playing track (system share sheet, incl. WeChat). */
   onShare?: () => void;
@@ -24,8 +29,11 @@ export function PlayerControls({
   canControl,
   paused,
   loading = false,
+  canSkip = true,
+  canGoPrevious = false,
   onTogglePlay,
   onSkip,
+  onPrevious,
   onHistory,
   onShare,
 }: PlayerControlsProps) {
@@ -35,9 +43,11 @@ export function PlayerControls({
         <button
           type="button"
           className="lyra-mobile-control-btn lyra-mobile-control-btn--ghost"
-          disabled
+          disabled={!canGoPrevious || !onPrevious}
+          onClick={onPrevious}
           title="上一首"
           aria-label="上一首"
+          data-testid="prev-btn"
         >
           <IconPrev />
         </button>
@@ -63,7 +73,7 @@ export function PlayerControls({
         <button
           type="button"
           className="lyra-mobile-control-btn lyra-mobile-control-btn--ghost"
-          disabled={!canControl}
+          disabled={!canControl || !canSkip}
           onClick={onSkip}
           title="下一首"
           aria-label="下一首"

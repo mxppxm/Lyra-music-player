@@ -23,8 +23,29 @@ function stripNoise(s: string): string {
     .replace(/【[^】]*】/g, " ")
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/\([^)]*录音棚[^)]*\)/gi, " ")
+    // Fullwidth ｜ is decorative (after Hi-Res tags), not a channel cut.
+    .replace(/｜/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Clean artist parsed from the rest of a 《title》… blob. */
+function cleanParsedArtist(artist: string, uploader?: string): string {
+  let a = artist.trim();
+  // Drop lyric snippets embedded in the title.
+  a = a.replace(/[“"].*?[”"]/gu, " ");
+  a = a.replace(/百万豪装.*$/u, "");
+  a = a.replace(/(?:大声听|试听|大屏歌词|无损音质|Hi-?Res).*$/giu, "");
+  a = a.replace(/录音棚.*$/u, "");
+  a = a.replace(/^[-—–·|]\s*/u, "").trim();
+  a = a.replace(/\s+/g, " ").trim();
+  // Still noisy ("王菲 频道废话") → keep a short leading name token.
+  if (a.length > 16) {
+    const first = a.split(/\s+/)[0] ?? "";
+    if (first.length > 0 && first.length <= 12) a = first;
+  }
+  if (!a || isUploaderLike(a, uploader)) return "";
+  return a;
 }
 
 /** 《下雨天》→ 下雨天 */
@@ -87,9 +108,12 @@ export function parseTrackIdentity(
 
   const artistBook = working.match(/^([^《]+)《([^》]+)》/u);
   if (artistBook) {
-    const artist = artistBook[1].replace(/百万豪装.*$/u, "").trim();
+    const artist = cleanParsedArtist(
+      artistBook[1].replace(/百万豪装.*$/u, "").trim(),
+      uploader,
+    );
     const songTitle = artistBook[2].trim();
-    if (songTitle && artist && !isUploaderLike(artist, uploader)) {
+    if (songTitle && artist) {
       return {
         songTitle,
         artist,
@@ -103,10 +127,13 @@ export function parseTrackIdentity(
 
   const { song: bookSong, rest } = unwrapBookTitle(working);
   if (bookSong) {
-    const artist = rest.replace(/^[-—–·]\s*/, "").trim();
+    const artist = cleanParsedArtist(
+      rest.replace(/^[-—–·]\s*/, "").trim(),
+      uploader,
+    );
     return {
       songTitle: bookSong,
-      artist: isUploaderLike(artist, uploader) ? "" : artist,
+      artist,
       rawTitle: raw,
       uploader,
       isStudioCover,

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { AmbientBackground } from "./AmbientBackground";
-import { CoverArt, normalizeCoverUrl } from "./CoverBackground";
+import { normalizeCoverUrl } from "./CoverBackground";
 import { GlowCanvas } from "./GlowCanvas";
 import { ThinkingNote } from "./ThinkingNote";
 import { useCoverPalette } from "./coverPalette";
@@ -16,6 +16,7 @@ import { useProgress } from "../audio/useProgress";
 import { useNowPlaying } from "../audio/useNowPlaying";
 import { useAutoAdvance } from "../audio/useAutoAdvance";
 import { usePrefetchNext } from "../audio/usePrefetchNext";
+import { invalidatePlaybackQueueRefills } from "../audio/refillPlaybackQueue";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "@lyra/core";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
@@ -24,6 +25,23 @@ import type { PAD } from "../lib/color";
 import { setImmersiveStatusBar } from "./immersiveStatusBar";
 import { buildSharePayload } from "./share";
 import { LyraAudio } from "@lyra/platform-ios";
+import { useImmersiveSwipe } from "./useImmersiveSwipe";
+import type {
+  SwipeDirection,
+  SwipeOffsetPhase,
+} from "./useImmersiveSwipe";
+import {
+  ImmersiveCoverRail,
+  type CoverRailSlot,
+} from "./ImmersiveCoverRail";
+import {
+  canToggleImmersive,
+  centeredRailRole,
+  compensateImmersiveCoverPosition,
+  shouldCenterThinkingPlaceholder,
+  shouldShowInlineThinking,
+  type ImmersiveCoverTransform,
+} from "./immersiveCoverMotion";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 const LYRA_START_LABEL = "点我试试";
@@ -43,12 +61,21 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   const [dockExpanded, setDockExpanded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [immersive, setImmersive] = useState(false);
+  const previousImmersiveRef = useRef(immersive);
+  const immersiveToggleAtRef = useRef(Number.NEGATIVE_INFINITY);
   const [noteFlipped, setNoteFlipped] = useState(false);
   const [lyricsText, setLyricsText] = useState<string | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsFailed, setLyricsFailed] = useState(false);
   const [lyricsRefreshing, setLyricsRefreshing] = useState(false);
   const coverShiftRef = useRef<HTMLDivElement>(null);
+  const swipeTrackRef = useRef<HTMLDivElement>(null);
+  const coverScaleRef = useRef(1);
+  const coverMotionRef = useRef<ImmersiveCoverTransform>({
+    x: 0,
+    y: 0,
+    scale: 1,
+  });
   const [coverTransform, setCoverTransform] = useState<string>("none");
   const lyricsRequestGen = useRef(0);
 
@@ -61,6 +88,10 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   }, [state.kind]);
 
   useEffect(() => {
+    if (previousImmersiveRef.current !== immersive) {
+      previousImmersiveRef.current = immersive;
+      immersiveToggleAtRef.current = performance.now();
+    }
     void setImmersiveStatusBar(immersive);
     return () => {
       void setImmersiveStatusBar(false);
@@ -82,6 +113,8 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   // entering immersive mode; "none" on exit animates it back.
   useLayoutEffect(() => {
     if (!immersive) {
+      coverScaleRef.current = 1;
+      coverMotionRef.current = { x: 0, y: 0, scale: 1 };
       setCoverTransform("none");
       return;
     }
@@ -92,11 +125,14 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     const scale = targetSize / rect.width;
     const dx = window.innerWidth / 2 - (rect.left + rect.width / 2);
     const dy = window.innerHeight / 2 - (rect.top + rect.height / 2);
+    coverScaleRef.current = scale;
+    coverMotionRef.current = { x: dx, y: dy, scale };
     setCoverTransform(`translate(${dx}px, ${dy}px) scale(${scale})`);
   }, [immersive]);
 
-  const actuallyPlaying =
-    state.kind === "playing" && !state.paused && progress !== null;
+  // The disc turns on playback state alone. Gating it on the first progress
+  // tick would stall every freshly centered CD for a beat before it spins.
+  const discPlaying = state.kind === "playing" && !state.paused;
 
   const title: string =
     state.kind === "playing" || state.kind === "proactive-pending"
@@ -114,6 +150,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     state.kind === "playing" || state.kind === "proactive-pending"
       ? state.song.id
       : null;
+  const stabilizedCoverSongRef = useRef(currentSongId);
   useEffect(() => {
     setPlaybackError(null);
   }, [currentSongId]);
@@ -263,10 +300,235 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     }
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
     if (state.kind !== "playing") return;
-    void orchestrator.onSkip();
+    invalidatePlaybackQueueRefills();
+    await LyraAudio.clearNextTrack().catch(() => {});
+    await orchestrator.onSkip();
   };
+
+  const handlePrevious = useCallback(async () => {
+    if (!orchestrator.canGoPrevious()) return;
+    invalidatePlaybackQueueRefills();
+    await LyraAudio.clearNextTrack().catch(() => {});
+    await orchestrator.onPrevious();
+  }, [orchestrator]);
+
+  const canGoPrevious = orchestrator.canGoPrevious();
+  const canSkip = state.kind === "playing";
+  const peekPrev = orchestrator.peekPrevious();
+  const peekNext = orchestrator.peekNext();
+  // An empty forward plan is still swipeable: its next page is the thinking
+  // placeholder and committing it asks Orchestrator to select a new song.
+  const lockSwipeNext = state.kind !== "playing";
+
+  // CD slot stride — one disc width + gap, NOT the full screen (background stays).
+  const swipeStride =
+    typeof window !== "undefined"
+      ? Math.min(window.innerWidth * 0.7, 280) + 48
+      : 328;
+
+  const liveCoverRaw =
+    state.kind === "playing" || state.kind === "proactive-pending"
+      ? state.song.metadata?.cover
+      : null;
+  const coverUrl = typeof liveCoverRaw === "string" ? liveCoverRaw : null;
+  const currentCoverSlot: CoverRailSlot | null = currentSongId
+    ? { songId: currentSongId, coverUrl }
+    : coverUrl
+      ? { songId: "frozen", coverUrl }
+      : null;
+  const [swipeSnapshot, setSwipeSnapshot] = useState<{
+    previous: ReturnType<Orchestrator["peekPrevious"]>;
+    current: CoverRailSlot | null;
+    next: ReturnType<Orchestrator["peekNext"]>;
+  } | null>(null);
+
+  const handleSwipeCommit = useCallback(
+    async (direction: SwipeDirection) => {
+      // Drop native AV queue — we're jumping to a specific neighbor via playFile.
+      invalidatePlaybackQueueRefills();
+      await LyraAudio.clearNextTrack().catch(() => {});
+      if (direction === "next") {
+        await orchestrator.onSkip();
+      } else {
+        await orchestrator.onPrevious();
+      }
+    },
+    [orchestrator],
+  );
+
+  const applySwipeOffset = useCallback(
+    (offset: number, phase: SwipeOffsetPhase) => {
+      const track = swipeTrackRef.current;
+      if (!track) return;
+      track.classList.toggle(
+        "lyra-mobile-cover-shift--swiping",
+        phase === "drag",
+      );
+      track.classList.toggle(
+        "lyra-mobile-cover-shift--settling",
+        phase === "settle",
+      );
+      const localOffset = offset / coverScaleRef.current;
+      track.style.transform =
+        offset === 0 ? "" : `translate3d(${localOffset}px, 0, 0)`;
+    },
+    [],
+  );
+
+  const {
+    dragging: swipeDragging,
+    settling: swipeSettling,
+    pending: swipePending,
+    direction: swipeDirection,
+    onPointerDown: onSwipePointerDown,
+    shouldSuppressClick,
+    snapToCenter,
+    resetSlide,
+  } = useImmersiveSwipe({
+    enabled: immersive && (state.kind === "playing" || state.kind === "thinking"),
+    lockNext: lockSwipeNext,
+    canGoPrevious,
+    stride: swipeStride,
+    onCommit: handleSwipeCommit,
+    onOffsetChange: applySwipeOffset,
+  });
+
+  const handleSwipePointerDown = useCallback(
+    (event: React.PointerEvent) => {
+      if (!onSwipePointerDown(event)) return;
+      setSwipeSnapshot({
+        previous: peekPrev,
+        current: currentCoverSlot,
+        next: peekNext,
+      });
+    },
+    [currentCoverSlot, onSwipePointerDown, peekNext, peekPrev],
+  );
+
+  // Snap rail before paint once the song actually changed — unlocks UI and
+  // keeps the neighbor that was centered as the new current at offset 0.
+  const snapFromSongRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!swipePending) {
+      snapFromSongRef.current = currentSongId;
+      return;
+    }
+    if (swipeSettling) return;
+    if (!currentSongId || currentSongId === snapFromSongRef.current) return;
+    snapFromSongRef.current = currentSongId;
+    snapToCenter();
+  }, [currentSongId, snapToCenter, swipePending, swipeSettling]);
+
+  // The thinking page is a carousel page, not a waiting room: once its slide
+  // lands, re-center and unlock there so the neighbors stay swipeable while
+  // Lyra picks. Snapping only after the data already shows the placeholder
+  // keeps the old cover from reappearing for a frame.
+  useLayoutEffect(() => {
+    if (
+      !shouldCenterThinkingPlaceholder({
+        pending: swipePending,
+        settling: swipeSettling,
+        direction: swipeDirection,
+        committedNextSongId: swipeSnapshot?.next?.songId ?? null,
+        currentSongId,
+      })
+    ) {
+      return;
+    }
+    snapToCenter();
+  }, [
+    currentSongId,
+    snapToCenter,
+    swipeDirection,
+    swipePending,
+    swipeSettling,
+    swipeSnapshot,
+  ]);
+
+  useEffect(() => {
+    if (!immersive) resetSlide();
+  }, [immersive, resetSlide]);
+
+  // A failed navigation never produces a new song id, so the rail would wait
+  // for a snap that can't come — release it once the session leaves playback.
+  useEffect(() => {
+    if (state.kind === "playing" || state.kind === "thinking") return;
+    resetSlide();
+  }, [state.kind, resetSlide]);
+
+  const handingOff = swipeSettling || swipePending;
+  const swipeActive = immersive && (swipeDragging || handingOff);
+  const activeSwipeSnapshot = swipeActive ? swipeSnapshot : null;
+  const displayPrevious = activeSwipeSnapshot
+    ? activeSwipeSnapshot.previous
+    : peekPrev;
+  const displayCurrent = activeSwipeSnapshot
+    ? activeSwipeSnapshot.current
+    : currentCoverSlot;
+  const displayNext = activeSwipeSnapshot
+    ? activeSwipeSnapshot.next
+    : peekNext;
+
+  // After commit, warm title/note/palette from the neighbor display pack so
+  // the handoff isn't empty while audio/state catch up.
+  const handoffNeighbor =
+    immersive && handingOff
+      ? swipeDirection === "next"
+        ? displayNext
+        : swipeDirection === "previous"
+          ? displayPrevious
+          : null
+      : null;
+
+  // Chrome stays in flow (opacity only) so immersive enter/exit FLIP can
+  // measure real boxes. When song/note height changes mid-immersive, nudge
+  // the already-applied FLIP translate so the vinyl stays visually pinned.
+  useLayoutEffect(() => {
+    if (!immersive) {
+      stabilizedCoverSongRef.current = currentSongId;
+      return;
+    }
+    const songChanged = stabilizedCoverSongRef.current !== currentSongId;
+    if (!swipePending && !songChanged) return;
+    stabilizedCoverSongRef.current = currentSongId;
+    const shell = coverShiftRef.current;
+    if (!shell) return;
+    const next = compensateImmersiveCoverPosition(
+      coverMotionRef.current,
+      shell.getBoundingClientRect(),
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    if (
+      next.x === coverMotionRef.current.x &&
+      next.y === coverMotionRef.current.y
+    ) {
+      return;
+    }
+    coverMotionRef.current = next;
+    const transform = `translate(${next.x}px, ${next.y}px) scale(${next.scale})`;
+    shell.classList.add("lyra-mobile-cover-shift--repositioning");
+    shell.style.transform = transform;
+    setCoverTransform(transform);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        shell.classList.remove("lyra-mobile-cover-shift--repositioning");
+      });
+    });
+  }, [currentSongId, immersive, swipeDirection, swipePending]);
+
+  const railStride = swipeStride / coverScaleRef.current;
+
+  // Prefetch neighbor covers off-screen (display pack image half).
+  useEffect(() => {
+    for (const raw of [peekPrev?.coverUrl, peekNext?.coverUrl]) {
+      const url = normalizeCoverUrl(raw ?? null);
+      if (!url || typeof Image === "undefined") continue;
+      const img = new Image();
+      img.src = url;
+    }
+  }, [peekPrev?.coverUrl, peekNext?.coverUrl]);
 
   // Share the currently-playing track via the native Web Share API, which on
   // iOS opens the system share sheet (incl. WeChat). No native plugin needed.
@@ -362,18 +624,30 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     void submit(text);
   };
 
-  const pad: PAD =
-    state.kind === "playing" ? state.turn.current_emotion.pad : ZERO_PAD;
+  const pad: PAD = handoffNeighbor
+    ? handoffNeighbor.pad
+    : state.kind === "playing"
+      ? state.turn.current_emotion.pad
+      : ZERO_PAD;
+
+  const displayTitle = handoffNeighbor?.title ?? title;
+  const displayArtist = handoffNeighbor?.artist ?? artist;
+  const displayNote = handoffNeighbor?.rationale ?? noteText;
+  const showInlineThinking = shouldShowInlineThinking(
+    immersive,
+    isThinking,
+    Boolean(handoffNeighbor),
+  );
+  const hideInlineThinking =
+    immersive && isThinking && handoffNeighbor === null;
+  const paletteCoverUrl = normalizeCoverUrl(
+    handoffNeighbor?.coverUrl ?? coverUrl,
+  );
 
   // 播放会话期间（含切歌 thinking 间隙）展示天气 badge；idle 不打扰。
   const showWeather = weather !== null && weather !== undefined && state.kind !== "idle";
 
-  const coverRaw =
-    state.kind === "playing" || state.kind === "proactive-pending"
-      ? state.song.metadata?.cover
-      : null;
-  const coverUrl = typeof coverRaw === "string" ? coverRaw : null;
-  const palette = useCoverPalette(normalizeCoverUrl(coverUrl), pad);
+  const palette = useCoverPalette(paletteCoverUrl, pad);
 
   return (
     <AmbientBackground pad={pad}>
@@ -387,28 +661,54 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
           .filter(Boolean)
           .join(" ")}
         onClick={() => {
-          if (playing) setImmersive((v) => !v);
+          if (shouldSuppressClick()) return;
+          if (!canToggleImmersive(state.kind)) return;
+          const now = performance.now();
+          if (now - immersiveToggleAtRef.current < 560) return;
+          immersiveToggleAtRef.current = now;
+          // Unlock swipe + snap before exit so FLIP isn't fighting the rail.
+          if (immersive) resetSlide();
+          setImmersive((v) => !v);
         }}
       >
         {!isSparseIdle && (
           <div className="lyra-mobile-content">
-            <div
-              ref={coverShiftRef}
-              className="lyra-mobile-cover-shift"
-              style={{ transform: coverTransform }}
-            >
-              <CoverArt
-                url={coverUrl}
-                cd={immersive}
-                spinning={immersive && actuallyPlaying}
-              />
-            </div>
-            <SongInfo title={title} artist={artist} />
-            {isThinking ? (
+            {/* One persistent cover shell — never remount on immersive toggle. */}
+            <ImmersiveCoverRail
+              shiftRef={coverShiftRef}
+              cd={immersive}
+              previous={
+                displayPrevious
+                  ? {
+                      songId: displayPrevious.songId,
+                      coverUrl: displayPrevious.coverUrl,
+                    }
+                  : null
+              }
+              current={displayCurrent}
+              next={
+                displayNext
+                  ? {
+                      songId: displayNext.songId,
+                      coverUrl: displayNext.coverUrl,
+                    }
+                  : null
+              }
+              centeredRole={centeredRailRole(swipeDirection, handingOff)}
+              flipTransform={coverTransform}
+              stride={railStride}
+              // Keep turning through the handoff so the arriving disc is
+              // already alive when it reaches the center.
+              spinning={discPlaying || swipePending}
+              trackRef={swipeTrackRef}
+              onPointerDown={handleSwipePointerDown}
+            />
+            <SongInfo title={displayTitle} artist={displayArtist} />
+            {showInlineThinking ? (
               <ThinkingNote />
-            ) : (
+            ) : hideInlineThinking ? null : (
               <SmallNote
-                text={noteText}
+                text={displayNote}
                 color={noteColor}
                 error={isErrorNote}
                 onClick={
@@ -446,6 +746,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
             "lyra-mobile-dock",
             isSparseIdle ? "lyra-mobile-dock--idle" : "",
             playing ? "lyra-mobile-dock--playing" : "",
+            progress ? "lyra-mobile-dock--progress" : "",
             dockExpanded ? "lyra-mobile-dock--expanded" : "",
           ]
             .filter(Boolean)
@@ -454,6 +755,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
             e.stopPropagation();
             if (!isSparseIdle) setDockExpanded((v) => !v);
           }}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           {isSparseIdle ? (
             <button
@@ -511,8 +813,11 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                 loading={
                   state.kind === "playing" && !state.paused && progress === null
                 }
+                canSkip={canSkip}
+                canGoPrevious={canGoPrevious}
                 onTogglePlay={handleTogglePlay}
                 onSkip={handleSkip}
+                onPrevious={handlePrevious}
                 onHistory={() => setHistoryOpen(true)}
                 onShare={handleShare}
               />

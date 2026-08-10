@@ -2,7 +2,7 @@ export * from "./types/index.ts";
 export * from "./recommendation/index.ts";
 export { createDefaultOrchestrator } from "./turn/createOrchestrator.ts";
 export { Orchestrator } from "./turn/Orchestrator.ts";
-export type { PrefetchNextResult } from "./turn/Orchestrator.ts";
+export type { PrefetchNextResult, SwipeNeighbor } from "./turn/Orchestrator.ts";
 export { createSoulStore } from "./turn/soulStore.ts";
 export { currentTagsFor } from "./turn/currentTags.ts";
 export {

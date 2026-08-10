@@ -4,6 +4,7 @@ import type { Orchestrator } from "@lyra/core";
 import type { OrchestratorState } from "@lyra/core/turn/Orchestrator.ts";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
 import { normalizeCoverUrl } from "../home/CoverBackground";
+import { invalidatePlaybackQueueRefills } from "./refillPlaybackQueue";
 
 /**
  * Pushes the current track to the iOS lock screen / Dynamic Island and
@@ -25,6 +26,7 @@ export function useNowPlaying(
       title: songDisplayTitle(state.song),
       artist: songDisplayArtist(state.song),
       durationMs: state.song.duration_ms ?? 0,
+      songId: state.song.id,
       coverUrl:
         normalizeCoverUrl(typeof coverRaw === "string" ? coverRaw : null) ??
         undefined,
@@ -37,7 +39,13 @@ export function useNowPlaying(
     void LyraAudio.addListener("remoteCommand", ({ command }) => {
       const s = orchestrator.getState();
       if (command === "next") {
-        if (s.kind === "playing") void orchestrator.onSkip();
+        if (s.kind === "playing") {
+          invalidatePlaybackQueueRefills();
+          void (async () => {
+            await LyraAudio.clearNextTrack().catch(() => {});
+            await orchestrator.onSkip();
+          })();
+        }
         return;
       }
       if (s.kind !== "playing") return;

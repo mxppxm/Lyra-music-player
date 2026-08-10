@@ -110,6 +110,49 @@ type RetryIntent =
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
 
+/** Sentinel returned when a cancelled advance stops waiting on its own work. */
+const ADVANCE_CANCELLED = Symbol("advance-cancelled");
+
+/** Session stack entry for immersive previous / undo-skip. */
+type PlayStackEntry = {
+  track: LibraryTrack;
+  rationale: string;
+  emotion: CurrentEmotion;
+};
+
+type NativeQueuePlanEntry = {
+  song: LibraryTrack;
+  baseEmotion: CurrentEmotion;
+  rationale: string;
+  playUrl: string;
+};
+
+/** Neighbor display pack for immersive swipe (more than just a cover). */
+export type SwipeNeighbor = {
+  songId: string;
+  coverUrl: string | null;
+  title: string;
+  artist: string;
+  rationale: string;
+  pad: PAD;
+};
+
+function toSwipeNeighbor(
+  track: LibraryTrack,
+  rationale: string,
+  emotion: CurrentEmotion,
+): SwipeNeighbor {
+  const coverRaw = track.metadata?.cover;
+  return {
+    songId: track.id,
+    coverUrl: typeof coverRaw === "string" ? coverRaw : null,
+    title: songDisplayTitle(track),
+    artist: songDisplayArtist(track),
+    rationale,
+    pad: emotion.pad,
+  };
+}
+
 export class Orchestrator {
   private state: OrchestratorState = { kind: "idle" };
   private subs = new Set<(s: OrchestratorState) => void>();
@@ -127,6 +170,20 @@ export class Orchestrator {
   private weatherContext: WeatherContext | null = null;
   /** Guard against concurrent fulfillProactive calls. */
   private proactiveInFlight = false;
+  /**
+   * Songs left via skip / natural complete — right-swipe / previous pops.
+   * Cleared on history replay (fresh listen path).
+   */
+  private playStack: PlayStackEntry[] = [];
+  /**
+   * Bumped to cancel an in-flight auto-advance (skip/complete) before it
+   * starts playing the next track — used when the user goes previous during
+   * thinking/loading.
+   */
+  private advanceEpoch = 0;
+  /** Woken when advanceEpoch changes so a cancelled advance stops awaiting
+   *  its (slow) LLM pick and releases the transition chain immediately. */
+  private advanceCancelWaiters = new Set<() => void>();
   /** Serialises all state transitions (auto-advance, native sync, skip, user
    *  input). Without this, concurrent play events (onSongComplete vs
    *  onNativeAutoAdvanced, ended + progress fallback) interleave mid-flight
@@ -134,14 +191,12 @@ export class Orchestrator {
    *  emit — visible as "thinking…" while audio plays, then a sudden swap. */
   private transitionChain: Promise<void> = Promise.resolve();
   /** Ordered plan for native queue — head plays after the current track. */
-  private nativeQueuePlan: Array<{
-    song: LibraryTrack;
-    baseEmotion: import("../types").CurrentEmotion;
-    rationale: string;
-  }> = [];
+  private nativeQueuePlan: NativeQueuePlanEntry[] = [];
   /** songId → LLM rationale, survives nativeQueuePlan clears so background
    *  auto-advance never falls back to canned copy. Session-scoped. */
   private rationaleBySongId = new Map<string, string>();
+  /** Resolved URLs survive back/forward navigation within this session. */
+  private playUrlBySongId = new Map<string, string>();
   /** Persists across auto-advance until the user submits new input in the text box. */
   private activeArtistFilter: string | null = null;
   /** Tracks which artist-pool songs were played in the current artist session. */
@@ -327,6 +382,78 @@ export class Orchestrator {
 
   getState(): OrchestratorState {
     return this.state;
+  }
+
+  /** True when immersive previous / undo-skip has a song to restore. */
+  canGoPrevious(): boolean {
+    return this.playStack.length > 0;
+  }
+
+  /** True when a prefetched next track is ready to swipe into (no thinking gap). */
+  canGoNext(): boolean {
+    return this.nativeQueuePlan.length > 0;
+  }
+
+  /**
+   * Neighbors for immersive swipe — previous = play-stack top,
+   * next = native queue head. Full display pack (cover + copy + pad).
+   */
+  peekPrevious(): SwipeNeighbor | null {
+    const entry = this.playStack[this.playStack.length - 1];
+    return entry
+      ? toSwipeNeighbor(entry.track, entry.rationale, entry.emotion)
+      : null;
+  }
+
+  peekNext(): SwipeNeighbor | null {
+    const entry = this.nativeQueuePlan[0];
+    return entry
+      ? toSwipeNeighbor(entry.song, entry.rationale, entry.baseEmotion)
+      : null;
+  }
+
+  private pushPlayStackFromCurrent(): void {
+    if (!this.currentSong || !this.currentTurn) return;
+    this.playStack.push({
+      track: this.currentSong,
+      rationale: this.currentTurn.agent_response.rationale,
+      emotion: this.currentTurn.current_emotion,
+    });
+  }
+
+  private clearPlayStack(): void {
+    this.playStack = [];
+  }
+
+  /**
+   * Invalidate the in-flight auto-advance. Discarding its result is not
+   * enough: the transition chain stays blocked until it stops awaiting, so a
+   * user-driven previous/replay would only be heard after the LLM answered.
+   */
+  private cancelInFlightAdvance(): void {
+    this.advanceEpoch += 1;
+    const waiters = [...this.advanceCancelWaiters];
+    this.advanceCancelWaiters.clear();
+    for (const wake of waiters) wake();
+  }
+
+  private raceAdvanceCancel<T>(
+    epoch: number,
+    work: Promise<T>,
+  ): Promise<T | typeof ADVANCE_CANCELLED> {
+    if (epoch !== this.advanceEpoch) {
+      // Swallow the abandoned work's failure — nobody is listening anymore.
+      void work.catch(() => {});
+      return Promise.resolve(ADVANCE_CANCELLED);
+    }
+    let wake!: () => void;
+    const cancelled = new Promise<typeof ADVANCE_CANCELLED>((resolve) => {
+      wake = () => resolve(ADVANCE_CANCELLED);
+      this.advanceCancelWaiters.add(wake);
+    });
+    return Promise.race([work, cancelled]).finally(() => {
+      this.advanceCancelWaiters.delete(wake);
+    });
   }
 
   subscribe(cb: (s: OrchestratorState) => void): () => void {
@@ -702,14 +829,26 @@ export class Orchestrator {
   ): Promise<void> {
     const { turnRepo, audio } = this.deps;
     const t0 = performance.now();
+    const epoch = this.advanceEpoch;
 
-    const picked = await this.pickNextSong(
-      emotion,
-      userUtterance,
-      pseudoTargetOverride,
-      undefined,
-      autoAdvanceContext,
+    const picked = await this.raceAdvanceCancel(
+      epoch,
+      this.pickNextSong(
+        emotion,
+        userUtterance,
+        pseudoTargetOverride,
+        undefined,
+        autoAdvanceContext,
+      ),
     );
+    if (picked === ADVANCE_CANCELLED) {
+      console.log("[lyra] runTurnWithEmotion cancelled while picking (previous)");
+      return;
+    }
+    if (epoch !== this.advanceEpoch) {
+      console.log("[lyra] runTurnWithEmotion aborted after pick (previous/cancel)");
+      return;
+    }
     if (!picked) {
       console.warn("[lyra] pickNextSong 没选到歌（candidates 空或 companion 失败）");
       return;
@@ -729,8 +868,22 @@ export class Orchestrator {
     );
 
     await turnRepo.insertTurn(turn);
+    if (epoch !== this.advanceEpoch) {
+      console.log("[lyra] runTurnWithEmotion aborted before play (previous/cancel)");
+      return;
+    }
     if (!options?.skipPlay) {
       await audio.playFile(picked.song.path, picked.song.duration_ms ?? null);
+      if (epoch !== this.advanceEpoch) {
+        // User went previous while playFile was resolving — don't keep this track.
+        try {
+          await audio.stop();
+        } catch {
+          /* ignore */
+        }
+        console.log("[lyra] runTurnWithEmotion aborted after play (previous/cancel)");
+        return;
+      }
     }
 
     const turn_latency_ms = Math.round(performance.now() - t0);
@@ -1088,9 +1241,18 @@ export class Orchestrator {
       /* bus errors are non-fatal */
     }
 
+    // Remember for immersive previous before finalise clears current*.
+    this.pushPlayStackFromCurrent();
+
+    // Prefer the already-prefetched next track so immersive swipe stays
+    // continuous (the cover the user saw is the song that plays).
+    const planned = this.nativeQueuePlan.shift() ?? null;
+
     // Stop audio immediately
     await this.deps.audio.stop();
-    this.nativeQueuePlan = [];
+    if (!planned) {
+      this.nativeQueuePlan = [];
+    }
 
     // Fold skip event into current turn
     this.pendingEvents.push({ kind: "skip" });
@@ -1101,10 +1263,6 @@ export class Orchestrator {
     const endedEmotion = this.currentTurn.current_emotion;
     const autoCtx = this.captureAutoAdvanceContext();
 
-    // Emit thinking so UI shows "…" while we pick the next song
-    this.emit({ kind: "thinking", user_utterance: "" });
-
-    // Remember this intent so an error can be replayed with 点一下重试.
     this.lastIntent = {
       kind: "auto-advance",
       emotion: endedEmotion,
@@ -1112,10 +1270,42 @@ export class Orchestrator {
     };
 
     try {
-      // Finalise: no verbal (skip is silent), same emotion (no shift)
       await this.finalisePreviousTurn(undefined, endedEmotion.pad);
 
-      // Continue the flow: same emotion — play history excludes recent songs
+      if (planned) {
+        const turn = this.buildTurn(
+          planned.baseEmotion,
+          "",
+          "proactive-open",
+          planned.song,
+          planned.rationale,
+        );
+        await this.deps.turnRepo.insertTurn(turn);
+        try {
+          // Prefer the pre-resolved URL so swipe → play is immediate.
+          await this.deps.audio.playFile(
+            planned.playUrl || planned.song.path,
+            planned.song.duration_ms ?? null,
+          );
+        } catch (err) {
+          console.error("[lyra] skip prefetched playback failed:", err);
+          this.emit({
+            kind: "error",
+            message: "播放失败，检查下网络或音频设备？",
+          });
+          return;
+        }
+        this.currentTurn = turn;
+        this.currentSong = planned.song;
+        this.pendingEvents = [];
+        this.recordArtistSessionPlay(planned.song.id);
+        this.rationaleBySongId.set(planned.song.id, planned.rationale);
+        this.emit({ kind: "playing", turn, song: planned.song });
+        return;
+      }
+
+      // No prefetch — fall back to thinking + pick.
+      this.emit({ kind: "thinking", user_utterance: "" });
       await this.runTurnWithEmotion(
         endedEmotion,
         "",
@@ -1129,6 +1319,88 @@ export class Orchestrator {
       console.error("[lyra] skip auto-advance error:", err);
       this.emit({ kind: "error", message: msg });
     }
+    });
+  }
+
+  /**
+   * Pop the session play stack and restore that song (immersive previous /
+   * undo skip during thinking). Bumps advanceEpoch immediately so an
+   * in-flight skip/complete cannot stomp the restore.
+   */
+  async onPrevious(): Promise<void> {
+    if (this.playStack.length === 0) return;
+    this.cancelInFlightAdvance();
+    return this.enqueueTransition(async () => {
+      const entry = this.playStack.pop();
+      if (!entry) return;
+
+      // Browser-style forward history: when moving back, the song we're
+      // leaving becomes the next item again, followed by the untouched plan.
+      if (this.currentSong && this.currentTurn) {
+        const currentSongId = this.currentSong.id;
+        this.nativeQueuePlan = [
+          {
+            song: this.currentSong,
+            baseEmotion: this.currentTurn.current_emotion,
+            rationale: this.currentTurn.agent_response.rationale,
+            playUrl:
+              this.playUrlBySongId.get(currentSongId) ?? this.currentSong.path,
+          },
+          ...this.nativeQueuePlan.filter(
+            (planned) => planned.song.id !== currentSongId,
+          ),
+        ];
+      }
+      await this.deps.audio.stop();
+
+      if (this.currentTurn) {
+        this.pendingEvents.push({ kind: "skip" });
+        await this.finalisePreviousTurn(
+          undefined,
+          this.currentTurn.current_emotion.pad,
+        );
+      }
+
+      const clock = this.deps.clock ?? Date.now;
+      const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
+      const turn: DialogueTurn = {
+        id: idGen(),
+        timestamp: clock(),
+        current_emotion: entry.emotion,
+        user_utterance: { modality: "proactive-open", content: "" },
+        agent_response: { song_id: entry.track.id, rationale: entry.rationale },
+        user_reaction: {
+          behavioral: {
+            listen_duration_ms: 0,
+            completed: false,
+            skipped: false,
+            repeated: 0,
+            volume_delta: 0,
+          },
+          silence_positive: false,
+        },
+        emotion_delta: ZERO_PAD,
+      };
+
+      try {
+        await this.deps.audio.playFile(
+          entry.track.path,
+          entry.track.duration_ms ?? null,
+        );
+      } catch (err) {
+        console.error("[lyra] previous playback failed:", err);
+        this.emit({
+          kind: "error",
+          message: "播放失败，检查下网络或音频设备？",
+        });
+        return;
+      }
+
+      this.currentTurn = turn;
+      this.currentSong = entry.track;
+      this.pendingEvents = [];
+      this.rationaleBySongId.set(entry.track.id, entry.rationale);
+      this.emit({ kind: "playing", turn, song: entry.track });
     });
   }
 
@@ -1147,6 +1419,8 @@ export class Orchestrator {
   ): Promise<void> {
     // User replay is a full transition (stop + playFile) — must not interleave
     // with an in-flight auto-advance, or stop() would kill the wrong audio.
+    this.cancelInFlightAdvance();
+    this.clearPlayStack();
     return this.enqueueTransition(async () => {
     await this.deps.audio.stop();
 
@@ -1232,14 +1506,39 @@ export class Orchestrator {
       baseEmotion.labels.join(" ").trim() ||
       undefined;
 
+    const nativeQueued = new Set(alreadyQueuedSongIds);
+    // Reuse resolved entries already held by JS but missing from native
+    // (e.g. native queue was cleared for previous/next navigation).
+    // If native still has a suffix of our plan, entries before that suffix
+    // may already be playing; never append them behind their successors.
+    const lastNativePlanIndex = alreadyQueuedSongIds.reduce(
+      (furthest, songId) =>
+        Math.max(
+          furthest,
+          this.nativeQueuePlan.findIndex((entry) => entry.song.id === songId),
+        ),
+      -1,
+    );
+    const reusablePlan =
+      alreadyQueuedSongIds.length === 0
+        ? this.nativeQueuePlan
+        : lastNativePlanIndex >= 0
+          ? this.nativeQueuePlan.slice(lastNativePlanIndex + 1)
+          : [];
+    const reusable = reusablePlan
+      .filter((entry) => !nativeQueued.has(entry.song.id))
+      .slice(0, count);
+    const results: PrefetchNextResult[] = reusable.map((entry) =>
+      this.prefetchPayload(entry.song, entry.playUrl),
+    );
+
     const exclude = new Set<string>([
       this.currentSong.id,
       ...alreadyQueuedSongIds,
       ...this.nativeQueuePlan.map((e) => e.song.id),
     ]);
 
-    const results: PrefetchNextResult[] = [];
-    for (let i = 0; i < count; i++) {
+    for (let i = results.length; i < count; i++) {
       const picked = await this.pickNextSong(
         baseEmotion,
         "",
@@ -1256,10 +1555,17 @@ export class Orchestrator {
         song: picked.song,
         baseEmotion,
         rationale: picked.rationale,
+        playUrl: url,
       });
+      this.playUrlBySongId.set(picked.song.id, url);
       this.rationaleBySongId.set(picked.song.id, picked.rationale);
       exclude.add(picked.song.id);
       results.push(this.prefetchPayload(picked.song, url));
+    }
+
+    // Notify UI (cover rail) that neighbors may have changed.
+    if (results.length > 0 && this.state.kind === "playing") {
+      this.emit({ ...this.state });
     }
 
     return results;
@@ -1313,6 +1619,7 @@ export class Orchestrator {
     const autoCtx = this.captureAutoAdvanceContext();
 
     try {
+      this.pushPlayStackFromCurrent();
       await this.finalisePreviousTurn(undefined, endedEmotion.pad);
 
       // Native may have skipped past plan entries (or the plan was cleared
@@ -1457,12 +1764,41 @@ export class Orchestrator {
     const turnTimestamp = this.currentTurn.timestamp;
     const autoCtx = this.captureAutoAdvanceContext();
 
-    // Emit thinking so UI shows "…" while we pick the next song
-    this.emit({ kind: "thinking", user_utterance: "" });
+    // Session previous stack — same as skip.
+    this.pushPlayStackFromCurrent();
+    const planned = this.nativeQueuePlan.shift() ?? null;
+
+    // A known forward item is an immediate transition; thinking is only for
+    // the genuinely empty-queue recommendation path.
+    if (!planned) {
+      this.emit({ kind: "thinking", user_utterance: "" });
+    }
 
     try {
       // Finalise: no verbal (user is silent), no emotion shift (no new signal)
       await this.finalisePreviousTurn(undefined, endedEmotion.pad);
+
+      if (planned) {
+        const turn = this.buildTurn(
+          planned.baseEmotion,
+          "",
+          "proactive-open",
+          planned.song,
+          planned.rationale,
+        );
+        await this.deps.turnRepo.insertTurn(turn);
+        await this.deps.audio.playFile(
+          planned.playUrl,
+          planned.song.duration_ms ?? null,
+        );
+        this.currentTurn = turn;
+        this.currentSong = planned.song;
+        this.pendingEvents = [];
+        this.recordArtistSessionPlay(planned.song.id);
+        this.rationaleBySongId.set(planned.song.id, planned.rationale);
+        this.emit({ kind: "playing", turn, song: planned.song });
+        return;
+      }
 
       const baseEmotion = this.computeAutoAdvanceBaseEmotion(
         turnTimestamp,

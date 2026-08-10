@@ -113,4 +113,36 @@ describe("LyricsAgent.fetch", () => {
     expect(messages[1]!.content).toContain("完整歌词");
     expect(messages[1]!.content).toContain("原始标题");
   });
+
+  it("uses 王菲 from Bilibili title, not the uploader, for 《主角》", async () => {
+    const provider = stub(FULL_LYRICS);
+    const agent = new LyricsAgent({ provider });
+    await agent.fetch({
+      title: "王菲《主角》百万豪装录音棚大声听",
+      artist: "JLRS-LeoFM",
+    });
+    const messages = (provider.chat as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as ChatMessage[];
+    const user = messages[1]!.content;
+    expect(user).toContain("歌名：主角");
+    expect(user).toContain("原唱歌手：王菲");
+    expect(user).not.toMatch(/原唱歌手：JLRS-LeoFM/);
+    expect(user).toMatch(/上传者|频道/);
+  });
+
+  it("passes lyric anchor from quoted title snippet", async () => {
+    const provider = stub(FULL_LYRICS);
+    const agent = new LyricsAgent({ provider });
+    await agent.fetch({
+      title:
+        "【Hi-Res无损音质】《主角》- 王菲“我站在舞台中央”百万豪装录音棚试听 大屏歌词版",
+      artist: "蒸汽和弦",
+    });
+    const messages = (provider.chat as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as ChatMessage[];
+    const user = messages[1]!.content;
+    expect(user).toContain("歌名：主角");
+    expect(user).toContain("原唱歌手：王菲");
+    expect(user).toContain("歌词锚点：我站在舞台中央");
+  });
 });

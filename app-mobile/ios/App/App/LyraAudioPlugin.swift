@@ -38,6 +38,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "appendToPlaybackQueue", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPlaybackQueueInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "drainNativeAdvanced", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getCurrentTrack", returnType: CAPPluginReturnPromise),
     ]
 
     private var player: AVPlayer?
@@ -71,6 +72,9 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     private var fallbackEndWorkItem: DispatchWorkItem?
     private var endedEmittedForPlaybackId: Int = -1
     private var currentTrackDurationMs: Int = 0
+    /// Library id of whatever AVPlayer is audibly playing — JS must reconcile
+    /// Orchestrator UI to this after background suspend (not the other way around).
+    private var currentSongId: String = ""
     /// Prefetched by JS while the current track plays — native plays through in order.
     private var pendingNextTracks: [PendingNextTrack] = []
     /// Native auto-advances that happened while JS was suspended.
@@ -203,6 +207,9 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             self.lastDownloadedCodec = nil
             self.currentRemoteUrl = url
             self.currentTrackDurationMs = durationMs
+            // playUrl itself has no song identity — cleared until setNowPlaying
+            // (or a native queue handoff) stamps the authoritative id.
+            self.currentSongId = ""
             self.endedEmittedForPlaybackId = -1
 
             self.startPlayer(url: url, playbackId: playbackId, isLocalFile: false)
@@ -287,14 +294,28 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         let artist = call.getString("artist") ?? ""
         let durationMs = call.getInt("durationMs") ?? 0
         let coverUrl = call.getString("coverUrl") ?? ""
+        let songId = call.getString("songId") ?? ""
         DispatchQueue.main.async {
             self.nowPlayingTitle = title
             self.nowPlayingArtist = artist
             self.nowPlayingDurationSeconds = Double(durationMs) / 1000.0
+            if !songId.isEmpty {
+                self.currentSongId = songId
+            }
             self.updateArtwork(coverUrl: coverUrl)
             self.publishNowPlayingInfo()
             self.syncLiveActivity()
             call.resolve()
+        }
+    }
+
+    @objc func getCurrentTrack(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            call.resolve([
+                "songId": self.currentSongId.isEmpty ? NSNull() : self.currentSongId,
+                "isPlaying": self.isActuallyPlaying,
+                "playbackId": self.currentPlaybackId,
+            ])
         }
     }
 
@@ -592,6 +613,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         downloadTask = nil
         player?.pause()
         player = nil
+        currentSongId = ""
     }
 
     private func emitFailedOnce(playbackId: Int, message: String) {
@@ -761,6 +783,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         nowPlayingTitle = next.title
         nowPlayingArtist = next.artist
         nowPlayingDurationSeconds = Double(next.durationMs) / 1000.0
+        currentSongId = next.songId
         artworkUrl = ""
         artwork = nil
         updateArtwork(coverUrl: next.coverUrl)

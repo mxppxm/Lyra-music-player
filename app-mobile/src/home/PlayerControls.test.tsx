@@ -45,3 +45,25 @@ describe("PlayerControls share button", () => {
     expect(screen.queryByTestId("share-btn")).not.toBeInTheDocument();
   });
 });
+
+describe("PlayerControls previous / skip gates", () => {
+  it("enables previous when canGoPrevious and onPrevious are set", () => {
+    const onPrevious = vi.fn();
+    render(
+      <PlayerControls
+        {...baseProps}
+        canGoPrevious
+        onPrevious={onPrevious}
+      />,
+    );
+    const prev = screen.getByTestId("prev-btn");
+    expect(prev).not.toBeDisabled();
+    fireEvent.click(prev);
+    expect(onPrevious).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables skip when canSkip is false", () => {
+    render(<PlayerControls {...baseProps} canSkip={false} />);
+    expect(screen.getByTestId("skip-btn")).toBeDisabled();
+  });
+});

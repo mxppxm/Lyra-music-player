@@ -19,6 +19,10 @@
   --lyra-input-height: 46px;
   --lyra-input-radius: 14px;
 
+  /* Dock space the progress row will claim: its 44px height plus the 14px
+   * dock gap it cancels while collapsed. */
+  --lyra-progress-reserve: 58px;
+
   /* Ink on glass — deeper than the Mac tokens for outdoor readability */
   --lyra-color-song-info: rgba(28, 24, 20, 0.9);
   --lyra-color-small-note: rgba(28, 24, 20, 0.75);
@@ -301,11 +305,28 @@ body,
   border-radius: 12px;
   overflow: hidden;
   transition: border-radius 560ms cubic-bezier(0.32, 0, 0.2, 1);
-  will-change: transform;
+  /* Compositor-only spin — rAF style writes stuttered on WKWebView when the
+   * parent FLIP shell / glow canvas also touched the main thread. */
+  backface-visibility: hidden;
 }
 
 .lyra-mobile-cover-art--cd .lyra-mobile-cover-art__disc {
   border-radius: 50%;
+}
+
+.lyra-mobile-cover-art__disc--armed {
+  animation: lyra-disc-spin 22s linear infinite;
+  animation-play-state: paused;
+}
+
+.lyra-mobile-cover-art__disc--spinning {
+  animation-play-state: running;
+}
+
+@keyframes lyra-disc-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* First-frame mount guard — nothing transitions right after (re)mount. */
@@ -386,6 +407,122 @@ body,
  * while the disc keeps its own spin transform. */
 .lyra-mobile-cover-shift {
   transition: transform 560ms cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+.lyra-mobile-cover-shift--swiping {
+  transition: none !important;
+}
+
+.lyra-mobile-cover-shift--repositioning {
+  transition: none !important;
+}
+
+/* Exit / enter slide after a committed swipe — one clean glide. */
+.lyra-mobile-cover-shift--settling {
+  transition: transform 320ms cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+/* Continuous cover rail: previous | current | next */
+.lyra-mobile-cover-rail-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.lyra-mobile-stage--immersive .lyra-mobile-cover-rail-wrap {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.lyra-mobile-cover-rail-swipe {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+.lyra-mobile-stage--immersive .lyra-mobile-cover-rail-swipe {
+  touch-action: none;
+}
+
+.lyra-mobile-cover-rail {
+  position: relative;
+  width: min(58vw, 230px);
+  aspect-ratio: 1;
+  flex-shrink: 0;
+}
+
+.lyra-mobile-stage--immersive .lyra-mobile-cover-rail {
+  touch-action: none;
+}
+
+.lyra-mobile-cover-rail__slot {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.lyra-mobile-cover-rail__slot--prev {
+  transform: translateX(calc(-1 * var(--rail-stride, 328px)));
+}
+
+.lyra-mobile-cover-rail__slot--next {
+  transform: translateX(var(--rail-stride, 328px));
+}
+
+.lyra-mobile-cover-rail__slot .lyra-mobile-cover-art {
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-mobile-cover-rail__slot--thinking {
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      circle at 38% 32%,
+      rgba(255, 255, 255, 0.34),
+      transparent 46%
+    ),
+    rgba(255, 252, 248, 0.22);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 14px 34px rgba(24, 18, 12, 0.12);
+}
+
+.lyra-mobile-cover-rail__thinking {
+  opacity: 1;
+  color: var(--lyra-color-small-note);
+  font-family: var(--lyra-note-family);
+  font-size: var(--lyra-note-font-size);
+  font-style: italic;
+  letter-spacing: 0.04em;
+}
+
+/* Normal mode keeps only the current cover; immersive pre-mounts both
+ * neighbors off-screen so the first drag has no mount/layout hitch. */
+.lyra-mobile-cover-rail:not(.lyra-mobile-cover-rail--neighbors) {
+  overflow: visible;
+}
+
+.lyra-mobile-stage--immersive .lyra-mobile-cover-rail--neighbors {
+  overflow: visible;
+}
+
+/* Immersive: clip neighbor discs; keep stage from scrolling with the finger. */
+.lyra-mobile-stage--immersive {
+  overflow: hidden;
+  touch-action: pan-y;
+  overscroll-behavior: none;
+}
+
+.lyra-mobile-stage--immersive .lyra-mobile-content {
+  overflow: visible;
 }
 
 /* ── Main stage ───────────────────────────────────────────────────────── */
@@ -935,11 +1072,16 @@ button.lyra-mobile-idle-slogan:hover {
 
 /* ── Floating dock ────────────────────────────────────────────────────── */
 
+/* Progress reveal must not resize the content area, or the cover centered in
+ * it drifts every time timing data lands. The dock parks the row's collapsed
+ * growth above the capsule as transparent space and gives it back in lockstep
+ * with the reveal: the capsule grows upward, the stage total stays put. */
 .lyra-mobile-dock {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  margin-top: var(--lyra-progress-reserve);
   padding: 16px 18px 18px;
   border-radius: var(--lyra-dock-radius);
   background: var(--lyra-glass-bg);
@@ -949,27 +1091,45 @@ button.lyra-mobile-idle-slogan:hover {
   box-shadow: var(--lyra-glass-shadow);
 }
 
+.lyra-mobile-dock--progress {
+  margin-top: 0;
+}
+
+/* Idle has no progress row to reserve — the capsule stays centered. */
+.lyra-mobile-dock--idle {
+  margin-top: 0;
+}
+
 /* ── Progress ─────────────────────────────────────────────────────────── */
 
-/* Height-accordions open when duration arrives — no dock layout jump.
- * Collapsed: zero height + negative margin cancelling the dock's 14px gap. */
+/* The row height-accordions open when duration arrives, so the capsule grows
+ * upward with no blank slot inside it. Collapsed it also cancels the dock's
+ * own 14px gap; the dock hands that same total back as transparent reserve
+ * (see --lyra-progress-reserve) so the stage's flow height never changes. */
 .lyra-mobile-progress-wrap {
   max-height: 0;
   margin-top: -14px;
+  overflow: hidden;
   opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   transform: translateY(-4px);
   transition:
     max-height 420ms cubic-bezier(0.32, 0, 0.2, 1),
     margin-top 420ms cubic-bezier(0.32, 0, 0.2, 1),
     opacity 320ms ease,
-    transform 420ms cubic-bezier(0.32, 0, 0.2, 1);
+    transform 420ms cubic-bezier(0.32, 0, 0.2, 1),
+    visibility 0s linear 420ms;
 }
 
 .lyra-mobile-progress-wrap--show {
   max-height: 44px;
   margin-top: 0;
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
   transform: none;
+  transition-delay: 0s;
 }
 
 .lyra-mobile-progress-wrap__inner {
@@ -1191,6 +1351,12 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   pointer-events: none;
 }
 
+html[data-lyra-immersive="true"],
+html[data-lyra-immersive="true"] body {
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
 /* Hidden with opacity/translate (never display:none) so the cover art
  * doesn't jump — everything keeps its layout box while fading. */
 .lyra-mobile-song-info,
@@ -1206,7 +1372,10 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
 .lyra-mobile-dock {
   transition:
     opacity 480ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 560ms cubic-bezier(0.32, 0, 0.2, 1);
+    transform 560ms cubic-bezier(0.32, 0, 0.2, 1),
+    /* Must match the progress row exactly — the reserve it releases and the
+     * height the row takes have to cancel out on every frame. */
+    margin-top 420ms cubic-bezier(0.32, 0, 0.2, 1);
 }
 
 .lyra-mobile-stage--immersive .lyra-mobile-song-info {
@@ -1220,6 +1389,21 @@ html[data-lyra-immersive="true"] [data-testid="build-stamp"] {
   transform: translateY(-6px);
   pointer-events: none;
   transition-delay: 40ms;
+}
+
+/* Thinking note must stay invisible in immersive — otherwise skip/complete
+ * flashes "Lyra 正在想" over the vinyl. */
+.lyra-mobile-stage--immersive .lyra-mobile-thinking {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Immersive hides the copy modules with opacity, but swapping note ↔ thinking
+ * mounts a new element that replays the stagger intro — a running animation
+ * outranks those rules and would fade the copy in over the vinyl. The intro
+ * only belongs to the non-immersive scene change. */
+.lyra-mobile-stage--immersive .lyra-mobile-content > *:not(.lyra-mobile-cover-shift) {
+  animation: none;
 }
 
 .lyra-mobile-stage--immersive .lyra-mobile-dock {

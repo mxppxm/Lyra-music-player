@@ -4,6 +4,12 @@ import { normalizeCoverUrl } from "../home/CoverBackground";
 
 /** How many upcoming tracks native should hold while locked. */
 export const TARGET_QUEUE_DEPTH = 5;
+let queueGeneration = 0;
+
+/** Cancel refill batches captured before an explicit native queue reset. */
+export function invalidatePlaybackQueueRefills(): void {
+  queueGeneration += 1;
+}
 
 function toNativeTrack(track: PrefetchNextResult) {
   return {
@@ -20,12 +26,14 @@ function toNativeTrack(track: PrefetchNextResult) {
 export async function refillPlaybackQueue(
   orchestrator: Orchestrator,
 ): Promise<number> {
+  const generation = queueGeneration;
   const { count, songIds } = await LyraAudio.getPlaybackQueueInfo();
   const need = TARGET_QUEUE_DEPTH - count;
   if (need <= 0) return 0;
 
   const tracks = await orchestrator.prefetchMore(need, songIds);
   if (tracks.length === 0) return 0;
+  if (generation !== queueGeneration) return 0;
 
   await LyraAudio.appendToPlaybackQueue({
     tracks: tracks.map(toNativeTrack),

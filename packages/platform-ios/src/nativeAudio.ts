@@ -18,6 +18,8 @@ export interface LyraAudioPlugin {
     artist: string;
     durationMs?: number;
     coverUrl?: string;
+    /** Library id — stamps native source-of-truth for resume reconcile. */
+    songId?: string;
   }): Promise<void>;
   /** Clear a natural-completion the web layer has handled. */
   acknowledgeEnded(): Promise<void>;
@@ -51,6 +53,12 @@ export interface LyraAudioPlugin {
       playbackId: number;
       previousPlaybackId: number;
     }>;
+  }>;
+  /** What AVPlayer is audibly on — authoritative after background listening. */
+  getCurrentTrack(): Promise<{
+    songId: string | null;
+    isPlaying: boolean;
+    playbackId: number;
   }>;
   addListener(
     eventName: "ended",

@@ -3,6 +3,7 @@ import { App } from "@capacitor/app";
 import { getLyraPlatform } from "@lyra/platform";
 import { LyraAudio } from "@lyra/platform-ios";
 import type { Orchestrator } from "@lyra/core";
+import { pickNativeReconcileSongId } from "./nativeReconcile";
 
 export type AutoAdvancePlayback = {
   songId: string | null;
@@ -16,7 +17,8 @@ export type AutoAdvancePlayback = {
 
 /**
  * Natural completion → orchestrator.onSongComplete() → next song.
- * Native queue path emits `nativeAdvanced` / drains unsynced events on resume.
+ * Native queue path emits `nativeAdvanced` / reconciles to the live native
+ * songId on resume (native AVPlayer is source of truth for what's playing).
  *
  * ALL advance paths (ended event, nativeAdvanced, JS progress fallback)
  * share ONE serial queue so play events can never interleave. Before this, a
@@ -34,6 +36,8 @@ export function useAutoAdvance(
   const advancedForSongRef = useRef<string | null>(null);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const advancingRef = useRef(false);
+  const playbackRef = useRef(playback);
+  playbackRef.current = playback;
 
   const enqueue = useCallback((fn: () => Promise<void>): Promise<void> => {
     const run = queueRef.current.then(fn, fn);
@@ -71,21 +75,30 @@ export function useAutoAdvance(
     [enqueue, orchestrator],
   );
 
-  useEffect(() => {
-    const drainUnsyncedNative = async () => {
+  const reconcileToNative = useCallback(async () => {
+    try {
+      const { events } = await LyraAudio.drainNativeAdvanced();
+      let nativeSongId: string | null = null;
       try {
-        const { events } = await LyraAudio.drainNativeAdvanced();
-        for (const event of events) {
-          const songId = event.songId;
-          if (typeof songId === "string" && songId.length > 0) {
-            await syncNativeAdvance(songId);
-          }
-        }
+        const current = await LyraAudio.getCurrentTrack();
+        nativeSongId =
+          typeof current.songId === "string" && current.songId.length > 0
+            ? current.songId
+            : null;
       } catch {
-        /* web preview / tests */
+        /* older native binary / web preview */
       }
-    };
+      const songId = pickNativeReconcileSongId(nativeSongId, events);
+      if (!songId) return;
+      if (playbackRef.current?.songId === songId) return;
+      console.log(`[lyra-ios] reconcile UI → native songId=${songId}`);
+      await syncNativeAdvance(songId);
+    } catch {
+      /* web preview / tests */
+    }
+  }, [syncNativeAdvance]);
 
+  useEffect(() => {
     const offComplete = getLyraPlatform().onComplete(() => {
       void advance();
     });
@@ -100,7 +113,7 @@ export function useAutoAdvance(
     let removeApp: (() => void) | undefined;
     void App.addListener("appStateChange", ({ isActive }) => {
       if (!isActive) return;
-      void drainUnsyncedNative().then(() =>
+      void reconcileToNative().then(() =>
         LyraAudio.getPendingEnded().then(({ playbackId }) => {
           if (playbackId != null) void advance();
         }),
@@ -109,7 +122,7 @@ export function useAutoAdvance(
       removeApp = r.remove;
     });
 
-    void drainUnsyncedNative().then(() =>
+    void reconcileToNative().then(() =>
       LyraAudio.getPendingEnded().then(({ playbackId }) => {
         if (playbackId != null) void advance();
       }),
@@ -120,7 +133,7 @@ export function useAutoAdvance(
       removeNative?.();
       removeApp?.();
     };
-  }, [orchestrator, advance, syncNativeAdvance]);
+  }, [orchestrator, advance, syncNativeAdvance, reconcileToNative]);
 
   useEffect(() => {
     if (!playback?.songId || !playback.playing || playback.paused) return;
