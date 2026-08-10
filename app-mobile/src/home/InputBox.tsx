@@ -20,17 +20,27 @@ export function InputBox({
   const [value, setValue] = useState("");
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
+  const submit = useCallback(() => {
+    const text = value.trim();
+    if (!text) return;
+    onSubmit(text);
+    setValue("");
+    // iOS keeps the soft keyboard up as long as the textarea holds focus —
+    // tapping the send button doesn't blur it on its own.
+    ref.current?.blur();
+  }, [onSubmit, value]);
+
   const handleKey = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (disabled) return;
       if (e.key !== "Enter" || e.shiftKey) return;
+      // Enter also commits an IME candidate (拼音/日本語); submitting there
+      // would eat the word the user was still composing.
+      if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
       e.preventDefault();
-      const text = value.trim();
-      if (!text) return;
-      onSubmit(text);
-      setValue("");
+      submit();
     },
-    [disabled, onSubmit, value],
+    [disabled, submit],
   );
 
   return (
@@ -45,6 +55,7 @@ export function InputBox({
         disabled={disabled}
         placeholder={placeholder}
         rows={1}
+        enterKeyHint="send"
         className="lyra-mobile-input"
       />
       <button
@@ -52,12 +63,7 @@ export function InputBox({
         className="lyra-mobile-send-btn"
         aria-label="发送"
         disabled={disabled || !value.trim()}
-        onClick={() => {
-          const text = value.trim();
-          if (!text) return;
-          onSubmit(text);
-          setValue("");
-        }}
+        onClick={submit}
       >
         <svg
           className="lyra-mobile-send-icon"
