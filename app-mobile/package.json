@@ -20,10 +20,12 @@
     "@capacitor/filesystem": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
     "@capacitor/preferences": "^7.0.0",
+    "@capacitor/share": "^7.0.4",
     "@fontsource/lora": "^5.2.8",
     "@lyra/core": "workspace:*",
     "@lyra/platform": "workspace:*",
     "@lyra/platform-ios": "workspace:*",
+    "html-to-image": "^1.11.13",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

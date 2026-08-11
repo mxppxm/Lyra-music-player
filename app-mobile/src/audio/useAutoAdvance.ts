@@ -3,6 +3,8 @@ import { App } from "@capacitor/app";
 import { getLyraPlatform } from "@lyra/platform";
 import { LyraAudio } from "@lyra/platform-ios";
 import type { Orchestrator } from "@lyra/core";
+import { trackActivity } from "@lyra/core/daily/trackActivity";
+import { playSessionTracker } from "@lyra/core/daily/PlaySessionTracker";
 import { pickNativeReconcileSongId } from "./nativeReconcile";
 
 export type AutoAdvancePlayback = {
@@ -114,12 +116,18 @@ export function useAutoAdvance(
 
     let removeApp: (() => void) | undefined;
     void App.addListener("appStateChange", ({ isActive }) => {
-      if (!isActive) return;
-      void reconcileToNative().then(() =>
-        LyraAudio.getPendingEnded().then(({ playbackId }) => {
-          if (playbackId != null) void advance();
-        }),
-      );
+      if (isActive) {
+        playSessionTracker.noteForeground();
+        void trackActivity({ name: "app_foreground" });
+        void reconcileToNative().then(() =>
+          LyraAudio.getPendingEnded().then(({ playbackId }) => {
+            if (playbackId != null) void advance();
+          }),
+        );
+        return;
+      }
+      playSessionTracker.noteBackground();
+      void trackActivity({ name: "app_background" });
     }).then((r) => {
       removeApp = r.remove;
     });

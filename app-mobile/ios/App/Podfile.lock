@@ -13,6 +13,8 @@ PODS:
     - IONFilesystemLib (~> 1.1.1)
   - CapacitorPreferences (7.0.4):
     - Capacitor
+  - CapacitorShare (7.0.4):
+    - Capacitor
   - IONFilesystemLib (1.1.2)
   - SQLCipher (4.10.0):
     - SQLCipher/standard (= 4.10.0)
@@ -28,6 +30,7 @@ DEPENDENCIES:
   - "CapacitorCordova (from `../../../node_modules/.pnpm/@capacitor+ios@7.6.8_@capacitor+core@7.6.8/node_modules/@capacitor/ios`)"
   - "CapacitorFilesystem (from `../../../node_modules/.pnpm/@capacitor+filesystem@7.1.8_@capacitor+core@7.6.8/node_modules/@capacitor/filesystem`)"
   - "CapacitorPreferences (from `../../../node_modules/.pnpm/@capacitor+preferences@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/preferences`)"
+  - "CapacitorShare (from `../../../node_modules/.pnpm/@capacitor+share@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/share`)"
 
 SPEC REPOS:
   trunk:
@@ -48,6 +51,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/@capacitor+filesystem@7.1.8_@capacitor+core@7.6.8/node_modules/@capacitor/filesystem"
   CapacitorPreferences:
     :path: "../../../node_modules/.pnpm/@capacitor+preferences@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/preferences"
+  CapacitorShare:
+    :path: "../../../node_modules/.pnpm/@capacitor+share@7.0.4_@capacitor+core@7.6.8/node_modules/@capacitor/share"
 
 SPEC CHECKSUMS:
   Capacitor: ff6bf01336ac353098378828aff465095a89e459
@@ -56,10 +61,11 @@ SPEC CHECKSUMS:
   CapacitorCordova: e61ee8c40101b8cd011d0224261606a290c082cf
   CapacitorFilesystem: c63fc54df41e5a6761785a7f3c49dc696c22e296
   CapacitorPreferences: 69d9991307507aeab8ef8019c10b9babfda0e9ca
+  CapacitorShare: 25f7fc5dd0e4edbde5d6801c6de5d14a8b450a41
   IONFilesystemLib: 21a63377696b2d8fab5632ecfb7d2ac67bddb68a
   SQLCipher: eb79c64049cb002b4e9fcb30edb7979bf4706dfc
   ZIPFoundation: dfd3d681c4053ff7e2f7350bc4e53b5dba3f5351
 
-PODFILE CHECKSUM: 17fef4dec08fb51d5080d73986cb40816e601acf
+PODFILE CHECKSUM: 7a80cd78336172bf6b374a20c8e102f39483c10a
 
 COCOAPODS: 1.17.0

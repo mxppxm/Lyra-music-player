@@ -3,6 +3,21 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { HistoryOverlay, formatRelativeTime } from "./HistoryOverlay";
 import type { Orchestrator } from "@lyra/core";
 
+vi.mock("@lyra/core/daily/trackActivity", () => ({
+  trackActivity: vi.fn(async () => {}),
+}));
+vi.mock("@lyra/core/daily/PlaySessionTracker", () => ({
+  playSessionTracker: {
+    noteLyricsOpen: vi.fn(),
+    noteProgress: vi.fn(),
+    noteSeek: vi.fn(),
+    notePause: vi.fn(),
+    noteResume: vi.fn(),
+    noteBackground: vi.fn(),
+    noteForeground: vi.fn(),
+  },
+}));
+
 vi.mock("@lyra/core/db/repo/turnRepo", () => ({
   listRecentTurns: vi.fn(),
 }));
@@ -17,6 +32,19 @@ vi.mock("@lyra/core/db/repo/favoritesRepo", () => ({
   toggleFavorite: vi.fn(),
 }));
 
+vi.mock("@lyra/core/db/repo/dailySnapshotsRepo", () => ({
+  listDailySnapshots: vi.fn(),
+}));
+
+vi.mock("@lyra/core/daily/runDaily", () => ({
+  runDaily: vi.fn(),
+}));
+
+vi.mock("@lyra/core/daily/dayKey", () => ({
+  yesterdayDayKey: vi.fn(() => "2026-08-10"),
+  dayKey: vi.fn(() => "2026-08-11"),
+}));
+
 import { listRecentTurns } from "@lyra/core/db/repo/turnRepo";
 import { getTrack } from "@lyra/core/db/repo/libraryRepo";
 import {
@@ -24,6 +52,8 @@ import {
   getFavoriteSongIds,
   toggleFavorite,
 } from "@lyra/core/db/repo/favoritesRepo";
+import { listDailySnapshots } from "@lyra/core/db/repo/dailySnapshotsRepo";
+import { runDaily } from "@lyra/core/daily/runDaily";
 
 const turn = {
   id: "turn-1",
@@ -72,6 +102,13 @@ beforeEach(() => {
   vi.mocked(listFavorites).mockResolvedValue([]);
   vi.mocked(getFavoriteSongIds).mockResolvedValue(new Set());
   vi.mocked(toggleFavorite).mockResolvedValue({ favorited: true });
+  vi.mocked(listDailySnapshots).mockResolvedValue([]);
+  vi.mocked(runDaily).mockResolvedValue({
+    dayKey: "2026-08-10",
+    html: "<html></html>",
+    sparse: true,
+    created: false,
+  });
 });
 
 afterEach(() => {
@@ -92,6 +129,7 @@ describe("HistoryOverlay", () => {
     );
     expect(await screen.findByTestId("history-tab")).toBeInTheDocument();
     expect(screen.getByTestId("favorites-tab")).toBeInTheDocument();
+    expect(screen.getByTestId("daily-tab")).toBeInTheDocument();
     expect(screen.queryByText("播放历史")).not.toBeInTheDocument();
   });
 
@@ -113,6 +151,84 @@ describe("HistoryOverlay", () => {
       fireEvent.click(screen.getByTestId("favorites-tab"));
     });
     expect(await screen.findByTestId("favorites-empty")).toBeInTheDocument();
+  });
+
+  it("shows daily empty state on the daily tab", async () => {
+    render(
+      <HistoryOverlay open={true} onClose={() => {}} orchestrator={makeStubOrchestrator()} />,
+    );
+    await screen.findByTestId("history-empty");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("daily-tab"));
+    });
+    expect(await screen.findByTestId("daily-empty")).toBeInTheDocument();
+    expect(screen.getByTestId("daily-generate")).toBeInTheDocument();
+  });
+
+  it("manual generate force-runs today and opens the sheet", async () => {
+    vi.mocked(runDaily).mockResolvedValue({
+      dayKey: "2026-08-11",
+      html: "<html><body class='daily-letter daily-letter-v2'><h1>手搓</h1></body></html>",
+      sparse: false,
+      created: true,
+    });
+    vi.mocked(listDailySnapshots)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([
+        {
+          day_key: "2026-08-11",
+          html: "<html><body class='daily-letter daily-letter-v2'><h1>手搓</h1></body></html>",
+          turn_count: 1,
+          event_count: 4,
+          fallback: 0,
+          created_at: Date.now(),
+        },
+      ]);
+    render(
+      <HistoryOverlay open={true} onClose={() => {}} orchestrator={makeStubOrchestrator()} />,
+    );
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("daily-tab"));
+    });
+    await screen.findByTestId("daily-generate");
+    expect(screen.getByTestId("daily-generate")).toHaveTextContent("生成日报");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("daily-generate"));
+    });
+    await waitFor(() => {
+      expect(runDaily).toHaveBeenCalledWith({
+        dayKey: "2026-08-11",
+        force: true,
+      });
+    });
+    expect(await screen.findByTestId("daily-sheet")).toBeInTheDocument();
+  });
+
+  it("opens a daily snapshot in a sheet", async () => {
+    vi.mocked(listDailySnapshots).mockResolvedValue([
+      {
+        day_key: "2026-08-10",
+        html: "<html><body><h1>昨日回顾</h1></body></html>",
+        turn_count: 3,
+        event_count: 12,
+        fallback: 0,
+        created_at: Date.now(),
+      },
+    ]);
+    render(
+      <HistoryOverlay open={true} onClose={() => {}} orchestrator={makeStubOrchestrator()} />,
+    );
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("daily-tab"));
+    });
+    expect(await screen.findByTestId("daily-item-0")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("daily-item-0"));
+    });
+    expect(await screen.findByTestId("daily-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("daily-share")).toBeInTheDocument();
+    expect(screen.getByTestId("daily-capture")).toHaveTextContent("昨日回顾");
   });
 
   it("lists songs with title, artist, time and emotion dot (no stored copy)", async () => {

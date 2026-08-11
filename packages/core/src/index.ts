@@ -14,6 +14,7 @@ export { CompanionAgent } from "./agents/CompanionAgent.ts";
 export { LibraryAgent } from "./agents/LibraryAgent.ts";
 export { MusicProfileAgent } from "./agents/MusicProfileAgent.ts";
 export { LyricsAgent } from "./agents/LyricsAgent.ts";
+export { DailyMoodAgent } from "./agents/DailyMoodAgent.ts";
 export { MoodSummaryAgent } from "./moodSummary/MoodSummaryAgent.ts";
 export * from "./moodSummary/summarizeMood.ts";
 export { routeProvider } from "./agents/route.ts";

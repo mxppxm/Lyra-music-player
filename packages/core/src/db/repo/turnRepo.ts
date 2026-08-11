@@ -44,6 +44,23 @@ export async function listRecentTurns(limit: number): Promise<DialogueTurn[]> {
   return rows.map(fromRow);
 }
 
+/** Turns whose timestamp falls in [startMs, endMs). */
+export async function listTurnsBetween(
+  startMs: number,
+  endMs: number,
+): Promise<DialogueTurn[]> {
+  const db = await getDb();
+  const rows = await db.select<DialogueTurnRow[]>(
+    `SELECT id, timestamp, user_utterance_json, agent_response_json,
+            user_reaction_json, current_emotion_json, emotion_delta_json, turn_latency_ms
+     FROM dialogue_turns
+     WHERE timestamp >= ? AND timestamp < ?
+     ORDER BY timestamp ASC`,
+    [startMs, endMs],
+  );
+  return rows.map(fromRow);
+}
+
 export async function updateTurn(t: DialogueTurn): Promise<void> {
   const row = toRow(t);
   const db = await getDb();

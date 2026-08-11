@@ -11,6 +11,8 @@ import {
 import { createPortal } from "react-dom";
 import { Crossfade } from "../ui/motion/Crossfade";
 import { IconExpand, IconExpandCollapse, IconRefresh } from "./icons";
+import { trackActivity } from "@lyra/core/daily/trackActivity";
+import { playSessionTracker } from "@lyra/core/daily/PlaySessionTracker";
 
 export type SmallNoteFlip = {
   flipped: boolean;
@@ -22,6 +24,8 @@ export type SmallNoteFlip = {
   refreshing?: boolean;
   /** Re-fetch lyrics and overwrite cache (shown on expanded sheet). */
   onRefresh?: () => void;
+  /** Optional song id for daily activity telemetry. */
+  songId?: string;
 };
 
 export type SmallNoteProps = {
@@ -289,6 +293,12 @@ export function SmallNote({
     setTargetBox(target);
     setMorphMounted(true);
     setMorphOpen(false);
+    playSessionTracker.noteLyricsOpen();
+    void trackActivity({
+      name: "lyrics_open",
+      songId: flip?.songId,
+      props: { surface: "sheet" },
+    });
   }
 
   function closeExpand() {
@@ -296,6 +306,11 @@ export function SmallNote({
     const origin =
       originRef.current ??
       (noteRef.current ? readRect(noteRef.current) : null);
+    void trackActivity({
+      name: "lyrics_close",
+      songId: flip?.songId,
+      props: { surface: "sheet" },
+    });
     if (!origin) {
       setMorphOpen(false);
       setMorphMounted(false);
@@ -495,6 +510,10 @@ export function SmallNote({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (flip?.refreshing) return;
+                      void trackActivity({
+                        name: "lyrics_refresh",
+                        songId: flip?.songId,
+                      });
                       flip?.onRefresh?.();
                     }}
                   >

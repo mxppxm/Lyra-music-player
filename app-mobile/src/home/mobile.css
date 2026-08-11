@@ -2480,6 +2480,203 @@ html[data-lyra-immersive="true"] body {
   overflow: hidden;
 }
 
+.lyra-mobile-history__daily-actions {
+  flex-shrink: 0;
+  padding: 0 0 12px;
+}
+
+.lyra-mobile-history__daily-gen {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: 0 1px 4px rgba(24, 18, 12, 0.06);
+  color: var(--lyra-control-ink);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    opacity 140ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.lyra-mobile-history__daily-gen:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.lyra-mobile-history__daily-gen:not(:disabled):active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 1px 4px rgba(24, 18, 12, 0.08);
+}
+
+.lyra-mobile-daily-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  pointer-events: none;
+}
+
+.lyra-mobile-daily-sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 18, 12, 0.28);
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 280ms ease;
+}
+
+.lyra-mobile-daily-sheet--open .lyra-mobile-daily-sheet__backdrop {
+  opacity: 1;
+}
+
+.lyra-mobile-daily-sheet__card {
+  position: fixed;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  /* Phase 1 shell: glass-like grow; paper fill waits for --revealed. */
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  box-shadow: 0 10px 28px rgba(24, 18, 12, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+  pointer-events: auto;
+  transition:
+    top 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    left 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    background 360ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 360ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 360ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: top, left, width, height;
+}
+
+.lyra-mobile-daily-sheet--revealed .lyra-mobile-daily-sheet__card {
+  background: #f3ebe0;
+  border-color: rgba(70, 52, 32, 0.1);
+  box-shadow: 0 14px 36px rgba(24, 18, 12, 0.14);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.lyra-mobile-daily-sheet__surface {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  pointer-events: none;
+}
+
+.lyra-mobile-daily-sheet--revealed .lyra-mobile-daily-sheet__surface {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.lyra-mobile-daily-sheet__toolbar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 14px 4px;
+  background: transparent;
+}
+
+.lyra-mobile-daily-sheet__icon-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(70, 52, 32, 0.06);
+  color: rgba(42, 36, 28, 0.72);
+  cursor: pointer;
+  transition: transform 140ms ease, opacity 140ms ease, background 140ms ease;
+}
+
+.lyra-mobile-daily-sheet__icon-btn--close {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 400;
+  color: rgba(42, 36, 28, 0.78);
+}
+
+.lyra-mobile-daily-sheet__icon-btn:disabled {
+  opacity: 0.45;
+}
+
+.lyra-mobile-daily-sheet__icon-btn:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.lyra-mobile-daily-sheet__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.lyra-mobile-daily-sheet__capture {
+  background: transparent;
+  min-height: 100%;
+}
+
+.lyra-mobile-daily-sheet--revealed .lyra-mobile-daily-sheet__capture {
+  background: #f3ebe0;
+}
+
+.lyra-mobile-daily-sheet__body {
+  color: #1c1917;
+  box-sizing: border-box;
+}
+
+.lyra-mobile-history__loading {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px 28px 48px;
+  color: rgba(28, 24, 20, 0.42);
+  pointer-events: none;
+  user-select: none;
+}
+
+.lyra-mobile-history__loading .lyra-mobile-thinking__dots {
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.lyra-mobile-history__loading-label {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: rgba(28, 24, 20, 0.48);
+}
+
 .lyra-mobile-history__hint {
   margin: 8px 0 16px;
   font-size: 14px;

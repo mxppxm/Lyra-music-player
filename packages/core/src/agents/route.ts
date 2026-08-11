@@ -13,7 +13,8 @@ export type AgentKind =
   | "companion"
   | "perception"
   | "music-profile"
-  | "lyrics";
+  | "lyrics"
+  | "daily";
 
 export const PRIMARY_FOR: Record<AgentKind, ProviderId> = {
   emotion: "sensenova",
@@ -21,6 +22,7 @@ export const PRIMARY_FOR: Record<AgentKind, ProviderId> = {
   perception: "sensenova",
   "music-profile": "sensenova",
   lyrics: "sensenova",
+  daily: "sensenova",
 };
 
 // Chat uses only the free SenseNova gateway — no paid official DeepSeek /
@@ -31,6 +33,7 @@ export const FALLBACK_FOR: Record<AgentKind, ProviderId[]> = {
   perception: [],
   "music-profile": [],
   lyrics: [],
+  daily: [],
 };
 
 export function routeProvider(

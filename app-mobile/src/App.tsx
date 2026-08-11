@@ -7,6 +7,8 @@ import { weatherZhFromCode } from "@lyra/core/recommendation/timeContext";
 import type { WeatherContext } from "@lyra/core/recommendation/timeContext";
 import { createDefaultOrchestrator } from "@lyra/core";
 import type { Orchestrator } from "@lyra/core";
+import { runDaily } from "@lyra/core/daily/runDaily";
+import { yesterdayDayKey } from "@lyra/core/daily/dayKey";
 import { MobileHomeView } from "./home/MobileHomeView";
 import { AmbientBackground } from "./home/AmbientBackground";
 import { seedMobileLibraryIfNeeded } from "./db/seedLibrary";
@@ -247,6 +249,10 @@ export function App() {
           const orch = createDefaultOrchestrator();
           setOrchestrator(orch);
           setReady(true);
+          // Cold-start补跑昨天日报（已有则跳过）；旁路，不影响开播。
+          void runDaily({ dayKey: yesterdayDayKey() }).catch((e) =>
+            console.warn("[lyra-ios] runDaily:", e),
+          );
         });
     } catch (e) {
       console.error("[lyra-ios] platform init failed:", e);

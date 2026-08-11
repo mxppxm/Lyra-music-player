@@ -2,6 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { SmallNote } from "./SmallNote";
 
+vi.mock("@lyra/core/daily/trackActivity", () => ({
+  trackActivity: vi.fn(async () => {}),
+}));
+vi.mock("@lyra/core/daily/PlaySessionTracker", () => ({
+  playSessionTracker: {
+    noteLyricsOpen: vi.fn(),
+  },
+}));
+
 describe("SmallNote", () => {
   beforeEach(() => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({

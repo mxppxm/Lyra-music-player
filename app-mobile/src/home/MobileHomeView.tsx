@@ -26,6 +26,8 @@ import {
   toggleFavorite,
 } from "@lyra/core/db/repo/favoritesRepo";
 import { looksLikePartialLyrics } from "@lyra/core/agents/LyricsAgent";
+import { trackActivity } from "@lyra/core/daily/trackActivity";
+import { playSessionTracker } from "@lyra/core/daily/PlaySessionTracker";
 import type { PAD } from "../lib/color";
 import { setImmersiveStatusBar, lightTap } from "./immersiveStatusBar";
 import { buildSharePayload } from "./share";
@@ -98,6 +100,24 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   });
   const [coverTransform, setCoverTransform] = useState<string>("none");
   const lyricsRequestGen = useRef(0);
+  const lastProgressEmitRef = useRef(0);
+
+  useEffect(() => {
+    if (!playing || !progress || state.kind !== "playing") return;
+    playSessionTracker.noteProgress(progress.elapsedMs);
+    const now = Date.now();
+    if (now - lastProgressEmitRef.current < 5_000) return;
+    lastProgressEmitRef.current = now;
+    void trackActivity({
+      name: "play_progress",
+      songId: state.song.id,
+      props: {
+        position_ms: progress.elapsedMs,
+        duration_ms: progress.durationMs,
+        progress: progress.progress,
+      },
+    });
+  }, [playing, progress, state]);
 
   // Keep immersive across the thinking gap between songs; only drop it when
   // the playback session itself ends.
@@ -111,12 +131,20 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     if (previousImmersiveRef.current !== immersive) {
       previousImmersiveRef.current = immersive;
       immersiveToggleAtRef.current = performance.now();
+      const songId =
+        state.kind === "playing" || state.kind === "proactive-pending"
+          ? state.song.id
+          : undefined;
+      void trackActivity({
+        name: immersive ? "immersive_enter" : "immersive_exit",
+        songId,
+      });
     }
     void setImmersiveStatusBar(immersive);
     return () => {
       void setImmersiveStatusBar(false);
     };
-  }, [immersive]);
+  }, [immersive, state]);
 
   useEffect(() => {
     if (immersive) {
@@ -389,10 +417,21 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
         return;
       }
       setNoteFlipped(false);
+      void trackActivity({
+        name: "lyrics_close",
+        songId: state.song.id,
+        props: { surface: "card" },
+      });
       return;
     }
 
     setNoteFlipped(true);
+    playSessionTracker.noteLyricsOpen();
+    void trackActivity({
+      name: "lyrics_open",
+      songId: state.song.id,
+      props: { surface: "card" },
+    });
     void loadLyrics();
   }, [
     handleRetry,
@@ -400,7 +439,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     loadLyrics,
     lyricsFailed,
     noteFlipped,
-    state.kind,
+    state,
   ]);
 
   const isThinking = state.kind === "thinking";
@@ -760,6 +799,10 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     try {
       const { favorited: next } = await toggleFavorite(playingSong.id);
       setFavorited(next);
+      void trackActivity({
+        name: next ? "favorite_add" : "favorite_remove",
+        songId: playingSong.id,
+      });
     } catch (err) {
       setFavorited(prev);
       console.warn("[lyra-ios] toggle favorite:", err);
@@ -778,6 +821,16 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
       void LyraAudio.clearNextTrack().catch(() => {});
     }
   }, [orchestrator, state.kind]);
+
+  const openHistory = useCallback(() => {
+    setHistoryOpen(true);
+    void trackActivity({ name: "history_open" });
+  }, []);
+
+  const closeHistory = useCallback(() => {
+    setHistoryOpen(false);
+    void trackActivity({ name: "history_close" });
+  }, []);
 
   const handleFavoriteChange = useCallback(
     (songId: string, next: boolean) => {
@@ -980,6 +1033,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                         loading: lyricsLoading,
                         failed: lyricsFailed,
                         refreshing: lyricsRefreshing,
+                        songId: state.song.id,
                         onRefresh: () => {
                           void refreshLyrics();
                         },
@@ -1040,7 +1094,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                 onClick={(e) => {
                   e.stopPropagation();
                   lightTap();
-                  setHistoryOpen(true);
+                  openHistory();
                 }}
               >
                 <IconHistory />
@@ -1088,6 +1142,13 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                         : ""
                     }
                     onSeek={(positionMs) => {
+                      const fromMs = progress?.elapsedMs ?? 0;
+                      playSessionTracker.noteSeek(fromMs, positionMs);
+                      void trackActivity({
+                        name: "play_seek",
+                        songId: playingSong?.id,
+                        props: { from_ms: fromMs, to_ms: positionMs },
+                      });
                       void LyraAudio.seek({ positionMs }).catch((err) => {
                         console.warn("[lyra-ios] seek:", err);
                       });
@@ -1106,7 +1167,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                 onTogglePlay={handleTogglePlay}
                 onSkip={handleSkip}
                 onPrevious={handlePrevious}
-                onHistory={() => setHistoryOpen(true)}
+                onHistory={openHistory}
                 onFavorite={() => {
                   void handleFavorite();
                 }}
@@ -1149,7 +1210,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
 
       <HistoryOverlay
         open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
+        onClose={closeHistory}
         orchestrator={orchestrator}
         onFavoriteChange={handleFavoriteChange}
       />
