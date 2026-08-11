@@ -1674,7 +1674,62 @@ describe("Orchestrator track lock", () => {
     });
   });
 
-  it("keeps previous rationale when lock rewrite fails (no 再听一遍 template)", async () => {
+  it("retries lock rationale rewrite until companion succeeds (no fallback copy)", async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = makeDeps({
+        turnRepo: {
+          insertTurn: vi.fn(async () => {}),
+          updateTurn: vi.fn(async () => {}),
+        },
+      });
+      (deps.companion.choose as any)
+        .mockResolvedValueOnce({
+          song_id: "t1",
+          target_profile: "x",
+          rationale: "原来的纸条",
+          needed_shift: "接住",
+        })
+        .mockRejectedValueOnce(new Error("llm down"))
+        .mockResolvedValueOnce({
+          song_id: "t1",
+          target_profile: "x",
+          rationale: "",
+          needed_shift: "陪着",
+        })
+        .mockResolvedValue({
+          song_id: "t1",
+          target_profile: "x",
+          rationale: "重试后的新文案",
+          needed_shift: "陪着",
+        });
+      const orc = new Orchestrator(deps as any);
+      await orc.onUserInput("来一首");
+      orc.setTrackLock(true);
+      const completeP = orc.onSongComplete();
+      await completeP;
+
+      // attempt 1 failed → wait 1s; attempt 2 empty → wait 2s; attempt 3 succeeds
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(2000);
+      await Promise.resolve();
+
+      const st = orc.getState();
+      expect(st.kind).toBe("playing");
+      if (st.kind === "playing") {
+        expect(st.turn.agent_response.rationale).toBe("重试后的新文案");
+        expect(st.turn.agent_response.rationale).not.toMatch(/再听一遍/);
+        expect(st.trackLocked).toBe(true);
+        expect(st.rationalePending).toBeFalsy();
+      }
+      expect(orc.isTrackLockEnabled()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps trackLocked on playing emits during rationale rewrite", async () => {
     const deps = makeDeps({
       turnRepo: {
         insertTurn: vi.fn(async () => {}),
@@ -1685,24 +1740,35 @@ describe("Orchestrator track lock", () => {
       .mockResolvedValueOnce({
         song_id: "t1",
         target_profile: "x",
-        rationale: "原来的纸条",
+        rationale: "首句",
         needed_shift: "接住",
       })
-      .mockRejectedValue(new Error("llm down"));
+      .mockResolvedValue({
+        song_id: "t1",
+        target_profile: "x",
+        rationale: "循环新句",
+        needed_shift: "陪着",
+      });
     const orc = new Orchestrator(deps as any);
+    const lockedFlags: boolean[] = [];
+    orc.subscribe((s) => {
+      if (s.kind === "playing") lockedFlags.push(Boolean(s.trackLocked));
+    });
     await orc.onUserInput("来一首");
     orc.setTrackLock(true);
     await orc.onSongComplete();
-
     await vi.waitFor(() => {
       const st = orc.getState();
-      expect(st.kind).toBe("playing");
-      if (st.kind === "playing") {
-        expect(st.rationalePending).toBeFalsy();
-        expect(st.turn.agent_response.rationale).toBe("原来的纸条");
-        expect(st.turn.agent_response.rationale).not.toMatch(/再听一遍/);
-      }
+      expect(st.kind === "playing" && st.turn.agent_response.rationale).toBe(
+        "循环新句",
+      );
     });
+    // After lock is on, every subsequent playing emit must stay locked.
+    const afterLock = lockedFlags.slice(
+      lockedFlags.findIndex((v) => v === true),
+    );
+    expect(afterLock.length).toBeGreaterThan(0);
+    expect(afterLock.every(Boolean)).toBe(true);
   });
 
   it("onSkip clears track lock", async () => {

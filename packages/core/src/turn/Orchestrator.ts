@@ -517,6 +517,11 @@ export class Orchestrator {
   }
 
   private emit(s: OrchestratorState): void {
+    // Playing UI must always mirror session track-lock — never drop the flag
+    // because a mid-flight emit (lyrics / pause / rationale rewrite) omitted it.
+    if (s.kind === "playing") {
+      s = { ...s, trackLocked: this.isTrackLockEnabled() };
+    }
     this.state = s;
     for (const cb of this.subs) cb(s);
   }
@@ -1609,6 +1614,7 @@ export class Orchestrator {
   ): Promise<PrefetchNextResult[]> {
     if (!this.currentTurn || !this.currentSong || count <= 0) return [];
     if (this.state.kind !== "playing" || this.state.paused) return [];
+    if (this.trackLock?.enabled) return [];
     const resolve = this.deps.resolvePlayUrl;
     if (!resolve) return [];
 
@@ -1839,7 +1845,7 @@ export class Orchestrator {
       });
       return chosen.rationale || null;
     } catch (err) {
-      console.warn("[lyra] rationaleForNativeSong failed, keeping previous copy:", err);
+      console.warn("[lyra] rationaleForNativeSong failed:", err);
       return null;
     }
   }
@@ -1852,58 +1858,68 @@ export class Orchestrator {
     previousRationale: string,
     lockPlayCount: number,
   ): Promise<void> {
-    const fresh =
-      (
-        await this.rationaleForNativeSong(track, emotion, undefined, {
-          lockPlayCount,
-          previousRationale,
-        })
-      )?.trim() ?? "";
+    let attempt = 0;
+    while (true) {
+      if (this.currentTurn?.id !== turnId) return;
+      if (this.state.kind !== "playing") return;
+      if (!this.trackLock?.enabled) return;
+      if (this.currentSong?.id !== track.id) return;
 
-    if (this.currentTurn?.id !== turnId) return;
-    if (this.state.kind !== "playing") return;
+      attempt += 1;
+      const fresh =
+        (
+          await this.rationaleForNativeSong(track, emotion, undefined, {
+            lockPlayCount,
+            previousRationale,
+          })
+        )?.trim() ?? "";
 
-    // Never fall back to canned "再听一遍…" — keep the previous note if the
-    // rewrite fails, and just clear the pending loader.
-    if (!fresh) {
+      if (this.currentTurn?.id !== turnId) return;
+      if (this.state.kind !== "playing") return;
+      if (!this.trackLock?.enabled) return;
+      if (this.currentSong?.id !== track.id) return;
+
+      if (fresh) {
+        const turn: DialogueTurn = {
+          ...this.currentTurn,
+          agent_response: {
+            ...this.currentTurn.agent_response,
+            rationale: fresh,
+          },
+        };
+        this.currentTurn = turn;
+        this.rationaleBySongId.set(track.id, fresh);
+        if (this.deps.turnRepo.updateTurn) {
+          try {
+            await this.deps.turnRepo.updateTurn(turn);
+          } catch (e) {
+            console.warn("[lyra] track-lock rationale updateTurn failed:", e);
+          }
+        }
+        this.emit({
+          kind: "playing",
+          turn,
+          song: this.currentSong ?? track,
+          paused: this.state.paused,
+          rationalePending: false,
+        });
+        return;
+      }
+
       console.warn(
-        "[lyra] track-lock rationale rewrite empty; keeping previous copy",
+        `[lyra] track-lock rationale rewrite failed (attempt ${attempt}); retrying`,
       );
+      // Keep loader; never canned copy; never clear track lock.
       this.emit({
         kind: "playing",
         turn: this.currentTurn,
         song: this.currentSong ?? track,
         paused: this.state.paused,
-        trackLocked: this.isTrackLockEnabled(),
-        rationalePending: false,
+        rationalePending: true,
       });
-      return;
+      const delayMs = Math.min(1000 * 2 ** Math.min(attempt - 1, 4), 16_000);
+      await new Promise((r) => setTimeout(r, delayMs));
     }
-
-    const turn: DialogueTurn = {
-      ...this.currentTurn,
-      agent_response: {
-        ...this.currentTurn.agent_response,
-        rationale: fresh,
-      },
-    };
-    this.currentTurn = turn;
-    this.rationaleBySongId.set(track.id, fresh);
-    if (this.deps.turnRepo.updateTurn) {
-      try {
-        await this.deps.turnRepo.updateTurn(turn);
-      } catch (e) {
-        console.warn("[lyra] track-lock rationale updateTurn failed:", e);
-      }
-    }
-    this.emit({
-      kind: "playing",
-      turn,
-      song: this.currentSong ?? track,
-      paused: this.state.paused,
-      trackLocked: this.isTrackLockEnabled(),
-      rationalePending: false,
-    });
   }
 
   /**
