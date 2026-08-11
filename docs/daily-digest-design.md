@@ -1,21 +1,25 @@
-# 日报（Daily Digest）设计稿
+# 日报（Daily Digest）设计稿 · v2
 
-> 日期：2026-08-11  
+> 日期：2026-08-11（v2：纳入 **锁定播放 / 单曲循环**）  
 > 状态：待用户确认后进入实现计划  
-> 范围：iOS + `@lyra/core` 为主，桌面复用同一套分析；**不改现有推荐/播放/UI 样式**
+> 范围：iOS + `@lyra/core` 为主，桌面复用同一套分析  
+> 关联：`docs/lock-play-design.md`（已实现：会话态 `trackLock` + 同曲重播 + 文案遍数）  
+> **硬约束：不改现有推荐逻辑、锁定播放行为与首页样式**——日报只旁路采集与产出
 
 ---
 
-## 0. 大原则（唯一北极星）
+## 0. 大原则
 
-**日报只陈述「昨天可核对的行为事实」，再由此推出「有证据的轻结论」；禁止用情绪均值或模型想象填空。**
+**日报只陈述「昨天可核对的行为事实」，再推出「有证据的轻结论」；禁止用情绪均值或模型想象填空。**
 
-展开成四条铁律：
-
-1. **采集尽力、结论克制**：P0 把播放/歌词/沉浸/前后台等行为能记的都记全（含每首歌听了多少秒、是否反复播）；报告与结论仍只使用有证据的字段，缺测到的在 `data_quality` 标明，不编造。
-2. **事实先于文案**：凡写入报告的句子，必须能回溯到 `activity_events` / `play_sessions` 或既有表字段；回溯不到就不写。
-3. **结论必须可证伪**：每条结论绑定 ≥1 条证据（次数、秒数、歌名、输入原文片段）；证据不足则输出「观察不足 / 昨天几乎没…」，不允许「感觉你有点累」这类无锚点判断。
-4. **旁路零侵入**：埋点与日报是附加链路。不得改变选歌、打分、播放队列、现有组件视觉与交互；新 UI 仅新增入口（如 `/day`、设置开关），不改装首页布局。
+1. **采集尽力、结论克制**：播放秒数、反复、**锁定循环遍数**、歌词、沉浸、前后台等能记都记；缺测到的标在 `data_quality`。  
+2. **事实先于文案**：每句可回溯到 `activity_events` / `play_sessions` / 既有表。  
+3. **结论可证伪**：每条结论 ≥1 条证据；不够则「观察不足」。  
+4. **旁路零侵入**：埋点 fire-and-forget；不改编排选歌、不改锁定状态机、不改首页 CSS；新入口独立。  
+5. **两种「锁」必须分清（命名铁律）**：
+   - `moodLocked` / `sessionMoodAnchor` = **心情锚点**（推荐权重）  
+   - `trackLock` = **锁定播放 / 单曲循环**（用户主动锁当前曲）  
+   日报文案与字段一律用「锁定播放 / 单曲循环」，禁止写成「心情锁定」。
 
 ---
 
@@ -23,315 +27,255 @@
 
 | 项 | 决定 |
 |---|---|
-| 窗口 | 本地时区 **昨天** `00:00:00.000`～`23:59:59.999` |
+| 窗口 | 本地 **昨天** 自然日 |
 | 自动 | 每天 **08:00** 生成昨天日报 |
-| 手动 | `/day`（桌面）/ 设置或历史旁入口（移动可后置）：有文件则读盘，无则现生成 |
-| 与 `/mood` | **并存**：`/mood` 仍为近 60 轮即时总结；日报是日历日落盘产物 |
-| 与周报 | 周报继续管近 7 天长信；日报不管 Living Portrait 长对比 |
-| 与 DreamScheduler 03:14 reflect | **分离**：reflect 仍做梦；日报另挂 08:00 |
+| 手动 | `/day`（桌面）等；有文件读盘 |
+| `/mood` | 并存（近 60 轮即时总结） |
+| 周报 / reflect | 独立；不混 |
+
+### 1.1 锁定播放在日报里是什么（相对 v1 的核心增量）
+
+锁定播放（`setTrackLock`）已实现、**会话不落库**。对日报而言它是最强的「故意反复听」信号：
+
+| 行为 | 现网 | 日报要记的 |
+|---|---|---|
+| 开锁 | `trackLock={songId, playCount:1}`，清 native 预填队列 | `track_lock_on` |
+| 关锁 / 切歌 / 新输入 / 历史重播 / 上一首 | `clearTrackLock` | `track_lock_off{reason}` |
+| 锁中自然播完 | 同曲重播，`playCount++`，重生 rationale，`repeated++` | `track_lock_loop{play_count}` + 新 `play_session`（`source=track_lock_loop`） |
+| 锁中暂停 | 不循环 | 普通 pause（不算 loop） |
+
+**不能**只靠「同歌连续 session」推断锁定——用户也可能未开锁却连听；必须以显式事件 / session 标记为准。
 
 ---
 
-## 2. 隔离边界（不能影响现有逻辑和样式）
+## 2. 隔离边界
 
-### 2.1 允许碰
+### 2.1 允许
 
-- 新增表 / repo / 包模块：`activity_events`、`play_sessions`、`daily_*`、`packages/core/src/daily/`、`app/src/daily/`（或 `app-mobile` 只接调度与打开）
-- 在**现有调用点旁**追加 `trackActivity(...)`（fire-and-forget，失败只打日志）
-- 新增 slash `/day`、Settings 里「日报」fieldset（仿周报，不改其它 settings 布局语义）
-- 阅读器：**复用**现有 `WeeklyReader` iframe 壳展示 HTML（与 `/mood`、`/week` 相同），不新造一套视觉系统；日报 HTML **内部**可用与周报同源 token，但**不修改** `weeklyRenderer` / 首页 CSS
+- 新表：`activity_events`、`play_sessions`、`daily_snapshots`  
+- 新模块：`packages/core/src/daily/`、`trackActivity`  
+- 在 `setTrackLock` / `onSongComplete` 锁定分支 / UI 锁定钮旁 **追加**埋点（不改分支语义）  
+- `/day`、Settings「日报」；阅读器复用 `WeeklyReader` 壳  
+- 独立 `dailyRenderer.ts`（可抄周报 token，不改 weekly/首页样式文件）
 
-### 2.2 禁止碰
+### 2.2 禁止
 
-- `LibraryAgent` 打分权重、`moodLocked`、推荐 prompt、预筛抽样
-- 播放器原生队列、锁屏、现有 `mobile.css` 首页沉浸样式（除非纯新增 class 且默认不启用）
-- 改写 `/mood`、`/week` 的既有行为与文案
-- 为了日报去「顺便重构」Home / SmallNote / History 的结构和样式
+- 改 `LibraryAgent` / `moodLocked` / Companion 选歌 prompt  
+- 改锁定播放状态机（切歌退锁、遍数、文案重生策略）  
+- 改 `TrackLockButton` / 首页布局样式（埋点除外）  
+- 把日报结论写回推荐或自动开锁  
 
-### 2.3 埋点写法约定
+### 2.3 埋点
 
 ```ts
-// 正确：不影响主路径
-void trackActivity({ name: "lyrics_open", songId, props }).catch(() => {});
-
-// 禁止：await 埋点导致选歌/翻页变慢；禁止因埋点 throw 打断播放
+void trackActivity({ name: "track_lock_on", songId, props }).catch(() => {});
 ```
-
-`lyra-start` modality 若要区分点我试试与连播：只扩展 **新 modality 值或并行事件**，自动连播路径语义不变。
 
 ---
 
-## 3. 数据层（采集尽可能多）
+## 3. 数据层（采集尽可能多 + 锁定）
 
-> 目标：昨天「哪首歌、听了多少秒、播了几次、是否连着反复听、中途暂停多久、是否在后台」都能还原。  
-> 手段：事件流 + 播放会话表双写；聚合层再rollup，原始明细保留可审计。
+### 3.1 `activity_events`
 
-### 3.1 新建 `activity_events`（append-only）
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | text | uuid |
-| ts | integer | epoch ms |
-| day_key | text | 本地 `YYYY-MM-DD` |
-| name | text | 见事件字典 |
-| song_id | text null | |
-| turn_id | text null | |
-| props_json | text | |
-| platform | text | `ios` / `desktop` |
-
+字段同前：`id, ts, day_key, name, song_id, turn_id, props_json, platform`。  
 索引：`(day_key, name)`、`(day_key, ts)`、`(day_key, song_id)`。
 
-### 3.2 新建 `play_sessions`（一首歌的一次连续播放）
-
-一次「从开播到结束（完成/跳过/切歌/停）」= 一行，便于精确到秒与重复分析。
+### 3.2 `play_sessions`（一首歌一次连续播放）
 
 | 字段 | 说明 |
 |---|---|
-| id | uuid |
-| day_key | 本地日 |
-| song_id / turn_id | |
-| source | 同 `play_start.source` |
-| started_at / ended_at | ms |
-| listen_ms | **有效收听毫秒**（扣除 pause；后台仍算听，除非静音策略另定——v1 后台算听） |
-| pause_ms | 暂停累计 |
-| duration_ms | 曲目时长（若可知） |
-| end_reason | `completed` / `skipped` / `replaced` / `stopped` / `app_kill?` |
-| max_position_ms | 听到的最远进度 |
-| seek_count | 拖动次数 |
-| was_background_ms | 其中处于后台的收听毫秒 |
-| lyrics_open_count | 本 session 内翻词次数 |
-| consecutive_repeat_index | 若上一 session 同 song_id 且间隙 &lt; 30s，则为 2,3,… 否则 1 |
+| id / day_key / song_id / turn_id | |
+| source | 见下（**含 `track_lock_loop`**） |
+| started_at / ended_at | |
+| listen_ms | 有效收听（扣 pause；后台默认算听） |
+| pause_ms / duration_ms / max_position_ms / seek_count | |
+| end_reason | `completed` / `skipped` / `replaced` / `stopped` / `lock_loop_boundary` |
+| was_background_ms | |
+| lyrics_open_count | |
+| **under_track_lock** | bool：本 session 是否在锁定播放中 |
+| **lock_play_count** | 锁定会话内遍数（开锁首遍=1；每次 lock loop 后递增）；非锁定为 null |
+| consecutive_repeat_index | 同歌短间隙连续次数（**不含**是否开锁；与锁定正交） |
 
-开播时 insert；pause/resume/progress/seek 更新内存再 flush；结束时 final update + 打 `play_complete|skip` 事件。  
-**主播放路径不 await 这些写库**（队列微任务 / 后台 flush）。
+`source` ∈  
+`user_input | lyra_start | auto_advance | song_intent | history_replay | previous | track_lock_loop | unknown`
 
-### 3.3 事件字典（P0 必接，宁多勿少）
+锁定循环每一次「播完再起」= **新 session**（`source=track_lock_loop`，`under_track_lock=true`，`lock_play_count=N`），这样才能精确到「第 3 遍听了多少秒」。
 
-**入口元数据**：`lyra_start`、`user_input{char_count,text_preview?}`、`song_intent_hit|miss{query}`、`retry`
+### 3.3 事件字典
 
-**听歌（细）**：
+**入口**：`lyra_start`、`user_input{char_count}`、`song_intent_hit|miss`、`retry`
 
-| name | 关键 props |
-|---|---|
-| `play_start` | `source`, `session_id`, `duration_ms?` |
-| `play_progress` | `session_id`, `position_ms`, `listen_ms_so_far`（**每 5s 或 10% 进度**打一次，可采样；用于崩溃后仍能估秒数） |
-| `play_pause` / `play_resume` | `session_id`, `position_ms` |
-| `play_seek` | `session_id`, `from_ms`, `to_ms` |
-| `play_complete` | `session_id`, `listen_ms`, `duration_ms`, `position_ms` |
-| `play_skip` | `session_id`, `listen_ms`, `position_ms`, `position_ratio` |
-| `play_replaced` | 被下一首顶掉（切歌/上一首）时的结束 |
+**锁定播放（新增，P0 必接）**：
 
-`play_start.source` ∈ `user_input | lyra_start | auto_advance | song_intent | history_replay | previous | unknown`。
+| name | props | 时机 |
+|---|---|---|
+| `track_lock_on` | `song_id`, `play_count:1` | `setTrackLock(true)` |
+| `track_lock_off` | `song_id`, `play_count_at_off`, `reason`: `toggle`/`skip`/`previous`/`user_input`/`replay`/`song_change` | `clearTrackLock` 各入口 |
+| `track_lock_loop` | `song_id`, `play_count`, `session_id`, `prev_listen_ms?` | 锁定态 `onSongComplete` 即将重播前 |
 
-**歌词**：`lyrics_open{surface,session_id?}`、`lyrics_close{dwell_ms}`、`lyrics_refresh`
+**听歌**：`play_start`（带 `under_track_lock`,`lock_play_count?`）、`play_progress`（5s/10%）、`play_pause/resume`、`play_seek`、`play_complete`、`play_skip`、`play_replaced`
 
-**沉浸 / UX**：`immersive_enter|exit{dwell_ms}`、`history_open|close{tab,dwell_ms}`、`history_replay{song_id}`、`favorite_add|remove`
+**歌词 / 沉浸 / 历史收藏 / 前后台**：同 v1（`lyrics_*`、`immersive_*`、`history_*`、`favorite_*`、`app_background|foreground`）
 
-**前后台**：`app_background|foreground{playing,song_id?,session_id?,position_ms?}`
+### 3.4 既有表
 
-### 3.4 既有表窗口查询（P1）
+- turns / feedback / favorites / shared_memory / profiles 按昨天窗口查  
+- 锁定本身**不持久化**，日报**不依赖**事后从 turn.`repeated` 反推（`repeated` 可作校验旁证）
 
-- `dialogue_turns` / `track_feedback` / `favorites(favorited_at)` / `shared_memory` / `music_profiles` batch  
-- 新增 `list*Between(startMs, endMs)`；**不改**现有 `listRecent*` 语义  
-- 日报聚合以 `play_sessions` + `activity_events` 为主，turns 补输入原文与 rationale
-
-### 3.5 按歌 rollup（详细报告核心表）
-
-对昨天每个 `song_id` 生成一行 `TrackDayStat`（写入 Digest，也可物化视图）：
+### 3.5 按歌 `TrackDayStat`（报告核心表）
 
 | 字段 | 含义 |
 |---|---|
-| title / artist | 展示 |
-| session_count | 开播次数 |
-| total_listen_ms | **累计听了多少毫秒** |
-| mean_listen_ms / max_listen_ms | |
-| completed_count / skipped_count | |
-| completion_rate | |
-| repeat_count | session_count（同歌多次） |
-| max_consecutive_repeats | 最大连播同一首次数（`consecutive_repeat_index`） |
-| looped | `max_consecutive_repeats ≥ 2` 或 同歌 session≥3 |
-| seek_count_sum | |
-| background_listen_ms | |
-| lyrics_opens / lyrics_dwell_ms | |
-| favorited_today | bool |
-| sources | 各 source 次数 |
+| title / artist | |
+| session_count / total_listen_ms / mean / max | |
+| completed_count / skipped_count / completion_rate | |
+| repeat_count | 同日开播次数 |
+| max_consecutive_repeats | 短间隙连听（未必开锁） |
+| **lock_toggle_count** | 对该歌开锁次数 |
+| **lock_loop_count** | `track_lock_loop` 次数（= 额外完整圈数） |
+| **max_lock_play_count** | 单次锁定会话达到的最大遍数 |
+| **lock_listen_ms** | `under_track_lock` 的听时合计 |
+| **lock_share** | `lock_listen_ms / total_listen_ms` |
+| background_listen_ms / lyrics_* / favorited_today / sources | |
 
-报告里必须能回答：「《山丘》昨天播了 3 次，共听 412 秒，其中连续反复 2 次，最长一听 180 秒，跳过 1 次。」
+须能写出：
 
-### 3.6 重复播放的定义（写死，供结论用）
+> 《山丘》昨天共听 18 分 20 秒（11 次开播）。其中 **锁定播放** 1 次会话，最高循环到第 **6** 遍，锁定内合计 14 分；另有非锁定连听 2 次。
+
+### 3.6 概念定义（写死）
 
 | 概念 | 定义 |
 |---|---|
-| **同日重复** | 同一 `song_id` 在昨天 `session_count ≥ 2` |
-| **连续反复** | 相邻两 session 同歌且 `started_at` 间隙 ≤ 30s（或 end→start 无其它歌插入） |
-| **循环沉浸** | `max_consecutive_repeats ≥ 3` 或（同歌 ≥2 且 `total_listen_ms ≥ 2 × duration`） |
-| **单次长听** | 单 session `listen_ms ≥ max(90_000, 0.6 * duration_ms)` |
-| **快跳** | `end_reason=skipped` 且 `listen_ms < 15_000` |
+| **同日重复** | `session_count ≥ 2` |
+| **连续反复（无锁）** | 相邻同歌、间隙 ≤30s，且 **未** `under_track_lock` |
+| **锁定播放会话** | `track_lock_on` → 对应 `track_lock_off`（或日终截断） |
+| **锁定循环遍数** | 该会话内 `max(lock_play_count)` |
+| **锁定沉浸** | 单次锁定 `max_lock_play_count ≥ 3` 或 `lock_listen_ms ≥ 2 × duration` |
+| **单次长听** | session `listen_ms ≥ max(90s, 0.6×duration)` |
+| **快跳** | skip 且 `listen_ms < 15s` |
 
-### 3.7 现状缺口（写进 data_quality，不装有）
+### 3.7 缺口
 
 | 信号 | 现状 | 处理 |
 |---|---|---|
-| 点我试试次数 | 与连播同为 `proactive-open` | 事件 + 可选 modality `lyra-start` |
-| 每首歌听了几秒 | 不可靠 / 未接 progress | `play_sessions.listen_ms` + `play_progress` |
-| 是否反复播同一首 | 无 | session 级 + TrackDayStat |
-| 歌词停留 | 无 | 新事件 |
-| 沉浸模式 | 纯 UI | 新事件 |
-| 切后台 | 仅 reconcile | 新事件 + session.was_background_ms |
-| 打开历史 | 无 | 新事件 |
+| 锁定开关/遍数 | 仅内存 `trackLock` | **P0 事件 + session 字段** |
+| 每遍听了几秒 | 无 | 每 loop 新 session + progress |
+| 点我试试 | 与连播 modality 混 | 事件 |
+| 歌词/沉浸/后台/历史 | 弱或无 | 事件 |
 
 ---
 
-## 4. 从数据到「详细报告」再到「有效结论」（本方案核心）
+## 4. 详细报告 → 有效结论
 
-先前方案偏「采集清单」；本节写明 **怎么出详细报告、怎么得出有效结论**。
-
-### 4.1 三层产物（缺一不可）
+### 4.1 三层
 
 ```text
-DailyDigest（结构化详细报告，机器可读）
-    → FactCard（中文子弹事实，带 evidence_ids）
-        → Conclusions（规则引擎产出的「有证据结论」，每条绑证据）
-            → DailyAgent 日信（只改写 Conclusions+FactCard，不发明新事实）
-                → HTML 详细报告页（表格/区块展示 Digest + 信）
+DailyDigest → FactCard → Conclusions(规则) → DailyAgent 日信(可选) → HTML
 ```
 
-用户看到的 HTML **同时包含**：
+HTML：**结论** + **日信** + **详细数据**（含锁定专表）。
 
-1. **详细报告区**（数字与列表，不靠 LLM）  
-2. **结论区**（规则引擎条列，可点开证据）  
-3. **日信区**（LLM 把结论写成可读短文，可选；失败则只展示 1+2）
+### 4.2 Digest 章节
 
-### 4.2 详细报告 = `DailyDigest` 固定章节
+| 章节 | 展示 |
+|---|---|
+| Meta | 输入、点我试试、点歌判断、会话、前后台 |
+| **Track Lock**（新） | 开锁次数、涉及歌曲、各次锁定最高遍数、锁定内总听时、关锁原因分布（toggle/skip/输入…） |
+| Listening | 按歌秒数表 + 锁定列（遍数/锁定听时）+ 无锁连听 |
+| Lyrics / Immersion / Library / Taste / Emotion / Moments / Quality | 同 v1，沉浸分可把「锁定沉浸」加权 |
 
-分析器 `buildDailyDigest(dayKey)` 纯函数/无 LLM，章节固定：
+### 4.3 结论规则（增量加粗）
 
-| 章节 | 内容来源 | 报告里展示什么 |
+| id | 条件 | 结论 |
 |---|---|---|
-| Meta | events + turns | 输入次数/原文摘要、点我试试次数、点歌命中/未命中、会话数、首末活跃、前台/后台时长、后台续播时长 |
-| Listening | **play_sessions** + events + feedback | 开播数、独特曲、完成/跳过、**每首累计秒数表**、按 source 分解、快跳/长听、**同日重复与连续反复** |
-| Lyrics | lyrics_* | 打开次数、涉及曲目、总/均停留、刷新、Top 查词曲 |
-| Immersion | immersive_* + listening + lyrics + bg | 沉浸模式时长、长听次数、快跳次数、后台续播比、综合标签 |
-| Library UX | favorite_* + history_* | 新藏/取消、打开历史次数与停留、历史重播 |
-| Taste | profiles ⋈ 完成/收藏/长听加权 | Top mood/genre/theme/energy；回避信号 |
-| Emotion | turns PAD/labels（辅） | 挂在 session/时段上的均值 + 对应 Top 歌（不单独出「波动度故事」） |
-| Moments | shared_memory | 显著时刻列表 |
-| Quality | 覆盖率标记 | progress 采样率、session 完整率、哪些信号缺失 |
+| `lock.used` | `track_lock_on ≥ 1` | 昨天用过锁定播放；点名歌曲 |
+| `lock.deep` | 任一首 `max_lock_play_count ≥ 3` 或满足锁定沉浸 | **主动单曲循环沉浸**（强证据） |
+| `lock.brief` | 开锁后 `play_count_at_off ≤ 1` 且很快 skip/切歌 | 试了锁定但未留下 |
+| `lock.vs_organic` | 同日既有锁定沉浸又有无锁连听 | 区分「故意锁」vs「碰巧连听」 |
+| `listening.completion_high` / `skip_heavy` / `quick_skip` / `long_form` | 同 v1 | |
+| `listening.repeat_same` | 同歌多次且 **无** 锁定 | 反复听但未开锁 |
+| `listening.loop_immerse` | 无锁定义的循环沉浸 | 仅当未开锁时使用，避免与 `lock.deep` 抢戏 |
+| `lyrics.*` / `immersion.*` / `library.*` / `taste.*` / `sparse.*` / `quality.*` | 同 v1 | |
 
-「详细」指的是这些章节写全，而不是 LLM 写长。
+**优先级**：同一首歌若存在锁定，结论优先走 `lock.*`，不要用「碰巧连播」话术。
 
-### 4.3 有效结论 = 规则引擎 `deriveConclusions(digest)`
+**禁止**：用 PAD 单独下结论；把 `moodLocked` 说成锁定播放。
 
-**原则**：结论模板化 + 阈值；不满足阈值 → 不产出该条。
+### 4.4 FactCard 示例（锁定）
 
-每条结论结构：
+- 「锁定播放开启 2 次，涉及《山丘》《晴天》」  
+- 「《山丘》单次锁定最高第 6 遍，锁定内听时 14m20s」  
+- 「3 次因切歌退出锁定，1 次手动关锁」  
 
-```ts
-type DailyConclusion = {
-  id: string;                    // e.g. "immersion.deep"
-  kind: "observation" | "pattern" | "anomaly" | "sparse";
-  claim: string;                 // 中文结论句（可直接展示）
-  evidence: Array<{              // 必须非空
-    ref: string;                 // 指向 digest 字段路径或 event id
-    display: string;             // 「完成率 58%（12 首里完成 7）」
-  }>;
-  confidence: "high" | "medium" | "low";
-};
-```
-
-#### 规则目录（v1，可单测）
-
-| id | 触发条件（示例阈值） | 结论方向 |
-|---|---|---|
-| `meta.lyra_start_driven` | `lyra_start_count ≥ 2` 且 `lyra_start` 来源播放占比 ≥ 40% | 昨天偏「点我试试」驱动 |
-| `meta.input_heavy` | `input_count ≥ 3` | 昨天有明确心情/文本介入；附原文 Top |
-| `listening.completion_high` | 完成率 ≥ 0.65 且 plays ≥ 5 | 听得完整 |
-| `listening.skip_heavy` | 跳过率 ≥ 0.5 且 skips ≥ 3 | 挑选多 / 不契多 |
-| `listening.quick_skip` | 快跳（listen_ms&lt;15s）≥ 3 | 碎听、难以停留 |
-| `listening.long_form` | 长听（≥0.6 曲长或 ≥90s）≥ 3 | 愿意把歌听完 |
-| `listening.repeat_same` | 至少一首 `session_count ≥ 2` | 点名反复听的歌及累计秒数 |
-| `listening.loop_immerse` | 至少一首满足「循环沉浸」定义 | 同一首连着/反复沉浸 |
-| `lyrics.engaged` | 查词曲 ≥ 2 或 总 dwell ≥ 60s | 对词有兴趣 |
-| `immersion.deep` | 标签=沉浸 或（immersive_ms≥10min 且 background_play_ratio≥0.3） | 深度使用（含后台） |
-| `immersion.fragmented` | 标签=碎听 | 多次短会话 |
-| `library.favorited` | favorite_adds ≥ 1 | 点名收藏曲 |
-| `library.history_revisit` | history_replays ≥ 1 | 主动翻历史回听 |
-| `taste.dominant_mood` | Top mood 权重显著领先 | 昨天气质主调 |
-| `taste.aversion` | 某 genre/mood 跳过显著 | 昨天回避某气质 |
-| `sparse.day` | turns&lt;2 且 events 极少 | 昨天几乎没使用 → 整报降级 |
-| `quality.partial` | 关键信号 coverage 低 | 结论标 low confidence |
-
-**冲突处理**：`completion_high` 与 `skip_heavy` 可同时存在（不同时段）——按 session 拆开出结论，不平均抹掉。
-
-**禁止规则**：任何「仅有 PAD 均值 &lt; 0 ⇒ 你很难过」——除非同时有输入原文或高跳过/负口头等行为证据。
-
-### 4.4 LLM 日信（第三层，可失败）
-
-输入：**仅** `FactCard` + `Conclusions[]`（含 evidence.display）+ Top 曲名。  
-
-输出：短 JSON（greeting / body / closing）；body **必须改写已有结论**，不得新增无证据主张。  
-
-校验：简单关键词/歌名检查可选；失败 → HTML 只渲染详细报告 + 结论列表。
-
-### 4.5 HTML 信息架构（详细报告长什么样）
+### 4.5 HTML 大纲
 
 ```text
-标题：昨天 · YYYY-MM-DD
-① 结论摘要（3～7 条 Conclusions，每条下挂证据一行）
-② 日信（有则显示；无则跳过）
-③ 详细数据
-   - 昨天你怎么进来的（点我试试 / 输入 / 点歌判断）
-   - 听歌（**按歌明细表：次数、累计秒、最长一听、是否反复/连听、完成/跳过**）
-   - 歌词与沉浸
-   - 收藏与历史
-   - 气质分布
-   - 数据完整度
+昨天 · YYYY-MM-DD
+① 结论（含锁定沉浸等）
+② 日信
+③ 详细
+   - 入口元数据
+   - 锁定播放（会话列表：歌名、遍数、听时、如何退出）
+   - 听歌总表（秒 / 次 / 锁定标记）
+   - 歌词 · 沉浸 · 收藏历史 · 气质 · 完整度
 ```
-
-视觉：独立 `dailyRenderer.ts`，**复制**周报色带/字体 token，**不 import 修改** weekly 样式文件；首页 CSS 零改动。
 
 ---
 
 ## 5. 调度与存储
 
-- `daily_snapshots(day_key, html_path, turn_count, event_count, fallback, created_at)`  
-- 文件：`<appData>/dailies/daily_YYYY-MM-DD.html`  
-- 08:00：`runDaily({ dayKey: yesterday })`；与 reflect/weekly **独立**错误边界  
-- 稀疏自动跳过；手动可出「昨天几乎没打开」页  
+同 v1：`daily_snapshots` + `dailies/daily_YYYY-MM-DD.html`；08:00；稀疏跳过。
 
 ---
 
-## 6. 实现分期（全做 = S1）
+## 6. 分期（全做）
 
 | 期 | 交付 | 验收 |
 |---|---|---|
-| P0 | `activity_events` + **`play_sessions`** + `trackActivity` 全量接线；progress 采样；`lyra_start` 可计数 | 能查出「某歌昨天听了多少秒、播了几次」 |
-| P1 | `buildDailyDigest`（含 TrackDayStat）+ `deriveConclusions`（含重复/循环规则）+ FactCard | fixture → 报告含秒级按歌表与反复结论 |
-| P2 | DailyAgent + `dailyRenderer` + 08:00 + `/day` + Settings；复用 WeeklyReader | 早 8 点出昨天 HTML；失败有降级 |
-| P3 | 天气日快照、桌面 perception 并入、seek 等 | 标为增强，不挡 P2 |
+| **P0** | events + play_sessions；**锁定 on/off/loop 埋点**；progress；lyra_start | DB 能查：某歌锁定最高遍数、每遍秒数 |
+| **P1** | Digest（含 Track Lock 章）+ Conclusions（含 lock.*） | fixture：锁 5 遍 → `lock.deep` + 按歌秒表 |
+| **P2** | Agent + renderer + 08:00 + `/day` | 早报可见锁定段；失败降级仍有数据区 |
+| **P3** | 天气快照等增强 | 不挡 P2 |
+
+P0 接线点（旁路）：
+
+- `Orchestrator.setTrackLock` / `clearTrackLock`  
+- `onSongComplete` 锁定分支（loop 前）  
+- `TrackLockButton` 无需改样式，逻辑仍走 orc  
+- 现有 play/skip/complete/progress UI 旁  
 
 ---
 
-## 7. 测试策略
+## 7. 测试
 
-- 分析器 / 结论规则：**纯函数单测**（无 LLM）  
-- 埋点：关键路径 spy `trackActivity` 被调用，且主路径仍成功  
-- 回归：现有 Orchestrator / LibraryAgent / 首页组件测试全绿；视觉以「首页截图不变」为人工检查项  
+- 结论规则单测：锁定 1 遍 vs 5 遍；锁定 vs 无锁连听互不误判  
+- 埋点 spy：开锁/循环/关锁各触发；**主路径 playCount / 退锁行为不变**  
+- 回归：`Orchestrator` track lock 现有测试全绿；推荐测试不动  
 
 ---
 
 ## 8. 非目标
 
-- 不替换推荐系统  
-- 不做跨设备云同步日报  
-- 不把日报结论写回 `moodLocked` / soul（避免反馈环改变现网行为；若未来要做须另开 RFC）  
+- 不持久化锁定状态到跨天（与 lock-play 设计一致）  
+- 不因日报自动开关锁定  
+- 不合并 moodLocked 与 trackLock  
 
 ---
 
-## 9. 待确认（本文件写定后的默认值）
+## 9. 默认假设
 
-若无异议，按下列默认执行：
+- `/mood` 并存；结论以规则为准  
+- iOS + core 先接锁定埋点（锁定 UI 主要在 mobile）  
+- 桌面无锁定钮则 `track_lock_*` 为空，Quality 标明  
 
-- `/mood` 与日报并存  
-- 结论以规则引擎为准，LLM 只润色  
-- 首发平台：core 分析全平台；**iOS + 桌面**都接 P0 埋点；08:00 调度桌面先接、iOS 用本地通知或下次冷启动补跑（实现计划里写清）  
+---
+
+## 10. v1 → v2 变更摘要
+
+| 项 | v1 | v2 |
+|---|---|---|
+| 反复听 | 只靠同歌 session 间隙 | **显式锁定播放** + 无锁连听 二分 |
+| play source | 无 lock loop | + `track_lock_loop` |
+| 报告章 | 无 | **Track Lock** 专章 |
+| 结论 | `loop_immerse` 混用 | `lock.deep` 优先；无锁才用 organic loop |
+| 隔离 | 旁路 | 额外写明：**不改已上线锁定状态机与样式** |
