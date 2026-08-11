@@ -20,10 +20,15 @@ import { invalidatePlaybackQueueRefills } from "../audio/refillPlaybackQueue";
 import { useTurn } from "../turn/useTurn";
 import type { Orchestrator } from "@lyra/core";
 import { songDisplayTitle, songDisplayArtist } from "@lyra/core/library/display";
+import {
+  isFavorite,
+  toggleFavorite,
+} from "@lyra/core/db/repo/favoritesRepo";
 import { looksLikePartialLyrics } from "@lyra/core/agents/LyricsAgent";
 import type { PAD } from "../lib/color";
-import { setImmersiveStatusBar } from "./immersiveStatusBar";
+import { setImmersiveStatusBar, lightTap } from "./immersiveStatusBar";
 import { buildSharePayload } from "./share";
+import { IconHistory, IconShare } from "./icons";
 import { LyraAudio } from "@lyra/platform-ios";
 import { useImmersiveSwipe } from "./useImmersiveSwipe";
 import type {
@@ -66,7 +71,10 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [dockExpanded, setDockExpanded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [favorited, setFavorited] = useState(false);
   const [immersive, setImmersive] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
+  const inputBlurAtRef = useRef(0);
   const previousImmersiveRef = useRef(immersive);
   const immersiveToggleAtRef = useRef(Number.NEGATIVE_INFINITY);
   const [noteFlipped, setNoteFlipped] = useState(false);
@@ -723,6 +731,45 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     }
   }, [playingSong, shareRationale]);
 
+  useEffect(() => {
+    const songId = playingSong?.id;
+    if (!songId) {
+      setFavorited(false);
+      return;
+    }
+    let cancelled = false;
+    void isFavorite(songId)
+      .then((v) => {
+        if (!cancelled) setFavorited(v);
+      })
+      .catch(() => {
+        if (!cancelled) setFavorited(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [playingSong?.id]);
+
+  const handleFavorite = useCallback(async () => {
+    if (!playingSong) return;
+    const prev = favorited;
+    setFavorited(!prev);
+    try {
+      const { favorited: next } = await toggleFavorite(playingSong.id);
+      setFavorited(next);
+    } catch (err) {
+      setFavorited(prev);
+      console.warn("[lyra-ios] toggle favorite:", err);
+    }
+  }, [playingSong, favorited]);
+
+  const handleFavoriteChange = useCallback(
+    (songId: string, next: boolean) => {
+      if (playingSong?.id === songId) setFavorited(next);
+    },
+    [playingSong?.id],
+  );
+
   const isSparseIdle = state.kind === "idle";
   const [idleLeaving, setIdleLeaving] = useState(false);
   const dockRef = useRef<HTMLDivElement | null>(null);
@@ -833,6 +880,9 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
           .join(" ")}
         onClick={() => {
           if (shouldSuppressClick()) return;
+          // Typing / dismissing the keyboard must never flip immersive.
+          if (inputFocused) return;
+          if (performance.now() - inputBlurAtRef.current < 400) return;
           if (!canToggleImmersive(state.kind)) return;
           const now = performance.now();
           if (now - immersiveToggleAtRef.current < IMMERSIVE_FLIP_MS) return;
@@ -896,6 +946,11 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                 text={displayNote}
                 color={noteColor}
                 error={isErrorNote}
+                textLoading={
+                  state.kind === "playing" &&
+                  Boolean(state.rationalePending) &&
+                  !handoffNeighbor
+                }
                 onClick={
                   isErrorNote || state.kind === "playing"
                     ? handleNoteClick
@@ -922,7 +977,23 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
 
         <div className="lyra-mobile-idle-brand-slot" aria-hidden="true" />
 
-        {/* 天气 badge —— stage 顶部绝对定位，不参与 content 布局，不推挤沉浸元素 */}
+        {/* 顶栏：左分享 · 右天气 —— 同水平线，沉浸式一并隐藏 */}
+        {playingSong && (
+          <button
+            type="button"
+            className="lyra-mobile-top-share"
+            onClick={(e) => {
+              e.stopPropagation();
+              lightTap();
+              void handleShare();
+            }}
+            title="分享到微信"
+            aria-label="分享到微信"
+            data-testid="share-btn"
+          >
+            <IconShare size={16} />
+          </button>
+        )}
         <WeatherBadge weather={showWeather ? weather : null} />
 
         <div
@@ -943,14 +1014,30 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
           onPointerDown={(e) => e.stopPropagation()}
         >
           {isSparseIdle ? (
-            <button
-              type="button"
-              className="lyra-mobile-idle-slogan"
-              data-testid="lyra-idle-slogan"
-              onClick={handleLyraStart}
-            >
-              {LYRA_START_LABEL}
-            </button>
+            <div className="lyra-mobile-idle-actions">
+              <button
+                type="button"
+                className="lyra-mobile-idle-history"
+                data-testid="idle-history-btn"
+                title="播放历史"
+                aria-label="播放历史"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  lightTap();
+                  setHistoryOpen(true);
+                }}
+              >
+                <IconHistory />
+              </button>
+              <button
+                type="button"
+                className="lyra-mobile-idle-slogan"
+                data-testid="lyra-idle-slogan"
+                onClick={handleLyraStart}
+              >
+                {LYRA_START_LABEL}
+              </button>
+            </div>
           ) : (
             <>
               {idleLeaving && (
@@ -1004,12 +1091,24 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                 onSkip={handleSkip}
                 onPrevious={handlePrevious}
                 onHistory={() => setHistoryOpen(true)}
-                onShare={handleShare}
+                onFavorite={() => {
+                  void handleFavorite();
+                }}
+                favorited={favorited}
               />
             </>
           )}
           <div onClick={(e) => e.stopPropagation()}>
-            <InputBox onSubmit={handleSubmit} />
+            <InputBox
+              onSubmit={handleSubmit}
+              onFocus={() => {
+                setInputFocused(true);
+              }}
+              onBlur={() => {
+                setInputFocused(false);
+                inputBlurAtRef.current = performance.now();
+              }}
+            />
           </div>
         </div>
       </div>
@@ -1018,6 +1117,7 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         orchestrator={orchestrator}
+        onFavoriteChange={handleFavoriteChange}
       />
     </AmbientBackground>
   );

@@ -29,6 +29,21 @@ describe("SmallNote", () => {
     expect(note.className).not.toContain("lyra-mobile-small-note--error");
   });
 
+  it("shows a light loading indicator while textLoading", () => {
+    render(<SmallNote text="" textLoading />);
+    expect(screen.getByTestId("small-note-text-loading")).toBeInTheDocument();
+  });
+
+  it("swaps loading dots for rationale text when generation finishes", () => {
+    const { rerender } = render(<SmallNote text="" textLoading />);
+    expect(screen.getByTestId("small-note-text-loading")).toBeInTheDocument();
+    rerender(<SmallNote text="深夜适合听点安静的" textLoading={false} />);
+    expect(screen.queryByTestId("small-note-text-loading")).not.toBeInTheDocument();
+    expect(screen.getByTestId("small-note")).toHaveTextContent(
+      "深夜适合听点安静的",
+    );
+  });
+
   it("error notes are clickable and trigger onClick", () => {
     const onClick = vi.fn();
     render(

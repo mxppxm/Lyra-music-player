@@ -49,7 +49,14 @@ type SoulStore = SoulStoreLike;
 export type OrchestratorState =
   | { kind: "idle" }
   | { kind: "thinking"; user_utterance: string }
-  | { kind: "playing"; turn: DialogueTurn; song: LibraryTrack; paused?: boolean }
+  | {
+      kind: "playing";
+      turn: DialogueTurn;
+      song: LibraryTrack;
+      paused?: boolean;
+      /** Fresh replay copy is still being written — UI may show a light loader. */
+      rationalePending?: boolean;
+    }
   | { kind: "error"; message: string }
   | { kind: "proactive-pending"; intent: ProactiveIntent; song: LibraryTrack; rationale: string };
 
@@ -1415,8 +1422,9 @@ export class Orchestrator {
   }
 
   /**
-   * Replay a song from history. Plays the track immediately with the
-   * historical rationale + emotion carried into the playing state.
+   * Replay a song from history / favorites. Starts playback immediately;
+   * companion copy is generated in the background and patched onto the
+   * playing turn (historical rationale is ignored).
    *
    * Deliberately does NOT insert a new dialogue_turn row — the history
    * stays clean. The in-memory turn still wires pause/skip/complete, so
@@ -1424,7 +1432,7 @@ export class Orchestrator {
    */
   async onReplaySong(
     track: LibraryTrack,
-    rationale: string,
+    _staleRationale: string,
     emotion: CurrentEmotion,
   ): Promise<void> {
     // User replay is a full transition (stop + playFile) — must not interleave
@@ -1447,7 +1455,7 @@ export class Orchestrator {
       timestamp: clock(),
       current_emotion: emotion,
       user_utterance: { modality: "proactive-open", content: "" },
-      agent_response: { song_id: track.id, rationale },
+      agent_response: { song_id: track.id, rationale: "" },
       user_reaction: {
         behavioral: {
           listen_duration_ms: 0,
@@ -1475,7 +1483,45 @@ export class Orchestrator {
     this.currentTurn = turn;
     this.currentSong = track;
     this.pendingEvents = [];
-    this.emit({ kind: "playing", turn, song: track });
+    this.emit({ kind: "playing", turn, song: track, rationalePending: true });
+    void this.fillReplayRationale(turn.id, track, emotion);
+    });
+  }
+
+  /** Background: write a fresh rationale onto an in-flight replay turn. */
+  private async fillReplayRationale(
+    turnId: string,
+    track: LibraryTrack,
+    emotion: CurrentEmotion,
+  ): Promise<void> {
+    let rationale =
+      (await this.rationaleForNativeSong(track, emotion)) ?? "";
+    if (!rationale.trim()) {
+      const display =
+        track.title?.match(/《([^》]+)》/)?.[1] ??
+        track.title ??
+        "这首歌";
+      rationale = `再听一遍《${display}》`;
+    }
+
+    if (this.currentTurn?.id !== turnId) return;
+    if (this.state.kind !== "playing") return;
+
+    const turn: DialogueTurn = {
+      ...this.currentTurn,
+      agent_response: {
+        ...this.currentTurn.agent_response,
+        rationale,
+      },
+    };
+    this.currentTurn = turn;
+    this.rationaleBySongId.set(track.id, rationale);
+    this.emit({
+      kind: "playing",
+      turn,
+      song: this.currentSong ?? track,
+      paused: this.state.paused,
+      rationalePending: false,
     });
   }
 

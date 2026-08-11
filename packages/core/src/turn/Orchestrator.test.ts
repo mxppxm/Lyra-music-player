@@ -938,25 +938,69 @@ describe("Orchestrator.onReplaySong (history replay)", () => {
     source: "emotion-agent-inferred",
   };
 
-  it("plays the track with the historical rationale/emotion and does NOT insert a turn", async () => {
+  it("plays the track immediately with rationalePending, then patches live copy", async () => {
     const deps = makeDeps();
+    let resolveChoose!: (v: any) => void;
+    deps.companion.choose.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveChoose = resolve;
+        }),
+    );
     const orc = new Orchestrator(deps as any);
     const seen: string[] = [];
     orc.subscribe((s) => seen.push(s.kind));
 
-    await orc.onReplaySong(track(), "舒缓的旋律，陪你慢下来", emotion);
+    const done = orc.onReplaySong(track(), "舒缓的旋律，陪你慢下来", emotion);
+    await done;
 
     expect(deps.audio.stop).toHaveBeenCalledOnce();
     expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
     expect(deps.turnRepo.insertTurn).not.toHaveBeenCalled();
     expect(seen).toEqual(["playing"]);
-    const state = orc.getState();
+    let state = orc.getState();
     expect(state.kind).toBe("playing");
     if (state.kind === "playing") {
+      expect(state.rationalePending).toBe(true);
+      expect(state.turn.agent_response.rationale).toBe("");
       expect(state.song.id).toBe("t1");
-      expect(state.turn.agent_response.rationale).toBe("舒缓的旋律，陪你慢下来");
-      expect(state.turn.current_emotion.pad).toEqual({ p: 0.3, a: 0.1, d: 0.2 });
     }
+
+    await vi.waitFor(() => {
+      expect(typeof resolveChoose).toBe("function");
+    });
+    resolveChoose({
+      song_id: "t1",
+      target_profile: "x",
+      rationale: "此刻重新听，刚好对上心情",
+      needed_shift: "陪着" as const,
+    });
+    await vi.waitFor(() => {
+      const s = orc.getState();
+      expect(s.kind).toBe("playing");
+      if (s.kind === "playing") {
+        expect(s.rationalePending).toBeFalsy();
+        expect(s.turn.agent_response.rationale).toBe("此刻重新听，刚好对上心情");
+      }
+    });
+  });
+
+  it("falls back to a template when companion rationale fails", async () => {
+    const deps = makeDeps();
+    deps.companion.choose.mockRejectedValue(new Error("llm down"));
+    const orc = new Orchestrator(deps as any);
+
+    await orc.onReplaySong(track(), "旧文案", emotion);
+    await vi.waitFor(() => {
+      const state = orc.getState();
+      expect(state.kind).toBe("playing");
+      if (state.kind === "playing") {
+        expect(state.rationalePending).toBeFalsy();
+        expect(state.turn.agent_response.rationale).toBe(
+          "再听一遍《Nuvole Bianche》",
+        );
+      }
+    });
   });
 
   it("emits an error state when playback fails", async () => {

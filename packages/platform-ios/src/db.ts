@@ -240,6 +240,15 @@ CREATE TABLE track_feedback (
 CREATE INDEX idx_tf_track ON track_feedback(track_id);
 CREATE INDEX idx_tf_turn ON track_feedback(turn_id);`,
   },
+  {
+    version: 9,
+    sql: `CREATE TABLE IF NOT EXISTS favorites (
+  song_id TEXT PRIMARY KEY,
+  favorited_at INTEGER NOT NULL,
+  FOREIGN KEY (song_id) REFERENCES library_tracks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_favorites_at ON favorites(favorited_at DESC);`,
+  },
 ];
 
 async function runMigrations(): Promise<void> {

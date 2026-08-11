@@ -5,6 +5,7 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
   type TransitionEvent,
 } from "react";
 import { createPortal } from "react-dom";
@@ -28,12 +29,129 @@ export type SmallNoteProps = {
   color?: string;
   /** Error state — clickable (retry) with a clamped, scrollable height. */
   error?: boolean;
+  /** Front-face copy is still being generated (replay). */
+  textLoading?: boolean;
   onClick?: () => void;
   /** When set, the note is a flippable card (rationale ↔ lyrics). */
   flip?: SmallNoteFlip;
 };
 
 const FAILED_COPY = "暂时找不到歌词，点一下重试";
+const RATIONALE_EXPAND_MS = 520;
+const RATIONALE_EXPAND_EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
+  );
+}
+
+type SizeBox = { width: number; height: number };
+
+/** Grow the note bubble from the compact "…" size into full copy — both
+ *  axes, expanding from the visual center (width via margin:auto, height
+ *  via a compensating marginTop that eases out). */
+function useRationaleExpand(
+  shellRef: RefObject<HTMLElement | null>,
+  textLoading: boolean,
+  text: string,
+) {
+  const wasLoadingRef = useRef(textLoading);
+  const loadingSizeRef = useRef<SizeBox>({ width: 0, height: 0 });
+
+  useLayoutEffect(() => {
+    const el = shellRef.current;
+    if (!el) {
+      wasLoadingRef.current = textLoading;
+      return;
+    }
+
+    const clearInline = () => {
+      el.style.width = "";
+      el.style.height = "";
+      el.style.maxWidth = "";
+      el.style.marginTop = "";
+      el.style.overflow = "";
+      el.style.transition = "";
+    };
+
+    if (textLoading) {
+      const box = el.getBoundingClientRect();
+      loadingSizeRef.current = { width: box.width, height: box.height };
+      wasLoadingRef.current = true;
+      clearInline();
+      return;
+    }
+
+    if (!wasLoadingRef.current) return;
+    wasLoadingRef.current = false;
+
+    if (prefersReducedMotion() || !text.trim()) return;
+
+    const from = loadingSizeRef.current;
+    // Natural size after the real copy is already in the DOM.
+    const toWidth = el.getBoundingClientRect().width;
+    const toHeight = el.scrollHeight;
+    const dW = Math.abs(toWidth - from.width);
+    const dH = Math.abs(toHeight - from.height);
+    if (!(from.width > 0 && from.height > 0) || (dW < 2 && dH < 2)) return;
+
+    const marginTopFrom = Math.max(0, (toHeight - from.height) / 2);
+
+    el.style.maxWidth = "none";
+    el.style.overflow = "hidden";
+    el.style.width = `${from.width}px`;
+    el.style.height = `${from.height}px`;
+    el.style.marginTop = `${marginTopFrom}px`;
+    el.style.transition = "none";
+    void el.offsetHeight;
+
+    el.style.transition = [
+      `width ${RATIONALE_EXPAND_MS}ms ${RATIONALE_EXPAND_EASE}`,
+      `height ${RATIONALE_EXPAND_MS}ms ${RATIONALE_EXPAND_EASE}`,
+      `margin-top ${RATIONALE_EXPAND_MS}ms ${RATIONALE_EXPAND_EASE}`,
+    ].join(", ");
+    el.style.width = `${toWidth}px`;
+    el.style.height = `${toHeight}px`;
+    el.style.marginTop = "0px";
+
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      clearInline();
+    };
+    const onEnd = (e: Event) => {
+      const te = e as globalThis.TransitionEvent;
+      if (te.target !== el) return;
+      if (te.propertyName !== "height" && te.propertyName !== "width") return;
+      settle();
+    };
+    el.addEventListener("transitionend", onEnd);
+    const fallback = window.setTimeout(settle, RATIONALE_EXPAND_MS + 100);
+    return () => {
+      el.removeEventListener("transitionend", onEnd);
+      window.clearTimeout(fallback);
+    };
+  }, [shellRef, textLoading, text]);
+}
+
+function RationaleLoading() {
+  return (
+    <span
+      className="lyra-mobile-small-note__loading"
+      data-testid="small-note-text-loading"
+      aria-label="文案生成中"
+    >
+      <span className="lyra-mobile-thinking__dots" aria-hidden>
+        <span>.</span>
+        <span>.</span>
+        <span>.</span>
+      </span>
+    </span>
+  );
+}
 
 type RectBox = { top: number; left: number; width: number; height: number };
 
@@ -88,9 +206,16 @@ function boxStyle(box: RectBox): CSSProperties {
  *  long provider error bodies can never push the layout.
  *  Expand grows from the small card's center; the expand control rides the
  *  card's top-right and flips to collapse. */
-export function SmallNote({ text, color, error, onClick, flip }: SmallNoteProps) {
+export function SmallNote({
+  text,
+  color,
+  error,
+  textLoading = false,
+  onClick,
+  flip,
+}: SmallNoteProps) {
   const flippable = Boolean(flip) && !error;
-  const interactive = Boolean(onClick);
+  const interactive = Boolean(onClick) && !textLoading;
   const flipped = Boolean(flip?.flipped);
   const noteRef = useRef<HTMLDivElement>(null);
   const originRef = useRef<RectBox | null>(null);
@@ -108,6 +233,14 @@ export function SmallNote({ text, color, error, onClick, flip }: SmallNoteProps)
   const failed = Boolean(flip?.failed);
   const lyricsReady = !loading && !failed && Boolean(flip?.backText?.trim());
   const canExpand = flipped && lyricsReady;
+
+  const frontContent = textLoading ? (
+    <RationaleLoading />
+  ) : (
+    <Crossfade text={text}>{text}</Crossfade>
+  );
+
+  useRationaleExpand(noteRef, textLoading, text);
 
   useEffect(() => {
     if (!canExpand && morphMounted) {
@@ -202,13 +335,15 @@ export function SmallNote({ text, color, error, onClick, flip }: SmallNoteProps)
   if (!flippable) {
     return (
       <div
+        ref={noteRef}
         data-testid="small-note"
         className={className}
         style={color ? { color } : undefined}
         role={interactive ? "button" : undefined}
         tabIndex={interactive ? 0 : undefined}
         aria-disabled={interactive ? undefined : true}
-        onClick={onClick}
+        aria-busy={textLoading || undefined}
+        onClick={textLoading ? undefined : onClick}
         onKeyDown={
           interactive
             ? (e) => {
@@ -220,7 +355,7 @@ export function SmallNote({ text, color, error, onClick, flip }: SmallNoteProps)
             : undefined
         }
       >
-        <Crossfade text={text}>{text}</Crossfade>
+        {frontContent}
       </div>
     );
   }
@@ -242,14 +377,14 @@ export function SmallNote({ text, color, error, onClick, flip }: SmallNoteProps)
         aria-pressed={flipped}
         onClick={(e) => {
           e.stopPropagation();
-          if (morphMounted) return;
+          if (morphMounted || textLoading) return;
           onClick?.();
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             e.stopPropagation();
-            if (morphMounted) return;
+            if (morphMounted || textLoading) return;
             onClick?.();
           }
         }}
@@ -263,7 +398,7 @@ export function SmallNote({ text, color, error, onClick, flip }: SmallNoteProps)
             .join(" ")}
         >
           <div className="lyra-mobile-small-note__card lyra-mobile-small-note__card--front">
-            <Crossfade text={text}>{text}</Crossfade>
+            {frontContent}
           </div>
           <div
             className="lyra-mobile-small-note__card lyra-mobile-small-note__card--back"

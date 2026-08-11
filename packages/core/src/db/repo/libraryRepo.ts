@@ -80,6 +80,10 @@ export async function artistExists(name: string): Promise<boolean> {
 export async function deleteTrackCascade(id: string): Promise<void> {
   const db = await getDb();
   await db.execute(
+    "DELETE FROM favorites WHERE song_id = ?",
+    [id],
+  );
+  await db.execute(
     "DELETE FROM track_feedback WHERE track_id = ?",
     [id],
   );

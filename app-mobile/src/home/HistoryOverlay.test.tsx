@@ -11,8 +11,19 @@ vi.mock("@lyra/core/db/repo/libraryRepo", () => ({
   getTrack: vi.fn(),
 }));
 
+vi.mock("@lyra/core/db/repo/favoritesRepo", () => ({
+  listFavorites: vi.fn(),
+  getFavoriteSongIds: vi.fn(),
+  toggleFavorite: vi.fn(),
+}));
+
 import { listRecentTurns } from "@lyra/core/db/repo/turnRepo";
 import { getTrack } from "@lyra/core/db/repo/libraryRepo";
+import {
+  listFavorites,
+  getFavoriteSongIds,
+  toggleFavorite,
+} from "@lyra/core/db/repo/favoritesRepo";
 
 const turn = {
   id: "turn-1",
@@ -58,6 +69,9 @@ function makeStubOrchestrator(): Orchestrator {
 beforeEach(() => {
   vi.mocked(listRecentTurns).mockResolvedValue([]);
   vi.mocked(getTrack).mockResolvedValue(null);
+  vi.mocked(listFavorites).mockResolvedValue([]);
+  vi.mocked(getFavoriteSongIds).mockResolvedValue(new Set());
+  vi.mocked(toggleFavorite).mockResolvedValue({ favorited: true });
 });
 
 afterEach(() => {
@@ -72,6 +86,15 @@ describe("HistoryOverlay", () => {
     expect(screen.queryByTestId("history-overlay")).not.toBeInTheDocument();
   });
 
+  it("shows tabs instead of a title", async () => {
+    render(
+      <HistoryOverlay open={true} onClose={() => {}} orchestrator={makeStubOrchestrator()} />,
+    );
+    expect(await screen.findByTestId("history-tab")).toBeInTheDocument();
+    expect(screen.getByTestId("favorites-tab")).toBeInTheDocument();
+    expect(screen.queryByText("播放历史")).not.toBeInTheDocument();
+  });
+
   it("shows empty state when there is no history", async () => {
     render(
       <HistoryOverlay open={true} onClose={() => {}} orchestrator={makeStubOrchestrator()} />,
@@ -81,7 +104,18 @@ describe("HistoryOverlay", () => {
     });
   });
 
-  it("lists songs with rationale, time and emotion dot", async () => {
+  it("shows favorites empty state on the favorites tab", async () => {
+    render(
+      <HistoryOverlay open={true} onClose={() => {}} orchestrator={makeStubOrchestrator()} />,
+    );
+    await screen.findByTestId("history-empty");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("favorites-tab"));
+    });
+    expect(await screen.findByTestId("favorites-empty")).toBeInTheDocument();
+  });
+
+  it("lists songs with title, artist, time and emotion dot (no stored copy)", async () => {
     vi.mocked(listRecentTurns).mockResolvedValue([turn]);
     vi.mocked(getTrack).mockResolvedValue(track);
     render(
@@ -89,9 +123,50 @@ describe("HistoryOverlay", () => {
     );
     expect(await screen.findByText("Nuvole Bianche")).toBeInTheDocument();
     expect(screen.getByText("Ludovico Einaudi")).toBeInTheDocument();
-    expect(screen.getByText("舒缓的旋律，陪你慢下来")).toBeInTheDocument();
+    expect(screen.queryByText("舒缓的旋律，陪你慢下来")).not.toBeInTheDocument();
     expect(screen.getByText("5 分钟前")).toBeInTheDocument();
     expect(screen.getByTestId("history-item-0")).toBeInTheDocument();
+  });
+
+  it("lists favorites on the favorites tab", async () => {
+    vi.mocked(listFavorites).mockResolvedValue([
+      { song_id: "track-1", favorited_at: Date.now() - 60_000 },
+    ]);
+    vi.mocked(getTrack).mockResolvedValue(track);
+    vi.mocked(getFavoriteSongIds).mockResolvedValue(new Set(["track-1"]));
+    render(
+      <HistoryOverlay open={true} onClose={() => {}} orchestrator={makeStubOrchestrator()} />,
+    );
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("favorites-tab"));
+    });
+    expect(await screen.findByTestId("favorite-item-0")).toBeInTheDocument();
+    expect(screen.getByText("Nuvole Bianche")).toBeInTheDocument();
+  });
+
+  it("toggles favorite from a history row without replaying", async () => {
+    vi.mocked(listRecentTurns).mockResolvedValue([turn]);
+    vi.mocked(getTrack).mockResolvedValue(track);
+    vi.mocked(toggleFavorite).mockResolvedValue({ favorited: true });
+    const orc = makeStubOrchestrator();
+    const onFavoriteChange = vi.fn();
+    render(
+      <HistoryOverlay
+        open={true}
+        onClose={() => {}}
+        orchestrator={orc}
+        onFavoriteChange={onFavoriteChange}
+      />,
+    );
+    const fav = await screen.findByTestId("history-fav-0");
+    await act(async () => {
+      fireEvent.click(fav);
+    });
+    expect(toggleFavorite).toHaveBeenCalledWith("track-1");
+    expect(orc.onReplaySong).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(onFavoriteChange).toHaveBeenCalledWith("track-1", true),
+    );
   });
 
   it("falls back when the song is no longer in the library", async () => {
@@ -103,7 +178,7 @@ describe("HistoryOverlay", () => {
     expect(await screen.findByText("（歌曲已不在库中）")).toBeInTheDocument();
   });
 
-  it("replays the song through the orchestrator when card is clicked and closes", async () => {
+  it("replays via orchestrator without passing stored rationale, then closes", async () => {
     vi.mocked(listRecentTurns).mockResolvedValue([turn]);
     vi.mocked(getTrack).mockResolvedValue(track);
     const orc = makeStubOrchestrator();
@@ -115,32 +190,21 @@ describe("HistoryOverlay", () => {
     });
     expect(orc.onReplaySong).toHaveBeenCalledWith(
       track,
-      turn.agent_response.rationale,
+      "",
       turn.current_emotion,
     );
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
 
-  it("closes on backdrop click", async () => {
+  it("closes on backdrop click and has no close button", async () => {
     const onClose = vi.fn();
     render(
       <HistoryOverlay open={true} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
     );
     await screen.findByTestId("history-empty");
+    expect(screen.queryByTestId("history-close")).not.toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByTestId("history-backdrop"));
-    });
-    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
-  });
-
-  it("closes on the close button", async () => {
-    const onClose = vi.fn();
-    render(
-      <HistoryOverlay open={true} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
-    );
-    await screen.findByTestId("history-empty");
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("history-close"));
     });
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
@@ -154,8 +218,6 @@ describe("HistoryOverlay", () => {
     );
     await screen.findByText("Nuvole Bianche");
     const sheet = screen.getByTestId("history-overlay");
-    // jsdom's fireEvent.pointerDown drops clientY, so construct pointer events
-    // with explicit coordinates to exercise the manual-drag close path.
     const pointer = (type: string, clientY?: number) =>
       new MouseEvent(type, { bubbles: true, clientY });
     await act(async () => {
@@ -175,21 +237,16 @@ describe("HistoryOverlay", () => {
     const { rerender } = render(
       <HistoryOverlay open={false} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
     );
-    // closed → no overlay
     expect(screen.queryByTestId("history-overlay")).not.toBeInTheDocument();
 
-    // open → overlay appears
     rerender(
       <HistoryOverlay open={true} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
     );
     await screen.findByTestId("history-overlay");
     expect(screen.getByTestId("history-overlay")).toBeInTheDocument();
 
-    // close → simulate parent flipping open to false once onClose fires, then
-    // the overlay must actually unmount (dragY reset to 0) instead of lingering
-    // as an invisible full-screen layer that blocks taps.
     await act(async () => {
-      fireEvent.click(screen.getByTestId("history-close"));
+      fireEvent.click(screen.getByTestId("history-backdrop"));
     });
     rerender(
       <HistoryOverlay open={false} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
@@ -198,7 +255,6 @@ describe("HistoryOverlay", () => {
       expect(screen.queryByTestId("history-overlay")).not.toBeInTheDocument();
     });
 
-    // can open again after a previous close
     rerender(
       <HistoryOverlay open={true} onClose={onClose} orchestrator={makeStubOrchestrator()} />,
     );

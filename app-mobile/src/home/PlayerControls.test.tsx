@@ -8,41 +8,47 @@ const baseProps = {
   onTogglePlay: vi.fn(),
   onSkip: vi.fn(),
   onHistory: vi.fn(),
-  onShare: vi.fn(),
+  onFavorite: vi.fn(),
 };
 
-describe("PlayerControls share button", () => {
-  it("renders the share button to the LEFT of the history button (same row)", () => {
+describe("PlayerControls history / favorite layout", () => {
+  it("puts history on the left and favorite on the right", () => {
     render(<PlayerControls {...baseProps} />);
-    const share = screen.getByTestId("share-btn");
     const history = screen.getByTestId("history-open-btn");
-    expect(share).toBeInTheDocument();
+    const favorite = screen.getByTestId("favorite-btn");
     expect(history).toBeInTheDocument();
-    // Same row, share on the left.
-    expect(share.compareDocumentPosition(history)).toBe(
+    expect(favorite).toBeInTheDocument();
+    expect(history.compareDocumentPosition(favorite)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
   });
 
-  it("triggers onShare when clicked", () => {
+  it("does not render a share button in the control bar", () => {
     render(<PlayerControls {...baseProps} />);
-    fireEvent.click(screen.getByTestId("share-btn"));
-    expect(baseProps.onShare).toHaveBeenCalledTimes(1);
-  });
-
-  it("is disabled when playback is unavailable (no current song)", () => {
-    render(<PlayerControls {...baseProps} canControl={false} />);
-    expect(screen.getByTestId("share-btn")).toBeDisabled();
-  });
-
-  it("does not render share button when no onShare handler is provided", () => {
-    render(
-      <PlayerControls
-        {...baseProps}
-        onShare={undefined}
-      />,
-    );
     expect(screen.queryByTestId("share-btn")).not.toBeInTheDocument();
+  });
+
+  it("triggers onFavorite when clicked", () => {
+    render(<PlayerControls {...baseProps} />);
+    fireEvent.click(screen.getByTestId("favorite-btn"));
+    expect(baseProps.onFavorite).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the favorite button pressed when favorited without red chrome class variants", () => {
+    render(<PlayerControls {...baseProps} favorited />);
+    const btn = screen.getByTestId("favorite-btn");
+    expect(btn).toHaveAttribute("aria-pressed", "true");
+    expect(btn).toHaveClass("lyra-mobile-player-controls__favorite--on");
+  });
+
+  it("disables favorite when playback is unavailable", () => {
+    render(<PlayerControls {...baseProps} canControl={false} />);
+    expect(screen.getByTestId("favorite-btn")).toBeDisabled();
+  });
+
+  it("does not render favorite when no onFavorite handler is provided", () => {
+    render(<PlayerControls {...baseProps} onFavorite={undefined} />);
+    expect(screen.queryByTestId("favorite-btn")).not.toBeInTheDocument();
   });
 });
 
