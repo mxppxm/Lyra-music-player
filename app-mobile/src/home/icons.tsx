@@ -122,7 +122,7 @@ export function IconTrackLock({
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.7"
+      strokeWidth={active ? 2.15 : 1.7}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -135,18 +135,10 @@ export function IconTrackLock({
       <path d="M3 11V9a4 4 0 0 1 4-4h14" />
       <path d="M7 23l-4-4 4-4" />
       <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-      <text
-        x="12"
-        y="14.5"
-        textAnchor="middle"
-        fill="currentColor"
-        stroke="none"
-        fontSize="8"
-        fontWeight="600"
-        fontFamily="system-ui, sans-serif"
-      >
-        1
-      </text>
+      <path
+        d="M12 8.2v7.6"
+        strokeWidth={active ? 2.4 : 2}
+      />
     </svg>
   );
 }

@@ -1310,17 +1310,51 @@ button.lyra-mobile-idle-slogan:hover {
   opacity: 1;
 }
 
-/* ── Input row + track lock (aligned under favorite) ───────────────────── */
+/* ── Input row + track lock (aligned under favorite) ─────────────────────
+ * Slot always mounts so playing↔idle can animate: capsule flexes narrower
+ * while the 38px lock grows in from the right (same visual height as the
+ * send chip inside the capsule — row uses align-items:center). */
 
 .lyra-mobile-input-row {
   display: flex;
-  align-items: flex-end;
-  gap: 10px;
+  align-items: center;
+  gap: 0;
 }
 
 .lyra-mobile-input-row .lyra-mobile-input-wrap {
   flex: 1;
   min-width: 0;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    flex-basis 360ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1));
+}
+
+.lyra-mobile-track-lock-slot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: scale(0.72);
+  transform-origin: center right;
+  pointer-events: none;
+  transition:
+    width 360ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
+    margin-left 360ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
+    opacity 280ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
+    transform 360ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1));
+}
+
+.lyra-mobile-input-row--with-lock .lyra-mobile-track-lock-slot {
+  width: 38px;
+  margin-left: 10px;
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
 }
 
 .lyra-mobile-track-lock {
@@ -1337,7 +1371,12 @@ button.lyra-mobile-idle-slogan:hover {
   justify-content: center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: color 220ms ease, opacity 180ms ease;
+  transition:
+    color 220ms ease,
+    background-color 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    opacity 180ms ease;
 }
 
 .lyra-mobile-track-lock:disabled {
@@ -1349,10 +1388,22 @@ button.lyra-mobile-idle-slogan:hover {
   transform: none;
 }
 
+/* Locked = solid primary chip (same language as send) so the mode is obvious. */
 .lyra-mobile-track-lock--on {
-  color: var(--lyra-control-ink);
-  background: rgba(255, 255, 255, 0.48);
-  border-color: rgba(28, 24, 20, 0.18);
+  background: var(--lyra-control-primary-bg);
+  color: var(--lyra-control-primary-fg);
+  border-color: transparent;
+  box-shadow: 0 8px 18px rgba(24, 18, 12, 0.22);
+}
+
+.lyra-icon-track-lock--on {
+  stroke-width: 2.1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lyra-mobile-track-lock-slot {
+    transition: none;
+  }
 }
 
 .lyra-mobile-control-btn {

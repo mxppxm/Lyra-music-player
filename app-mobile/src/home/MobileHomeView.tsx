@@ -1115,7 +1115,12 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
             </>
           )}
           <div
-            className="lyra-mobile-input-row"
+            className={[
+              "lyra-mobile-input-row",
+              playing ? "lyra-mobile-input-row--with-lock" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             onClick={(e) => e.stopPropagation()}
           >
             <InputBox
@@ -1128,13 +1133,16 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                 inputBlurAtRef.current = performance.now();
               }}
             />
-            {playing && (
+            <div
+              className="lyra-mobile-track-lock-slot"
+              aria-hidden={!playing}
+            >
               <TrackLockButton
                 locked={trackLocked}
                 onToggle={handleTrackLockToggle}
                 disabled={!playing}
               />
-            )}
+            </div>
           </div>
         </div>
       </div>
