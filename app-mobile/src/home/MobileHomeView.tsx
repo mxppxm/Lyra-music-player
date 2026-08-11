@@ -8,6 +8,7 @@ import { SongInfo } from "./SongInfo";
 import { SmallNote } from "./SmallNote";
 import { InputBox } from "./InputBox";
 import { PlayerControls } from "./PlayerControls";
+import { TrackLockButton } from "./TrackLockButton";
 import { HistoryOverlay } from "./HistoryOverlay";
 import { WeatherBadge } from "./WeatherBadge";
 import type { WeatherContext } from "@lyra/core/recommendation/timeContext";
@@ -763,6 +764,15 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     }
   }, [playingSong, favorited]);
 
+  const trackLocked =
+    state.kind === "playing" && Boolean(state.trackLocked);
+
+  const handleTrackLockToggle = useCallback(() => {
+    if (state.kind !== "playing") return;
+    const next = !orchestrator.isTrackLockEnabled();
+    orchestrator.setTrackLock(next);
+  }, [orchestrator, state.kind]);
+
   const handleFavoriteChange = useCallback(
     (songId: string, next: boolean) => {
       if (playingSong?.id === songId) setFavorited(next);
@@ -1098,7 +1108,10 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
               />
             </>
           )}
-          <div onClick={(e) => e.stopPropagation()}>
+          <div
+            className="lyra-mobile-input-row"
+            onClick={(e) => e.stopPropagation()}
+          >
             <InputBox
               onSubmit={handleSubmit}
               onFocus={() => {
@@ -1109,6 +1122,13 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
                 inputBlurAtRef.current = performance.now();
               }}
             />
+            {playing && (
+              <TrackLockButton
+                locked={trackLocked}
+                onToggle={handleTrackLockToggle}
+                disabled={!playing}
+              />
+            )}
           </div>
         </div>
       </div>

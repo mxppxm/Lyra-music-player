@@ -107,6 +107,50 @@ export function IconFavorite({
   );
 }
 
+/** Single-track loop (锁定播放) — not a padlock; distinct from mood lock. */
+export function IconTrackLock({
+  size = 20,
+  active = false,
+}: {
+  size?: number;
+  active?: boolean;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={
+        active ? "lyra-icon-track-lock lyra-icon-track-lock--on" : "lyra-icon-track-lock"
+      }
+    >
+      {/* One-arrow loop + center 1 for single-track repeat */}
+      <path d="M17 1l4 4-4 4" />
+      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+      <path d="M7 23l-4-4 4-4" />
+      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+      <text
+        x="12"
+        y="14.5"
+        textAnchor="middle"
+        fill="currentColor"
+        stroke="none"
+        fontSize="8"
+        fontWeight="600"
+        fontFamily="system-ui, sans-serif"
+      >
+        1
+      </text>
+    </svg>
+  );
+}
+
 /** Expand / fullscreen — corners of a rectangle pulling outward. */
 export function IconExpand({ size = 18 }: { size?: number }) {
   return (
