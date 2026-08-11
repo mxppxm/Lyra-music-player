@@ -28,6 +28,7 @@ export function usePrefetchNext(
       rerunRef.current = false;
       const current = playbackRef.current;
       if (!current.songId || !current.playing || current.paused) return;
+      if (current.trackLocked || orchestrator.isTrackLockEnabled()) return;
       inFlightRef.current = true;
       try {
         await refillPlaybackQueue(orchestrator);
@@ -50,11 +51,22 @@ export function usePrefetchNext(
       return;
     }
     if (!playback.playing || playback.paused) return;
+    if (playback.trackLocked) {
+      // So unlocking the same song can refill again.
+      refillForSongRef.current = null;
+      return;
+    }
     if (refillForSongRef.current === playback.songId) return;
 
     void runRefill("song-start");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orchestrator, playback.songId, playback.playing, playback.paused]);
+  }, [
+    orchestrator,
+    playback.songId,
+    playback.playing,
+    playback.paused,
+    playback.trackLocked,
+  ]);
 
   // Native asks for more while playing / entering background.
   useEffect(() => {
@@ -71,10 +83,17 @@ export function usePrefetchNext(
   // Periodic top-up while playing (covers long foreground sessions).
   useEffect(() => {
     if (!playback.songId || !playback.playing || playback.paused) return;
+    if (playback.trackLocked) return;
     const timer = setInterval(() => {
       void runRefill("interval");
     }, 45_000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orchestrator, playback.songId, playback.playing, playback.paused]);
+  }, [
+    orchestrator,
+    playback.songId,
+    playback.playing,
+    playback.paused,
+    playback.trackLocked,
+  ]);
 }

@@ -296,6 +296,8 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     playing: state.kind === "playing",
     paused: state.kind === "playing" ? Boolean(state.paused) : true,
     progress: progress?.progress ?? 0,
+    trackLocked:
+      state.kind === "playing" ? Boolean(state.trackLocked) : false,
   });
 
   const noteText: string =
@@ -771,6 +773,10 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     if (state.kind !== "playing") return;
     const next = !orchestrator.isTrackLockEnabled();
     orchestrator.setTrackLock(next);
+    if (next) {
+      invalidatePlaybackQueueRefills();
+      void LyraAudio.clearNextTrack().catch(() => {});
+    }
   }, [orchestrator, state.kind]);
 
   const handleFavoriteChange = useCallback(

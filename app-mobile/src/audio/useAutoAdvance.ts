@@ -13,6 +13,8 @@ export type AutoAdvancePlayback = {
   progress: number;
   elapsedMs?: number;
   durationMs?: number;
+  /** When true, native queue must not be refilled. */
+  trackLocked?: boolean;
 };
 
 /**

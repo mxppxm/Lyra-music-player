@@ -23,6 +23,7 @@ describe("usePrefetchNext", () => {
   it("keeps the existing forward plan when the current song changes", async () => {
     const orchestrator = {
       clearPrefetchedNext: vi.fn(),
+      isTrackLockEnabled: () => false,
     };
     const { rerender } = renderHook(
       ({ songId }) =>
@@ -58,7 +59,10 @@ describe("usePrefetchNext", () => {
           }),
       )
       .mockResolvedValue(0);
-    const orchestrator = { clearPrefetchedNext: vi.fn() };
+    const orchestrator = {
+      clearPrefetchedNext: vi.fn(),
+      isTrackLockEnabled: () => false,
+    };
     const { rerender } = renderHook(
       ({ songId }) =>
         usePrefetchNext(orchestrator as never, {
@@ -75,5 +79,23 @@ describe("usePrefetchNext", () => {
     finishFirst();
 
     await waitFor(() => expect(refillPlaybackQueue).toHaveBeenCalledTimes(2));
+  });
+
+  it("skips refill while track lock is enabled", async () => {
+    const orchestrator = {
+      clearPrefetchedNext: vi.fn(),
+      isTrackLockEnabled: () => true,
+    };
+    renderHook(() =>
+      usePrefetchNext(orchestrator as never, {
+        songId: "song-a",
+        playing: true,
+        paused: false,
+        progress: 0,
+        trackLocked: true,
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 40));
+    expect(refillPlaybackQueue).not.toHaveBeenCalled();
   });
 });
