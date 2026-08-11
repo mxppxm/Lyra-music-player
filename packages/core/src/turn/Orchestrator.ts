@@ -210,10 +210,10 @@ export class Orchestrator {
   private artistSessionPlayedIds = new Set<string>();
   /**
    * 会话心情锚点：记录这条播放流的「心情入口」。
-   * - 用户输入 → EmotionAgent 分析出的情绪标签 + 原话
-   * - 点我试试 → 时间上下文默认心情 + 时间伪目标
-   * 连播时持续用它做 pseudoTarget，保证整条流都和入口心情相关，
-   * 直到用户下一次新输入才更新。
+   * - 用户心情输入 → EmotionAgent 标签 + 原话（locked）
+   * - 点歌命中 → 首曲直达该曲；同一句输入当心情分析并锁定，后续连播跟锚点
+   * - 点我试试 → 时间上下文默认心情 + 时间伪目标（unlocked）
+   * 连播时持续用它做 pseudoTarget，直到用户下一次新输入才更新。
    */
   private sessionMoodAnchor: { labels: string[]; pseudoTarget: string; locked: boolean } | null = null;
   /** Last user/auto-advance intent — replayed by onRetry() after an error. */
@@ -697,10 +697,11 @@ export class Orchestrator {
   }
 
   /**
-   * Play a song matched by name (principles 3: "山丘" → 《山丘》).
-   * Skips emotion analysis — single-candidate companion.choose for a natural
-   * rationale, with template fallback. Does NOT update sessionMoodAnchor
-   * (点歌不覆盖心情锚点).
+   * Play a song matched by name (first hit plays that track).
+   * The same utterance is also treated as mood: EmotionAgent analyzes it and
+   * locks sessionMoodAnchor so subsequent prefetch / auto-advance continue
+   * around that mood. If analysis fails, still play the song and degrade the
+   * anchor to the raw input text (option A).
    */
   private async playSongByIntent(
     song: LibraryTrack,
@@ -711,25 +712,50 @@ export class Orchestrator {
     const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
 
     try {
+      const { companion, soulStore, emotion: emotionAgent } = this.deps;
+      const soul = await soulStore.load();
+      const trimmed = text.trim();
+
+      // ── Mood from the same utterance (for turn + subsequent queue) ──
+      let mood: CurrentEmotion;
+      try {
+        const analyzed = await emotionAgent.analyze({ userUtterance: text });
+        mood = blendEmotionWithBias(analyzed, this.perceptionBias);
+      } catch (err) {
+        // Option A: playback must not fail with emotion — degrade anchor to text.
+        console.warn("[lyra] playSongByIntent emotion analyze failed, degrading:", err);
+        mood = {
+          pad: soul.dynamic_mood.current_pad,
+          labels: trimmed ? [trimmed.slice(0, 24)] : [],
+          confidence: 0.2,
+          source: "emotion-agent-inferred",
+        };
+      }
+
+      this.sessionMoodAnchor = {
+        labels:
+          mood.labels.length > 0
+            ? [...mood.labels]
+            : trimmed
+              ? [trimmed.slice(0, 24)]
+              : [],
+        pseudoTarget: trimmed || mood.labels.join(" ") || songDisplayTitle(song),
+        locked: true,
+      };
+
       // ── Rationale: companion.choose single-candidate, or template ──
       let rationale = "";
       try {
-        const { companion, soulStore } = this.deps;
-        const soul = await soulStore.load();
         const profileMap = await musicProfileRepo.getBatch([song.id]);
         const { livingPortrait, topFacts } = getMemoryContext();
         const recCtx = await buildRecommendationContext(soul, {
-          emotionLabels: [],
+          emotionLabels: mood.labels,
+          moodLocked: true,
           weather: this.weatherContext ?? undefined,
         });
         const chosen = await companion.choose({
           userUtterance: text,
-          currentEmotion: {
-            pad: soul.dynamic_mood.current_pad,
-            labels: [],
-            confidence: 0.2,
-            source: "emotion-agent-inferred",
-          },
+          currentEmotion: mood,
           soul,
           candidates: [
             { ...song, musicProfile: profileMap.get(song.id) ?? null },
@@ -751,16 +777,10 @@ export class Orchestrator {
       }
 
       // ── Build & insert turn ──
-      const pad = { p: 0, a: 0, d: 0 };
       const turn: DialogueTurn = {
         id: idGen(),
         timestamp: clock(),
-        current_emotion: {
-          pad,
-          labels: [],
-          confidence: 0.2,
-          source: "emotion-agent-inferred",
-        },
+        current_emotion: mood,
         user_utterance: { modality: "text", content: text },
         agent_response: { song_id: song.id, rationale },
         user_reaction: {
@@ -794,9 +814,6 @@ export class Orchestrator {
       this.pendingEvents = [];
       this.rationaleBySongId.set(song.id, rationale);
       this.emit({ kind: "playing", turn, song });
-
-      // NOTE: sessionMoodAnchor intentionally NOT updated here.
-      // 点歌不覆盖心情锚点——播完连播回到原有的心情锁定或时间驱动。
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[lyra] playSongByIntent error:", err);

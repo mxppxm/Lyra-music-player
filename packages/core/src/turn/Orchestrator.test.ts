@@ -209,8 +209,10 @@ describe("Orchestrator.onUserInput happy path", () => {
 });
 
 describe("Orchestrator.onUserInput — song-name intent (resolveSongIntent)", () => {
-  it("《》点歌直接播放：跳过 emotion/companion，playFile + insertTurn", async () => {
-    const deps = makeDeps();
+  it("《》点歌：先播命中曲，同时把输入当心情分析并锁定锚点", async () => {
+    const deps = makeDeps({
+      resolvePlayUrl: vi.fn(async () => "http://x/next.mp3"),
+    });
     const track: LibraryTrack = {
       id: "t1",
       path: "/x.mp3",
@@ -218,21 +220,105 @@ describe("Orchestrator.onUserInput — song-name intent (resolveSongIntent)", ()
       added_at: 0,
       title: "《山丘》",
     };
+    const t2: LibraryTrack = {
+      id: "t2",
+      path: "/y.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "T2",
+    };
     vi.mocked(songIntentMod.resolveSongIntent).mockResolvedValue({
       kind: "song",
       song: track,
       source: "local",
+    });
+    deps.emotion.analyze.mockResolvedValue({
+      pad: { p: 0.2, a: -0.4, d: 0.1 },
+      labels: ["怀旧", "山丘"],
+      confidence: 0.6,
+      source: "emotion-agent-inferred",
     });
     const orc = new Orchestrator(deps as any);
     const seen: string[] = [];
     orc.subscribe((s) => seen.push(s.kind));
     await orc.onUserInput("《山丘》");
     expect(songIntentMod.resolveSongIntent).toHaveBeenCalledWith("《山丘》");
-    // 点歌分支跳过情绪分析（mood pipeline）
-    expect(deps.emotion.analyze).not.toHaveBeenCalled();
+    // 首曲直达；同时分析输入作为后续心情
+    expect(deps.emotion.analyze).toHaveBeenCalledWith({ userUtterance: "《山丘》" });
     expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
     expect(deps.turnRepo.insertTurn).toHaveBeenCalledOnce();
+    const inserted = (deps.turnRepo.insertTurn as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as DialogueTurn;
+    expect(inserted.current_emotion.labels).toEqual(["怀旧", "山丘"]);
+    expect(inserted.agent_response.song_id).toBe("t1");
     expect(seen).toEqual(["thinking", "playing"]);
+
+    // 后续 prefetch 走心情锁定，pseudoTarget 为原输入
+    (deps.library.prefilter as ReturnType<typeof vi.fn>).mockResolvedValue([t2]);
+    (deps.companion.choose as ReturnType<typeof vi.fn>).mockResolvedValue({
+      song_id: "t2",
+      target_profile: "x",
+      rationale: "延续怀旧",
+      needed_shift: "接住" as const,
+    });
+    await orc.prefetchMore(1);
+    const prefetchCall = (deps.library.prefilter as ReturnType<typeof vi.fn>).mock
+      .calls.at(-1) as unknown as [
+      string,
+      { p: number; a: number; d: number },
+      number,
+      { moodLocked?: boolean },
+    ];
+    expect(prefetchCall[0]).toContain("《山丘》");
+    expect(prefetchCall[1]).toEqual({ p: 0.2, a: -0.4, d: 0.1 });
+    expect(prefetchCall[3].moodLocked).toBe(true);
+  });
+
+  it("点歌命中但情绪分析失败：仍播原曲，锚点降级为输入文本", async () => {
+    const deps = makeDeps({
+      resolvePlayUrl: vi.fn(async () => "http://x/next.mp3"),
+      emotion: {
+        analyze: vi.fn(async () => {
+          throw new Error("emotion down");
+        }),
+      },
+    });
+    const track: LibraryTrack = {
+      id: "t1",
+      path: "/x.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "《山丘》",
+    };
+    const t2: LibraryTrack = {
+      id: "t2",
+      path: "/y.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "T2",
+    };
+    vi.mocked(songIntentMod.resolveSongIntent).mockResolvedValue({
+      kind: "song",
+      song: track,
+      source: "local",
+    });
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("《山丘》");
+    expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
+    expect(orc.getState().kind).toBe("playing");
+
+    (deps.library.prefilter as ReturnType<typeof vi.fn>).mockResolvedValue([t2]);
+    (deps.companion.choose as ReturnType<typeof vi.fn>).mockResolvedValue({
+      song_id: "t2",
+      target_profile: "x",
+      rationale: "y",
+      needed_shift: "接住" as const,
+    });
+    await orc.prefetchMore(1);
+    const prefetchCall = (deps.library.prefilter as ReturnType<typeof vi.fn>).mock
+      .calls.at(-1) as unknown as [string, unknown, number, { moodLocked?: boolean }];
+    expect(prefetchCall[0]).toContain("《山丘》");
+    expect(prefetchCall[3].moodLocked).toBe(true);
   });
 
   it("点歌时已有 in-flight turn：先以 skip 收尾，再播放点歌曲目", async () => {
