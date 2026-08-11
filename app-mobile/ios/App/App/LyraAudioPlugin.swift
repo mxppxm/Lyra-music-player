@@ -30,6 +30,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isPlaying", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPosition", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setNowPlaying", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRemoteCommands", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "seek", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgeEnded", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPendingEnded", returnType: CAPPluginReturnPromise),
@@ -221,7 +222,10 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func stop(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.stopInternal()
-            self.clearNowPlaying()
+            // Keep title/artist/artwork across stop→play handoffs. Clearing
+            // nowPlayingInfo here flashes the system default lock-screen chrome
+            // before the next setNowPlaying arrives from JS.
+            self.freezeNowPlayingDisplay()
             call.resolve()
         }
     }
@@ -305,6 +309,17 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             self.updateArtwork(coverUrl: coverUrl)
             self.publishNowPlayingInfo()
             self.syncLiveActivity()
+            call.resolve()
+        }
+    }
+
+    @objc func setRemoteCommands(_ call: CAPPluginCall) {
+        let previousEnabled = call.getBool("previousEnabled") ?? false
+        let nextEnabled = call.getBool("nextEnabled") ?? true
+        DispatchQueue.main.async {
+            let center = MPRemoteCommandCenter.shared()
+            center.previousTrackCommand.isEnabled = previousEnabled
+            center.nextTrackCommand.isEnabled = nextEnabled
             call.resolve()
         }
     }
@@ -680,13 +695,29 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         endLiveActivity()
     }
 
+    /// Pause the lock-screen scrubber without wiping metadata (avoids the
+    /// blank / system-default flash between tracks).
+    private func freezeNowPlayingDisplay() {
+        guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo, !info.isEmpty else {
+            return
+        }
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0
+        info[MPNowPlayingInfoPropertyPlaybackRate] = 0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
     /// Downloads the cover once per URL and republishes Now Playing info so
     /// iOS can pick it up as the lock-screen artwork.
     private func updateArtwork(coverUrl: String) {
         guard coverUrl != artworkUrl else { return }
         artworkUrl = coverUrl
-        artwork = nil
-        guard !coverUrl.isEmpty, let url = URL(string: coverUrl) else { return }
+        // Keep the previous artwork visible until the new cover downloads —
+        // clearing it here flashes a blank lock-screen tile mid-switch.
+        if coverUrl.isEmpty {
+            artwork = nil
+            return
+        }
+        guard let url = URL(string: coverUrl) else { return }
         // hdslb.com runs a Referer allowlist — send the bilibili one explicitly.
         var request = URLRequest(url: url)
         request.setValue(bilibiliUserAgent, forHTTPHeaderField: "User-Agent")
@@ -965,7 +996,6 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func setupRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
-        center.previousTrackCommand.isEnabled = false
         center.playCommand.addTarget { [weak self] _ in
             self?.emitRemoteCommand("play")
             return .success
@@ -982,6 +1012,13 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             self?.emitRemoteCommand("next")
             return .success
         }
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            self?.emitRemoteCommand("previous")
+            return .success
+        }
+        // addTarget enables the command — start disabled until JS reports a
+        // non-empty play stack via setRemoteCommands.
+        center.previousTrackCommand.isEnabled = false
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard
                 let self = self,

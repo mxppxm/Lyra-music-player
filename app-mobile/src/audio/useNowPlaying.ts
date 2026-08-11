@@ -34,6 +34,15 @@ export function useNowPlaying(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [songId]);
 
+  // Mirror in-app previous affordance onto the lock screen (greyed when empty).
+  const canGoPrevious = orchestrator.canGoPrevious();
+  useEffect(() => {
+    void LyraAudio.setRemoteCommands({
+      previousEnabled: canGoPrevious,
+      nextEnabled: true,
+    }).catch((e) => console.warn("[lyra-ios] setRemoteCommands:", e));
+  }, [canGoPrevious, songId]);
+
   useEffect(() => {
     let remove: (() => void) | undefined;
     void LyraAudio.addListener("remoteCommand", ({ command }) => {
@@ -44,8 +53,25 @@ export function useNowPlaying(
           void (async () => {
             await LyraAudio.clearNextTrack().catch(() => {});
             await orchestrator.onSkip();
+            void LyraAudio.setRemoteCommands({
+              previousEnabled: orchestrator.canGoPrevious(),
+              nextEnabled: true,
+            }).catch(() => {});
           })();
         }
+        return;
+      }
+      if (command === "previous") {
+        if (!orchestrator.canGoPrevious()) return;
+        invalidatePlaybackQueueRefills();
+        void (async () => {
+          await LyraAudio.clearNextTrack().catch(() => {});
+          await orchestrator.onPrevious();
+          void LyraAudio.setRemoteCommands({
+            previousEnabled: orchestrator.canGoPrevious(),
+            nextEnabled: true,
+          }).catch(() => {});
+        })();
         return;
       }
       if (s.kind !== "playing") return;

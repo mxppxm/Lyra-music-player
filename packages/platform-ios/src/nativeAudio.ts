@@ -21,6 +21,11 @@ export interface LyraAudioPlugin {
     /** Library id — stamps native source-of-truth for resume reconcile. */
     songId?: string;
   }): Promise<void>;
+  /** Enable/disable lock-screen previous / next to match the session stack. */
+  setRemoteCommands(options: {
+    previousEnabled?: boolean;
+    nextEnabled?: boolean;
+  }): Promise<void>;
   /** Clear a natural-completion the web layer has handled. */
   acknowledgeEnded(): Promise<void>;
   /** Returns a completion still waiting for JS (background suspend). */
