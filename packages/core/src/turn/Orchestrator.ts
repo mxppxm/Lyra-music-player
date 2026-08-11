@@ -1852,31 +1852,43 @@ export class Orchestrator {
     previousRationale: string,
     lockPlayCount: number,
   ): Promise<void> {
-    let rationale =
-      (await this.rationaleForNativeSong(track, emotion, undefined, {
-        lockPlayCount,
-        previousRationale,
-      })) ?? "";
-    if (!rationale.trim()) {
-      const display =
-        track.title?.match(/《([^》]+)》/)?.[1] ??
-        track.title ??
-        "这首歌";
-      rationale = `再听一遍《${display}》`;
-    }
+    const fresh =
+      (
+        await this.rationaleForNativeSong(track, emotion, undefined, {
+          lockPlayCount,
+          previousRationale,
+        })
+      )?.trim() ?? "";
 
     if (this.currentTurn?.id !== turnId) return;
     if (this.state.kind !== "playing") return;
+
+    // Never fall back to canned "再听一遍…" — keep the previous note if the
+    // rewrite fails, and just clear the pending loader.
+    if (!fresh) {
+      console.warn(
+        "[lyra] track-lock rationale rewrite empty; keeping previous copy",
+      );
+      this.emit({
+        kind: "playing",
+        turn: this.currentTurn,
+        song: this.currentSong ?? track,
+        paused: this.state.paused,
+        trackLocked: this.isTrackLockEnabled(),
+        rationalePending: false,
+      });
+      return;
+    }
 
     const turn: DialogueTurn = {
       ...this.currentTurn,
       agent_response: {
         ...this.currentTurn.agent_response,
-        rationale,
+        rationale: fresh,
       },
     };
     this.currentTurn = turn;
-    this.rationaleBySongId.set(track.id, rationale);
+    this.rationaleBySongId.set(track.id, fresh);
     if (this.deps.turnRepo.updateTurn) {
       try {
         await this.deps.turnRepo.updateTurn(turn);

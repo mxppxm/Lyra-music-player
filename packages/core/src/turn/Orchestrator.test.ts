@@ -1674,6 +1674,37 @@ describe("Orchestrator track lock", () => {
     });
   });
 
+  it("keeps previous rationale when lock rewrite fails (no 再听一遍 template)", async () => {
+    const deps = makeDeps({
+      turnRepo: {
+        insertTurn: vi.fn(async () => {}),
+        updateTurn: vi.fn(async () => {}),
+      },
+    });
+    (deps.companion.choose as any)
+      .mockResolvedValueOnce({
+        song_id: "t1",
+        target_profile: "x",
+        rationale: "原来的纸条",
+        needed_shift: "接住",
+      })
+      .mockRejectedValue(new Error("llm down"));
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首");
+    orc.setTrackLock(true);
+    await orc.onSongComplete();
+
+    await vi.waitFor(() => {
+      const st = orc.getState();
+      expect(st.kind).toBe("playing");
+      if (st.kind === "playing") {
+        expect(st.rationalePending).toBeFalsy();
+        expect(st.turn.agent_response.rationale).toBe("原来的纸条");
+        expect(st.turn.agent_response.rationale).not.toMatch(/再听一遍/);
+      }
+    });
+  });
+
   it("onSkip clears track lock", async () => {
     const deps = makeDeps();
     const orc = new Orchestrator(deps as any);
