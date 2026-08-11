@@ -10,11 +10,12 @@
 
 **日报只陈述「昨天可核对的行为事实」，再由此推出「有证据的轻结论」；禁止用情绪均值或模型想象填空。**
 
-展开成三条铁律：
+展开成四条铁律：
 
-1. **事实先于文案**：凡写入报告的句子，必须能回溯到 `activity_events` 或既有表字段；回溯不到就不写。
-2. **结论必须可证伪**：每条结论绑定 ≥1 条证据（次数、时长、歌名、输入原文片段）；证据不足则输出「观察不足 / 昨天几乎没…」，不允许「感觉你有点累」这类无锚点判断。
-3. **旁路零侵入**：埋点与日报是附加链路。不得改变选歌、打分、播放队列、现有组件视觉与交互；新 UI 仅新增入口（如 `/day`、设置开关），不改装首页布局。
+1. **采集尽力、结论克制**：P0 把播放/歌词/沉浸/前后台等行为能记的都记全（含每首歌听了多少秒、是否反复播）；报告与结论仍只使用有证据的字段，缺测到的在 `data_quality` 标明，不编造。
+2. **事实先于文案**：凡写入报告的句子，必须能回溯到 `activity_events` / `play_sessions` 或既有表字段；回溯不到就不写。
+3. **结论必须可证伪**：每条结论绑定 ≥1 条证据（次数、秒数、歌名、输入原文片段）；证据不足则输出「观察不足 / 昨天几乎没…」，不允许「感觉你有点累」这类无锚点判断。
+4. **旁路零侵入**：埋点与日报是附加链路。不得改变选歌、打分、播放队列、现有组件视觉与交互；新 UI 仅新增入口（如 `/day`、设置开关），不改装首页布局。
 
 ---
 
@@ -35,7 +36,7 @@
 
 ### 2.1 允许碰
 
-- 新增表 / repo / 包模块：`activity_events`、`daily_*`、`packages/core/src/daily/`、`app/src/daily/`（或 `app-mobile` 只接调度与打开）
+- 新增表 / repo / 包模块：`activity_events`、`play_sessions`、`daily_*`、`packages/core/src/daily/`、`app/src/daily/`（或 `app-mobile` 只接调度与打开）
 - 在**现有调用点旁**追加 `trackActivity(...)`（fire-and-forget，失败只打日志）
 - 新增 slash `/day`、Settings 里「日报」fieldset（仿周报，不改其它 settings 布局语义）
 - 阅读器：**复用**现有 `WeeklyReader` iframe 壳展示 HTML（与 `/mood`、`/week` 相同），不新造一套视觉系统；日报 HTML **内部**可用与周报同源 token，但**不修改** `weeklyRenderer` / 首页 CSS
@@ -60,7 +61,10 @@ void trackActivity({ name: "lyrics_open", songId, props }).catch(() => {});
 
 ---
 
-## 3. 数据层
+## 3. 数据层（采集尽可能多）
+
+> 目标：昨天「哪首歌、听了多少秒、播了几次、是否连着反复听、中途暂停多久、是否在后台」都能还原。  
+> 手段：事件流 + 播放会话表双写；聚合层再rollup，原始明细保留可审计。
 
 ### 3.1 新建 `activity_events`（append-only）
 
@@ -75,36 +79,105 @@ void trackActivity({ name: "lyrics_open", songId, props }).catch(() => {});
 | props_json | text | |
 | platform | text | `ios` / `desktop` |
 
-索引：`(day_key, name)`、`(day_key, ts)`。
+索引：`(day_key, name)`、`(day_key, ts)`、`(day_key, song_id)`。
 
-### 3.2 事件字典（P0 必接）
+### 3.2 新建 `play_sessions`（一首歌的一次连续播放）
 
-**入口元数据**：`lyra_start`、`user_input{char_count}`、`song_intent_hit|miss{query}`、`retry`  
+一次「从开播到结束（完成/跳过/切歌/停）」= 一行，便于精确到秒与重复分析。
 
-**听歌**：`play_start{source}`、`play_complete{listen_ms}`、`play_skip{listen_ms}`、`play_pause`、`play_resume`  
+| 字段 | 说明 |
+|---|---|
+| id | uuid |
+| day_key | 本地日 |
+| song_id / turn_id | |
+| source | 同 `play_start.source` |
+| started_at / ended_at | ms |
+| listen_ms | **有效收听毫秒**（扣除 pause；后台仍算听，除非静音策略另定——v1 后台算听） |
+| pause_ms | 暂停累计 |
+| duration_ms | 曲目时长（若可知） |
+| end_reason | `completed` / `skipped` / `replaced` / `stopped` / `app_kill?` |
+| max_position_ms | 听到的最远进度 |
+| seek_count | 拖动次数 |
+| was_background_ms | 其中处于后台的收听毫秒 |
+| lyrics_open_count | 本 session 内翻词次数 |
+| consecutive_repeat_index | 若上一 session 同 song_id 且间隙 &lt; 30s，则为 2,3,… 否则 1 |
 
-**歌词**：`lyrics_open{surface}`、`lyrics_close{dwell_ms}`、`lyrics_refresh`  
+开播时 insert；pause/resume/progress/seek 更新内存再 flush；结束时 final update + 打 `play_complete|skip` 事件。  
+**主播放路径不 await 这些写库**（队列微任务 / 后台 flush）。
 
-**沉浸 / UX**：`immersive_enter|exit{dwell_ms}`、`history_open|close{tab,dwell_ms}`、`history_replay{song_id}`、`favorite_add|remove`  
+### 3.3 事件字典（P0 必接，宁多勿少）
 
-**前后台**：`app_background|foreground{playing,song_id?}`  
+**入口元数据**：`lyra_start`、`user_input{char_count,text_preview?}`、`song_intent_hit|miss{query}`、`retry`
 
-`play_start.source` ∈ `user_input | lyra_start | auto_advance | song_intent | history_replay | previous`。
+**听歌（细）**：
 
-### 3.3 既有表窗口查询（P1）
+| name | 关键 props |
+|---|---|
+| `play_start` | `source`, `session_id`, `duration_ms?` |
+| `play_progress` | `session_id`, `position_ms`, `listen_ms_so_far`（**每 5s 或 10% 进度**打一次，可采样；用于崩溃后仍能估秒数） |
+| `play_pause` / `play_resume` | `session_id`, `position_ms` |
+| `play_seek` | `session_id`, `from_ms`, `to_ms` |
+| `play_complete` | `session_id`, `listen_ms`, `duration_ms`, `position_ms` |
+| `play_skip` | `session_id`, `listen_ms`, `position_ms`, `position_ratio` |
+| `play_replaced` | 被下一首顶掉（切歌/上一首）时的结束 |
+
+`play_start.source` ∈ `user_input | lyra_start | auto_advance | song_intent | history_replay | previous | unknown`。
+
+**歌词**：`lyrics_open{surface,session_id?}`、`lyrics_close{dwell_ms}`、`lyrics_refresh`
+
+**沉浸 / UX**：`immersive_enter|exit{dwell_ms}`、`history_open|close{tab,dwell_ms}`、`history_replay{song_id}`、`favorite_add|remove`
+
+**前后台**：`app_background|foreground{playing,song_id?,session_id?,position_ms?}`
+
+### 3.4 既有表窗口查询（P1）
 
 - `dialogue_turns` / `track_feedback` / `favorites(favorited_at)` / `shared_memory` / `music_profiles` batch  
 - 新增 `list*Between(startMs, endMs)`；**不改**现有 `listRecent*` 语义  
+- 日报聚合以 `play_sessions` + `activity_events` 为主，turns 补输入原文与 rationale
 
-### 3.4 现状缺口（写进 data_quality，不装有）
+### 3.5 按歌 rollup（详细报告核心表）
+
+对昨天每个 `song_id` 生成一行 `TrackDayStat`（写入 Digest，也可物化视图）：
+
+| 字段 | 含义 |
+|---|---|
+| title / artist | 展示 |
+| session_count | 开播次数 |
+| total_listen_ms | **累计听了多少毫秒** |
+| mean_listen_ms / max_listen_ms | |
+| completed_count / skipped_count | |
+| completion_rate | |
+| repeat_count | session_count（同歌多次） |
+| max_consecutive_repeats | 最大连播同一首次数（`consecutive_repeat_index`） |
+| looped | `max_consecutive_repeats ≥ 2` 或 同歌 session≥3 |
+| seek_count_sum | |
+| background_listen_ms | |
+| lyrics_opens / lyrics_dwell_ms | |
+| favorited_today | bool |
+| sources | 各 source 次数 |
+
+报告里必须能回答：「《山丘》昨天播了 3 次，共听 412 秒，其中连续反复 2 次，最长一听 180 秒，跳过 1 次。」
+
+### 3.6 重复播放的定义（写死，供结论用）
+
+| 概念 | 定义 |
+|---|---|
+| **同日重复** | 同一 `song_id` 在昨天 `session_count ≥ 2` |
+| **连续反复** | 相邻两 session 同歌且 `started_at` 间隙 ≤ 30s（或 end→start 无其它歌插入） |
+| **循环沉浸** | `max_consecutive_repeats ≥ 3` 或（同歌 ≥2 且 `total_listen_ms ≥ 2 × duration`） |
+| **单次长听** | 单 session `listen_ms ≥ max(90_000, 0.6 * duration_ms)` |
+| **快跳** | `end_reason=skipped` 且 `listen_ms < 15_000` |
+
+### 3.7 现状缺口（写进 data_quality，不装有）
 
 | 信号 | 现状 | 处理 |
 |---|---|---|
 | 点我试试次数 | 与连播同为 `proactive-open` | 事件 + 可选 modality `lyra-start` |
+| 每首歌听了几秒 | 不可靠 / 未接 progress | `play_sessions.listen_ms` + `play_progress` |
+| 是否反复播同一首 | 无 | session 级 + TrackDayStat |
 | 歌词停留 | 无 | 新事件 |
 | 沉浸模式 | 纯 UI | 新事件 |
-| 听时长 | 移动端未接 `onListenProgress` | 事件区间 + 接线（不改播控逻辑） |
-| 切后台 | 仅 reconcile | 新事件 |
+| 切后台 | 仅 reconcile | 新事件 + session.was_background_ms |
 | 打开历史 | 无 | 新事件 |
 
 ---
@@ -136,14 +209,14 @@ DailyDigest（结构化详细报告，机器可读）
 | 章节 | 内容来源 | 报告里展示什么 |
 |---|---|---|
 | Meta | events + turns | 输入次数/原文摘要、点我试试次数、点歌命中/未命中、会话数、首末活跃、前台/后台时长、后台续播时长 |
-| Listening | play_* + feedback + turns | 开播数、独特曲、完成/跳过/完成率、总听时长、按 source 分解、Top 曲表 |
+| Listening | **play_sessions** + events + feedback | 开播数、独特曲、完成/跳过、**每首累计秒数表**、按 source 分解、快跳/长听、**同日重复与连续反复** |
 | Lyrics | lyrics_* | 打开次数、涉及曲目、总/均停留、刷新、Top 查词曲 |
 | Immersion | immersive_* + listening + lyrics + bg | 沉浸模式时长、长听次数、快跳次数、后台续播比、综合标签 |
 | Library UX | favorite_* + history_* | 新藏/取消、打开历史次数与停留、历史重播 |
 | Taste | profiles ⋈ 完成/收藏/长听加权 | Top mood/genre/theme/energy；回避信号 |
 | Emotion | turns PAD/labels（辅） | 挂在 session/时段上的均值 + 对应 Top 歌（不单独出「波动度故事」） |
 | Moments | shared_memory | 显著时刻列表 |
-| Quality | 覆盖率标记 | 哪些信号缺失 |
+| Quality | 覆盖率标记 | progress 采样率、session 完整率、哪些信号缺失 |
 
 「详细」指的是这些章节写全，而不是 LLM 写长。
 
@@ -176,6 +249,8 @@ type DailyConclusion = {
 | `listening.skip_heavy` | 跳过率 ≥ 0.5 且 skips ≥ 3 | 挑选多 / 不契多 |
 | `listening.quick_skip` | 快跳（listen_ms&lt;15s）≥ 3 | 碎听、难以停留 |
 | `listening.long_form` | 长听（≥0.6 曲长或 ≥90s）≥ 3 | 愿意把歌听完 |
+| `listening.repeat_same` | 至少一首 `session_count ≥ 2` | 点名反复听的歌及累计秒数 |
+| `listening.loop_immerse` | 至少一首满足「循环沉浸」定义 | 同一首连着/反复沉浸 |
 | `lyrics.engaged` | 查词曲 ≥ 2 或 总 dwell ≥ 60s | 对词有兴趣 |
 | `immersion.deep` | 标签=沉浸 或（immersive_ms≥10min 且 background_play_ratio≥0.3） | 深度使用（含后台） |
 | `immersion.fragmented` | 标签=碎听 | 多次短会话 |
@@ -206,7 +281,7 @@ type DailyConclusion = {
 ② 日信（有则显示；无则跳过）
 ③ 详细数据
    - 昨天你怎么进来的（点我试试 / 输入 / 点歌判断）
-   - 听歌（表）
+   - 听歌（**按歌明细表：次数、累计秒、最长一听、是否反复/连听、完成/跳过**）
    - 歌词与沉浸
    - 收藏与历史
    - 气质分布
@@ -230,8 +305,8 @@ type DailyConclusion = {
 
 | 期 | 交付 | 验收 |
 |---|---|---|
-| P0 | `activity_events` + `trackActivity` 全量接线；`lyra_start` 可计数；listen 进度接线 | 单测 + 真机打日志能看到事件 |
-| P1 | `buildDailyDigest` + `deriveConclusions` + FactCard；窗口 repo | 给定假事件 fixture → 报告章节与结论快照稳定 |
+| P0 | `activity_events` + **`play_sessions`** + `trackActivity` 全量接线；progress 采样；`lyra_start` 可计数 | 能查出「某歌昨天听了多少秒、播了几次」 |
+| P1 | `buildDailyDigest`（含 TrackDayStat）+ `deriveConclusions`（含重复/循环规则）+ FactCard | fixture → 报告含秒级按歌表与反复结论 |
 | P2 | DailyAgent + `dailyRenderer` + 08:00 + `/day` + Settings；复用 WeeklyReader | 早 8 点出昨天 HTML；失败有降级 |
 | P3 | 天气日快照、桌面 perception 并入、seek 等 | 标为增强，不挡 P2 |
 
