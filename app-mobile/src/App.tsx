@@ -305,11 +305,17 @@ export function App() {
           tempC: snap.temperatureC,
           source: "api",
           code: snap.weatherCode,
+          feelsLikeC: snap.apparentTemperatureC,
+          humidityPct: snap.humidityPct,
+          precipMm: snap.precipMm,
+          cloudCoverPct: snap.cloudCoverPct,
+          windSpeedKmh: snap.windSpeedKmh,
+          isDay: snap.isDay,
         };
         orchestrator.setWeatherContext(wx);
         setWeather(wx);
         console.log(
-          `[lyra-ios] weather: code=${snap.weatherCode} temp=${snap.temperatureC}°C source=${snap.source}`,
+          `[lyra-ios] weather: code=${snap.weatherCode} temp=${snap.temperatureC}°C feels=${snap.apparentTemperatureC ?? "-"} humidity=${snap.humidityPct ?? "-"}% wind=${snap.windSpeedKmh ?? "-"} source=${snap.source}`,
         );
       } catch (err) {
         console.warn("[lyra-ios] weather tick failed:", err);

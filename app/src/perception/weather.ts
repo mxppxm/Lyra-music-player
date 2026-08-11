@@ -1,10 +1,10 @@
 /**
- * perception/weather.ts — Open-Meteo current weather → soft PAD bias.
+ * perception/weather.ts — Open-Meteo current weather → soft PAD bias + rich facts.
  *
  * In-memory cache only (TTL 45 min). Coordinates are never written to SQLite;
  * optional manual lat/lon may live in keychain via Settings.
  *
- * Callers: App.tsx perception tick (ensureWeatherSnapshot);
+ * Callers: App.tsx / app-mobile perception tick (ensureWeatherSnapshot);
  * RulePerceptionAgent.infer (biasFromWeatherCode).
  */
 
@@ -14,6 +14,18 @@ import type { PerceptionBias } from "./PerceptionAgent";
 export type WeatherSnapshot = {
   weatherCode: number;
   temperatureC: number;
+  /** 体感温度 °C（Open-Meteo apparent_temperature）。 */
+  apparentTemperatureC?: number;
+  /** 相对湿度 0–100。 */
+  humidityPct?: number;
+  /** 当前降水量 mm。 */
+  precipMm?: number;
+  /** 云量 0–100。 */
+  cloudCoverPct?: number;
+  /** 10m 风速 km/h。 */
+  windSpeedKmh?: number;
+  /** Open-Meteo is_day：1=白天 0=夜晚。 */
+  isDay?: boolean;
   fetchedAt: number;
   source: "geo" | "manual";
 };
@@ -28,6 +40,19 @@ export type WeatherFetchDeps = {
 };
 
 const CACHE_TTL_MS = 45 * 60 * 1000;
+/** Bump when request fields change so stale thin cache is discarded. */
+const CACHE_VERSION = "v2";
+
+const CURRENT_FIELDS = [
+  "weather_code",
+  "temperature_2m",
+  "apparent_temperature",
+  "relative_humidity_2m",
+  "precipitation",
+  "cloud_cover",
+  "wind_speed_10m",
+  "is_day",
+].join(",");
 
 type CacheEntry = WeatherSnapshot & { cacheKey: string };
 let cache: CacheEntry | null = null;
@@ -57,6 +82,10 @@ async function defaultGeolocate(): Promise<{ lat: number; lon: number } | null> 
       { enableHighAccuracy: false, timeout: 7_000, maximumAge: 30 * 60_000 },
     );
   });
+}
+
+function optNum(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
 /**
@@ -89,7 +118,7 @@ export async function ensureWeatherSnapshot(
     source = "geo";
   }
 
-  const cacheKey = `${source}:${lat},${lon}`;
+  const cacheKey = `${CACHE_VERSION}:${source}:${lat},${lon}`;
   if (cache && cache.cacheKey === cacheKey && ts - cache.fetchedAt < CACHE_TTL_MS) {
     return cache;
   }
@@ -99,21 +128,42 @@ export async function ensureWeatherSnapshot(
       `https://api.open-meteo.com/v1/forecast` +
       `?latitude=${encodeURIComponent(String(lat))}` +
       `&longitude=${encodeURIComponent(String(lon))}` +
-      `&current=weather_code,temperature_2m`;
+      `&current=${CURRENT_FIELDS}` +
+      `&wind_speed_unit=kmh`;
     const res = await fetchFn(url);
     if (!res.ok) {
       console.warn(`[lyra] weather fetch failed: ${res.status}`);
       return cache;
     }
     const body = (await res.json()) as {
-      current?: { weather_code?: number; temperature_2m?: number };
+      current?: {
+        weather_code?: number;
+        temperature_2m?: number;
+        apparent_temperature?: number;
+        relative_humidity_2m?: number;
+        precipitation?: number;
+        cloud_cover?: number;
+        wind_speed_10m?: number;
+        is_day?: number;
+      };
     };
-    const code = body.current?.weather_code;
-    const temp = body.current?.temperature_2m;
+    const cur = body.current ?? {};
+    const code = cur.weather_code;
+    const temp = cur.temperature_2m;
     if (typeof code !== "number" || !Number.isFinite(code)) return cache;
+    const isDayRaw = cur.is_day;
     cache = {
       weatherCode: code,
       temperatureC: typeof temp === "number" ? temp : 0,
+      apparentTemperatureC: optNum(cur.apparent_temperature),
+      humidityPct: optNum(cur.relative_humidity_2m),
+      precipMm: optNum(cur.precipitation),
+      cloudCoverPct: optNum(cur.cloud_cover),
+      windSpeedKmh: optNum(cur.wind_speed_10m),
+      isDay:
+        typeof isDayRaw === "number" && Number.isFinite(isDayRaw)
+          ? isDayRaw === 1
+          : undefined,
       fetchedAt: ts,
       source,
       cacheKey,

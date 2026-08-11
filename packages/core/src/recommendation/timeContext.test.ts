@@ -5,6 +5,7 @@ import {
   timeContextToPseudoTarget,
   weatherZhFromCode,
   weatherTagsFromWeather,
+  formatAmbientFactsForCompanion,
 } from "./timeContext";
 
 // 2026-08-05 是周三（工作日）
@@ -102,6 +103,58 @@ describe("computeTimeContext", () => {
     });
     expect(cold.tags).toContain("寒冷");
     expect(cold.tags).toContain("雪天");
+  });
+
+  it("高湿/大风 → 潮湿/有风标签", () => {
+    const ctx = computeTimeContext(at(15, 3, 8), {
+      condition: "雨",
+      tempC: 18,
+      source: "api",
+      code: 61,
+      humidityPct: 88,
+      windSpeedKmh: 30,
+      precipMm: 0.4,
+      cloudCoverPct: 90,
+    });
+    expect(ctx.tags).toContain("潮湿");
+    expect(ctx.tags).toContain("有风");
+    expect(ctx.tags).toContain("有雨");
+    expect(ctx.tags).toContain("阴天");
+  });
+});
+
+describe("formatAmbientFactsForCompanion", () => {
+  it("只给时钟事实，不含清晨/午休等时段词", () => {
+    const now = at(15, 3, 8);
+    const text = formatAmbientFactsForCompanion(now);
+    expect(text).toMatch(/本地时间: 2026-\d{2}-\d{2} 15:00/);
+    expect(text).toContain("周三");
+    expect(text).not.toMatch(/清晨|午休|下午|傍晚|深夜|上班/);
+  });
+
+  it("有天气时列出体感/湿度/风速等事实", () => {
+    const text = formatAmbientFactsForCompanion(at(22, 3, 8), {
+      condition: "雨",
+      tempC: 18.2,
+      source: "api",
+      code: 61,
+      feelsLikeC: 16.5,
+      humidityPct: 82,
+      windSpeedKmh: 12,
+      precipMm: 0.4,
+      cloudCoverPct: 90,
+      isDay: false,
+    });
+    expect(text).toContain("天气事实:");
+    expect(text).toContain("雨");
+    expect(text).toContain("18.2°C");
+    expect(text).toContain("体感 16.5°C");
+    expect(text).toContain("湿度 82%");
+    expect(text).toContain("风速 12 km/h");
+    expect(text).toContain("降水 0.4 mm");
+    expect(text).toContain("云量 90%");
+    expect(text).toContain("夜晚");
+    expect(text).not.toMatch(/清晨|午休|傍晚/);
   });
 });
 

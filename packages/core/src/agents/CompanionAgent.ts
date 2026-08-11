@@ -7,6 +7,7 @@ import { songDisplayTitle } from "../library/display";
 import type { ChosenSong, CompanionInput } from "./types";
 import type { MusicProfile } from "../types/musicProfile";
 import { shuffle } from "../recommendation";
+import { formatAmbientFactsForCompanion } from "../recommendation/timeContext";
 
 const SHIFTS = ["接住", "点燃", "陪着", "打断"] as const;
 type Shift = (typeof SHIFTS)[number];
@@ -180,12 +181,10 @@ function buildBrief(i: CompanionInput): string {
     }
   }
 
-  // 时间上下文：季节/星期/时段（不推断上班）—— 让 rationale 应景
+  // 原始时钟 + 气象事实（不含清晨/午休等系统时段词）—— 模型自行感受氛围写小注
   const timeCtx = i.recommendation?.timeContext;
   if (timeCtx) {
-    parts.push(
-      `现在是什么时候: ${timeCtx.pseudoTarget}（${timeCtx.seasonZh}季 · ${timeCtx.weekdayZh} · ${timeCtx.periodZh}）`,
-    );
+    parts.push(formatAmbientFactsForCompanion(timeCtx.now, timeCtx.weather));
   }
 
   // Mood-lock hint: when user explicitly set a mood,选的歌必须紧扣

@@ -223,4 +223,58 @@ describe("CompanionAgent.choose", () => {
     expect(userMsg).toMatch(/角度全部禁用/);
     expect(userMsg).not.toMatch(/上一首刚播完/);
   });
+
+  it("feeds raw clock + weather facts, not period labels like 清晨/午休", async () => {
+    const p = stub(validResponse);
+    const a = new CompanionAgent({ provider: p });
+    await a.choose({
+      ...input,
+      recommendation: {
+        excludeIds: new Set(),
+        fatigueByTrack: new Map(),
+        recentPlays: [],
+        noveltySeeking: 0.5,
+        feedbackStats: new Map(),
+        soul,
+        emotionLabels: ["疲惫"],
+        timeContext: {
+          now: new Date(2026, 7, 11, 15, 32, 0),
+          season: "summer",
+          seasonZh: "夏",
+          weekday: 2,
+          weekdayZh: "周二",
+          period: "afternoon",
+          periodZh: "下午",
+          isWorkday: true,
+          isWorkTime: true,
+          tags: ["夏季", "周二", "下午"],
+          defaultMoodTags: ["专注"],
+          pseudoTarget: "夏日的周二下午",
+          weather: {
+            condition: "雨",
+            tempC: 18,
+            source: "api",
+            code: 61,
+            feelsLikeC: 16,
+            humidityPct: 80,
+            windSpeedKmh: 14,
+            precipMm: 0.2,
+            cloudCoverPct: 88,
+            isDay: true,
+          },
+        },
+      },
+    });
+    const msgs: ChatMessage[] = (p.chat as any).mock.calls[0][0];
+    const userMsg = msgs[1].content as string;
+    expect(userMsg).toContain("本地时间:");
+    expect(userMsg).toContain("15:32");
+    expect(userMsg).toContain("天气事实:");
+    expect(userMsg).toContain("体感 16°C");
+    expect(userMsg).toContain("湿度 80%");
+    expect(userMsg).not.toContain("现在是什么时候:");
+    expect(userMsg).not.toContain("夏日的周二下午");
+    // Must not hand the canned period label to the model as the time cue
+    expect(userMsg).not.toMatch(/· 下午\)/);
+  });
 });

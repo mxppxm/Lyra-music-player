@@ -22,6 +22,9 @@ export {
   computeTimeContext,
   timeContextToPseudoTarget,
   timeContextScore,
+  formatAmbientFactsForCompanion,
+  weatherZhFromCode,
+  weatherTagsFromWeather,
 } from "./timeContext";
 export type { TimeContext, TimePeriod, Season, WeatherContext } from "./timeContext";
 export {

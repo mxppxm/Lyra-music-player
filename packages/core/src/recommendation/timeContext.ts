@@ -23,6 +23,18 @@ export type WeatherContext = {
   source: "user-input" | "api";
   /** Open-Meteo WMO 天气代码（source=api 时存在）。 */
   code?: number;
+  /** 体感温度 °C。 */
+  feelsLikeC?: number;
+  /** 相对湿度 0–100。 */
+  humidityPct?: number;
+  /** 当前降水量 mm。 */
+  precipMm?: number;
+  /** 云量 0–100。 */
+  cloudCoverPct?: number;
+  /** 风速 km/h。 */
+  windSpeedKmh?: number;
+  /** 是否白天（来自 Open-Meteo is_day）。 */
+  isDay?: boolean;
 };
 
 /** WMO 天气代码 → 中文天气词（0 晴 / 1-3 多云 / 45-48 雾 / 51-67 雨 / 71-77 雪 / 80-82 阵雨 / 85-86 阵雪 / 95-99 雷雨）。 */
@@ -74,7 +86,61 @@ export function weatherTagsFromWeather(weather: WeatherContext): string[] {
   // 温度边界 → 极热/极冷标签（配合「夏天/冬天」场景词）。
   if (weather.tempC >= 30) tags.push("炎热");
   else if (weather.tempC <= 5) tags.push("寒冷");
+  if (weather.humidityPct != null && weather.humidityPct >= 80) tags.push("潮湿");
+  if (weather.windSpeedKmh != null && weather.windSpeedKmh >= 25) tags.push("有风");
+  if (weather.precipMm != null && weather.precipMm > 0) tags.push("有雨");
+  if (weather.cloudCoverPct != null && weather.cloudCoverPct >= 85) tags.push("阴天");
   return tags;
+}
+
+const WEEKDAY_ZH_CLOCK = [
+  "周日",
+  "周一",
+  "周二",
+  "周三",
+  "周四",
+  "周五",
+  "周六",
+] as const;
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function round1(n: number): string {
+  return (Math.round(n * 10) / 10).toFixed(n % 1 === 0 ? 0 : 1);
+}
+
+/**
+ * 给 Companion / 文案层的原始时钟 + 气象事实（不含「清晨/午休」等系统时段词）。
+ * 模型自行感受氛围；系统只提供可核对的数据。
+ */
+export function formatAmbientFactsForCompanion(
+  now: Date = new Date(),
+  weather?: WeatherContext,
+): string {
+  const y = now.getFullYear();
+  const mo = pad2(now.getMonth() + 1);
+  const d = pad2(now.getDate());
+  const h = pad2(now.getHours());
+  const mi = pad2(now.getMinutes());
+  const weekdayZh = WEEKDAY_ZH_CLOCK[now.getDay()] ?? "";
+  const lines = [`本地时间: ${y}-${mo}-${d} ${h}:${mi}（${weekdayZh}）`];
+
+  if (!weather) {
+    lines.push("天气: （暂无）");
+    return lines.join("\n");
+  }
+
+  const facts: string[] = [weather.condition, `气温 ${round1(weather.tempC)}°C`];
+  if (weather.feelsLikeC != null) facts.push(`体感 ${round1(weather.feelsLikeC)}°C`);
+  if (weather.humidityPct != null) facts.push(`湿度 ${Math.round(weather.humidityPct)}%`);
+  if (weather.windSpeedKmh != null) facts.push(`风速 ${round1(weather.windSpeedKmh)} km/h`);
+  if (weather.precipMm != null) facts.push(`降水 ${round1(weather.precipMm)} mm`);
+  if (weather.cloudCoverPct != null) facts.push(`云量 ${Math.round(weather.cloudCoverPct)}%`);
+  if (weather.isDay != null) facts.push(weather.isDay ? "白天" : "夜晚");
+  lines.push(`天气事实: ${facts.join("，")}`);
+  return lines.join("\n");
 }
 
 export type TimeContext = {

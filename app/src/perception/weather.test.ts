@@ -39,7 +39,16 @@ describe("ensureWeatherSnapshot", () => {
     const fetchFn = vi.fn(async () => ({
       ok: true,
       json: async () => ({
-        current: { weather_code: 0, temperature_2m: 22 },
+        current: {
+          weather_code: 0,
+          temperature_2m: 22,
+          apparent_temperature: 21,
+          relative_humidity_2m: 55,
+          precipitation: 0,
+          cloud_cover: 10,
+          wind_speed_10m: 8,
+          is_day: 1,
+        },
       }),
     })) as unknown as typeof fetch;
 
@@ -52,7 +61,15 @@ describe("ensureWeatherSnapshot", () => {
     });
     expect(a?.weatherCode).toBe(0);
     expect(a?.source).toBe("manual");
+    expect(a?.apparentTemperatureC).toBe(21);
+    expect(a?.humidityPct).toBe(55);
+    expect(a?.windSpeedKmh).toBe(8);
+    expect(a?.isDay).toBe(true);
     expect(fetchFn).toHaveBeenCalledOnce();
+    const url = String((fetchFn as any).mock.calls[0][0]);
+    expect(url).toContain("apparent_temperature");
+    expect(url).toContain("relative_humidity_2m");
+    expect(url).toContain("wind_speed_10m");
 
     const b = await ensureWeatherSnapshot({
       enabled: true,
