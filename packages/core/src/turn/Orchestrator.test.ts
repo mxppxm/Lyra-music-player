@@ -1771,6 +1771,55 @@ describe("Orchestrator track lock", () => {
     expect(afterLock.every(Boolean)).toBe(true);
   });
 
+  it("rejects near-duplicate lock rationale and retries until distinct", async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = makeDeps({
+        turnRepo: {
+          insertTurn: vi.fn(async () => {}),
+          updateTurn: vi.fn(async () => {}),
+        },
+      });
+      (deps.companion.choose as any)
+        .mockResolvedValueOnce({
+          song_id: "t1",
+          target_profile: "x",
+          rationale: "钢琴轻轻落下来",
+          needed_shift: "接住",
+        })
+        .mockResolvedValueOnce({
+          song_id: "t1",
+          target_profile: "x",
+          rationale: "钢琴轻轻落下来。",
+          needed_shift: "陪着",
+        })
+        .mockResolvedValue({
+          song_id: "t1",
+          target_profile: "x",
+          rationale: "副歌那一下才把夜色撕开",
+          needed_shift: "点燃",
+        });
+      const orc = new Orchestrator(deps as any);
+      await orc.onUserInput("来一首");
+      orc.setTrackLock(true);
+      await orc.onSongComplete();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.resolve();
+
+      const st = orc.getState();
+      expect(st.kind).toBe("playing");
+      if (st.kind === "playing") {
+        expect(st.turn.agent_response.rationale).toBe("副歌那一下才把夜色撕开");
+        expect(st.trackLocked).toBe(true);
+      }
+      const chooseArg = (deps.companion.choose as any).mock.calls.at(-1)[0];
+      expect(chooseArg.lockRecentRationales?.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("onSkip clears track lock", async () => {
     const deps = makeDeps();
     const orc = new Orchestrator(deps as any);

@@ -211,13 +211,16 @@ describe("CompanionAgent.choose", () => {
       candidates: [candidates[0]!],
       lockPlayCount: 3,
       previousRationale: "上一句文案",
+      lockRecentRationales: ["第一遍小注", "上一句文案"],
       previousSong: { title: "ShouldNotAppear", artist: "X" },
     });
     const msgs: ChatMessage[] = (p.chat as any).mock.calls[0][0];
     const userMsg = msgs[1].content as string;
     expect(userMsg).toMatch(/锁定播放/);
     expect(userMsg).toMatch(/第 3 遍/);
+    expect(userMsg).toContain("第一遍小注");
     expect(userMsg).toContain("上一句文案");
+    expect(userMsg).toMatch(/角度全部禁用/);
     expect(userMsg).not.toMatch(/上一首刚播完/);
   });
 });

@@ -152,12 +152,22 @@ function buildBrief(i: CompanionInput): string {
   // Lock-play rewrite: same song, new angle — never "上一首刚播完" transition copy.
   if (i.lockPlayCount != null && i.lockPlayCount > 0) {
     parts.push(
-      `锁定播放模式：用户正在循环同一首歌。这是本曲锁定播放的第 ${i.lockPlayCount} 遍。请换一个全新角度写 rationale，不要复述上一句；不要建议切歌。`,
+      `锁定播放模式：用户正在循环同一首歌（候选已固定，song_id 必须仍是当前这首）。这是本曲锁定播放的第 ${i.lockPlayCount} 遍。`,
     );
-    if (i.previousRationale) {
-      parts.push(
-        `你上一条 rationale: "${i.previousRationale}" ← 必须换一个完全不同的角度写这条`,
-      );
+    parts.push(
+      "你的任务不是换歌，只是重写 rationale：必须换一个全新切入点（编曲细节 / 人声气息 / 某句歌词意象 / 时间氛围 / 和她的关系），禁止同义改写、禁止微调旧句、禁止再复述情绪标签。",
+    );
+    const recent = (i.lockRecentRationales?.length
+      ? i.lockRecentRationales
+      : i.previousRationale
+        ? [i.previousRationale]
+        : []
+    ).filter((s) => s.trim());
+    if (recent.length > 0) {
+      parts.push("以下小注已经写过，角度全部禁用（连相近都不行）：");
+      recent.forEach((r, idx) => {
+        parts.push(`${idx + 1}. "${r}"`);
+      });
     }
   } else if (i.previousSong) {
     // Auto-advance context: previous song & rationale for DJ-like transitions
@@ -269,7 +279,9 @@ export class CompanionAgent {
       // Bumped 1024 → 3000 to survive GLM-5.x reasoning burn on the Zhipu
       // fallback path. Anthropic (primary) treats this as an upper cap.
       max_tokens: 8192,
-      temperature: 0.7,
+      // Lock-play rewrites need more entropy — same song + similar brief
+      // otherwise collapses to near-duplicate notes.
+      temperature: input.lockPlayCount != null && input.lockPlayCount > 0 ? 0.95 : 0.7,
       response_format: { type: "json_object" },
       enable_thinking: false,
       agent: "companion",

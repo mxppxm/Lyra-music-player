@@ -33,6 +33,8 @@ export type CompanionInput = {
   previousSong?: { title: string; artist?: string };
   /** 锁定播放：本次锁定内当前遍数。仅锁定循环重生文案时设置。 */
   lockPlayCount?: number;
+  /** 本次锁定里已经写过的小注（含上一句），重生时必须全部避开。 */
+  lockRecentRationales?: string[];
 };
 
 export type EmotionInput = {
