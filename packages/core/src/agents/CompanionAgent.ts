@@ -149,12 +149,24 @@ function buildBrief(i: CompanionInput): string {
     memoryLine,
   ];
 
-  // Auto-advance context: previous song & rationale for DJ-like transitions
-  if (i.previousSong) {
+  // Lock-play rewrite: same song, new angle — never "上一首刚播完" transition copy.
+  if (i.lockPlayCount != null && i.lockPlayCount > 0) {
+    parts.push(
+      `锁定播放模式：用户正在循环同一首歌。这是本曲锁定播放的第 ${i.lockPlayCount} 遍。请换一个全新角度写 rationale，不要复述上一句；不要建议切歌。`,
+    );
+    if (i.previousRationale) {
+      parts.push(
+        `你上一条 rationale: "${i.previousRationale}" ← 必须换一个完全不同的角度写这条`,
+      );
+    }
+  } else if (i.previousSong) {
+    // Auto-advance context: previous song & rationale for DJ-like transitions
     const artistStr = i.previousSong.artist ? ` · ${i.previousSong.artist}` : "";
     parts.push(`上一首刚播完: ${i.previousSong.title}${artistStr}`);
     if (i.previousRationale) {
-      parts.push(`你上一条 rationale: "${i.previousRationale}" ← 必须换一个完全不同的角度写这条`);
+      parts.push(
+        `你上一条 rationale: "${i.previousRationale}" ← 必须换一个完全不同的角度写这条`,
+      );
     }
   }
 

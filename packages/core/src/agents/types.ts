@@ -31,6 +31,8 @@ export type CompanionInput = {
   /** The song that just finished playing (auto-advance context). Companion can
    *  reference it in the rationale to create a natural DJ-like transition. */
   previousSong?: { title: string; artist?: string };
+  /** 锁定播放：本次锁定内当前遍数。仅锁定循环重生文案时设置。 */
+  lockPlayCount?: number;
 };
 
 export type EmotionInput = {

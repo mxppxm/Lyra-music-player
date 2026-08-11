@@ -202,4 +202,22 @@ describe("CompanionAgent.choose", () => {
     // Memory block appears BEFORE candidate block
     expect(userMsg.indexOf("你对她的记忆:")).toBeLessThan(userMsg.indexOf("候选歌单("));
   });
+
+  it("includes lock-play brief when lockPlayCount is set", async () => {
+    const p = stub(validResponse);
+    const a = new CompanionAgent({ provider: p });
+    await a.choose({
+      ...input,
+      candidates: [candidates[0]!],
+      lockPlayCount: 3,
+      previousRationale: "上一句文案",
+      previousSong: { title: "ShouldNotAppear", artist: "X" },
+    });
+    const msgs: ChatMessage[] = (p.chat as any).mock.calls[0][0];
+    const userMsg = msgs[1].content as string;
+    expect(userMsg).toMatch(/锁定播放/);
+    expect(userMsg).toMatch(/第 3 遍/);
+    expect(userMsg).toContain("上一句文案");
+    expect(userMsg).not.toMatch(/上一首刚播完/);
+  });
 });
