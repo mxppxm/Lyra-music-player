@@ -107,7 +107,7 @@ export function IconFavorite({
   );
 }
 
-/** Padlock — 锁定播放开关（与心情锁定 moodLocked 是不同概念）。 */
+/** Padlock — open when unlocked, closed when locked. */
 export function IconTrackLock({
   size = 20,
   active = false,
@@ -139,7 +139,13 @@ export function IconTrackLock({
         fill={active ? "currentColor" : "none"}
         stroke="currentColor"
       />
-      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      {active ? (
+        /* Closed shackle */
+        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      ) : (
+        /* Open shackle — arc lifts off, doesn't latch on the right */
+        <path d="M8 11V7a4 4 0 0 1 7.9-1" />
+      )}
       {active ? (
         <circle cx="12" cy="16" r="1.2" fill="#1c1814" stroke="none" />
       ) : (
