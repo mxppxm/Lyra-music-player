@@ -56,6 +56,8 @@ export type OrchestratorState =
       paused?: boolean;
       /** Fresh replay copy is still being written — UI may show a light loader. */
       rationalePending?: boolean;
+      /** 锁定播放（单曲循环）开启。 */
+      trackLocked?: boolean;
     }
   | { kind: "error"; message: string }
   | { kind: "proactive-pending"; intent: ProactiveIntent; song: LibraryTrack; rationale: string };
@@ -220,6 +222,12 @@ export class Orchestrator {
   private lastIntent: RetryIntent | null = null;
   /** In-flight lyrics fetches keyed by song id — flip spam shares one request. */
   private lyricsInFlight = new Map<string, Promise<string>>();
+  /** Session-only single-track loop; cleared on skip / previous / new input / replay. */
+  private trackLock: {
+    enabled: boolean;
+    songId: string;
+    playCount: number;
+  } | null = null;
 
   constructor(deps: OrchestratorDeps) {
     this.deps = deps;
@@ -389,6 +397,38 @@ export class Orchestrator {
 
   getState(): OrchestratorState {
     return this.state;
+  }
+
+  /** Toggle single-track lock-play. Binds to current song; playCount starts at 1. */
+  setTrackLock(enabled: boolean): void {
+    if (!enabled) {
+      this.clearTrackLock();
+      if (this.state.kind === "playing") {
+        this.emit({ ...this.state, trackLocked: false });
+      }
+      return;
+    }
+    if (!this.currentSong || this.state.kind !== "playing") return;
+    this.trackLock = {
+      enabled: true,
+      songId: this.currentSong.id,
+      playCount: 1,
+    };
+    // Drop planned next so lock completion cannot consume a queued track.
+    this.nativeQueuePlan = [];
+    this.emit({ ...this.state, trackLocked: true });
+  }
+
+  isTrackLockEnabled(): boolean {
+    return Boolean(this.trackLock?.enabled);
+  }
+
+  getTrackLockPlayCount(): number {
+    return this.trackLock?.enabled ? this.trackLock.playCount : 0;
+  }
+
+  clearTrackLock(): void {
+    this.trackLock = null;
   }
 
   /** True when immersive previous / undo-skip has a song to restore. */
@@ -1021,6 +1061,7 @@ export class Orchestrator {
     // would finalise the same turn and call playFile twice. Queue it like
     // every other transition.
     return this.enqueueTransition(async () => {
+    this.clearTrackLock();
     this.lastIntent = { kind: "text", text };
     const emotionAgent = this.deps.emotion;
 
@@ -1263,6 +1304,8 @@ export class Orchestrator {
     if (this.currentTurn !== targetTurn) return;
     if (!this.currentTurn) return;
 
+    this.clearTrackLock();
+
     // Emit perception skip event (best-effort, optional bus).
     try {
       const clock = this.deps.clock ?? Date.now;
@@ -1365,6 +1408,7 @@ export class Orchestrator {
     if (this.playStack.length === 0) return;
     this.cancelInFlightAdvance();
     return this.enqueueTransition(async () => {
+      this.clearTrackLock();
       const entry = this.playStack.pop();
       if (!entry) return;
 
@@ -1457,6 +1501,7 @@ export class Orchestrator {
     this.cancelInFlightAdvance();
     this.clearPlayStack();
     return this.enqueueTransition(async () => {
+    this.clearTrackLock();
     await this.deps.audio.stop();
 
     // Finalise any in-flight turn as a skip so its stats stay honest.
@@ -1763,6 +1808,7 @@ export class Orchestrator {
     song: LibraryTrack,
     baseEmotion: import("../types").CurrentEmotion,
     autoCtx?: AutoAdvanceContext,
+    lockOpts?: { lockPlayCount: number; previousRationale: string },
   ): Promise<string | null> {
     const { companion, soulStore } = this.deps;
     try {
@@ -1781,14 +1827,71 @@ export class Orchestrator {
         livingPortrait,
         topFacts,
         recommendation: recCtx,
-        previousRationale: autoCtx?.previousRationale,
-        previousSong: autoCtx?.previousSong,
+        ...(lockOpts
+          ? {
+              lockPlayCount: lockOpts.lockPlayCount,
+              previousRationale: lockOpts.previousRationale,
+            }
+          : {
+              previousRationale: autoCtx?.previousRationale,
+              previousSong: autoCtx?.previousSong,
+            }),
       });
       return chosen.rationale || null;
     } catch (err) {
       console.warn("[lyra] rationaleForNativeSong failed, keeping previous copy:", err);
       return null;
     }
+  }
+
+  /** Background: rewrite rationale for a locked single-track loop. */
+  private async fillTrackLockRationale(
+    turnId: string,
+    track: LibraryTrack,
+    emotion: import("../types").CurrentEmotion,
+    previousRationale: string,
+    lockPlayCount: number,
+  ): Promise<void> {
+    let rationale =
+      (await this.rationaleForNativeSong(track, emotion, undefined, {
+        lockPlayCount,
+        previousRationale,
+      })) ?? "";
+    if (!rationale.trim()) {
+      const display =
+        track.title?.match(/《([^》]+)》/)?.[1] ??
+        track.title ??
+        "这首歌";
+      rationale = `再听一遍《${display}》`;
+    }
+
+    if (this.currentTurn?.id !== turnId) return;
+    if (this.state.kind !== "playing") return;
+
+    const turn: DialogueTurn = {
+      ...this.currentTurn,
+      agent_response: {
+        ...this.currentTurn.agent_response,
+        rationale,
+      },
+    };
+    this.currentTurn = turn;
+    this.rationaleBySongId.set(track.id, rationale);
+    if (this.deps.turnRepo.updateTurn) {
+      try {
+        await this.deps.turnRepo.updateTurn(turn);
+      } catch (e) {
+        console.warn("[lyra] track-lock rationale updateTurn failed:", e);
+      }
+    }
+    this.emit({
+      kind: "playing",
+      turn,
+      song: this.currentSong ?? track,
+      paused: this.state.paused,
+      trackLocked: this.isTrackLockEnabled(),
+      rationalePending: false,
+    });
   }
 
   /**
@@ -1813,6 +1916,90 @@ export class Orchestrator {
     if (!this.currentTurn) return;
     // Manual pause takes priority — never auto-advance while paused.
     if (this.state.kind === "playing" && this.state.paused) return;
+
+    // Locked single-track loop: replay same song + rewrite rationale.
+    if (
+      this.trackLock?.enabled &&
+      this.currentSong &&
+      this.trackLock.songId === this.currentSong.id
+    ) {
+      try {
+        const clockFn = this.deps.clock ?? Date.now;
+        this.deps.eventBus?.emit({
+          kind: "complete",
+          at: clockFn(),
+          turnId: this.currentTurn.id,
+        });
+      } catch {
+        /* bus errors are non-fatal */
+      }
+
+      this.pendingEvents.push({ kind: "complete" });
+      let folded = foldReactionEvents(this.currentTurn, this.pendingEvents);
+      this.pendingEvents = [];
+      const behavioral = {
+        ...folded.user_reaction.behavioral,
+        completed: true,
+        repeated: folded.user_reaction.behavioral.repeated + 1,
+      };
+      folded = {
+        ...folded,
+        user_reaction: {
+          ...folded.user_reaction,
+          behavioral,
+          silence_positive:
+            behavioral.completed &&
+            !behavioral.skipped &&
+            folded.user_reaction.verbal === undefined,
+        },
+      };
+      this.currentTurn = folded;
+      if (this.deps.turnRepo.updateTurn) {
+        try {
+          await this.deps.turnRepo.updateTurn(folded);
+        } catch (e) {
+          console.warn("[lyra] track-lock complete updateTurn failed:", e);
+        }
+      }
+
+      this.trackLock = {
+        ...this.trackLock,
+        playCount: this.trackLock.playCount + 1,
+      };
+
+      const song = this.currentSong;
+      const prevRationale = folded.agent_response.rationale;
+      const emotion = folded.current_emotion;
+      const turnId = folded.id;
+      const lockPlayCount = this.trackLock.playCount;
+
+      try {
+        await this.deps.audio.playFile(song.path, song.duration_ms ?? null);
+      } catch (err) {
+        console.error("[lyra] track-lock replay failed:", err);
+        this.emit({
+          kind: "error",
+          message: "播放失败，检查下网络或音频设备？",
+        });
+        return;
+      }
+
+      this.emit({
+        kind: "playing",
+        turn: folded,
+        song,
+        trackLocked: true,
+        rationalePending: true,
+      });
+      void this.fillTrackLockRationale(
+        turnId,
+        song,
+        emotion,
+        prevRationale,
+        lockPlayCount,
+      );
+      return;
+    }
 
     // Emit perception complete event (best-effort, optional bus).
     try {

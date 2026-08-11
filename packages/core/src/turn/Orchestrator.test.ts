@@ -1605,3 +1605,113 @@ describe("Orchestrator play stack (previous)", () => {
     }
   });
 });
+
+describe("Orchestrator track lock", () => {
+  it("setTrackLock binds current song and playCount starts at 1", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首");
+    orc.setTrackLock(true);
+    expect(orc.isTrackLockEnabled()).toBe(true);
+    expect(orc.getTrackLockPlayCount()).toBe(1);
+    const st = orc.getState();
+    expect(st.kind).toBe("playing");
+    if (st.kind === "playing") {
+      expect(st.trackLocked).toBe(true);
+    }
+  });
+
+  it("onSongComplete while locked replays same song and bumps playCount", async () => {
+    const deps = makeDeps({
+      turnRepo: {
+        insertTurn: vi.fn(async () => {}),
+        updateTurn: vi.fn(async () => {}),
+      },
+    });
+    (deps.companion.choose as any)
+      .mockResolvedValueOnce({
+        song_id: "t1",
+        target_profile: "x",
+        rationale: "第一遍",
+        needed_shift: "接住",
+      })
+      .mockResolvedValue({
+        song_id: "t1",
+        target_profile: "x",
+        rationale: "第二遍文案",
+        needed_shift: "陪着",
+      });
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首");
+    orc.setTrackLock(true);
+    (deps.audio.playFile as any).mockClear();
+    (deps.companion.choose as any).mockClear();
+
+    await orc.onSongComplete();
+
+    expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
+    expect(orc.isTrackLockEnabled()).toBe(true);
+    expect(orc.getTrackLockPlayCount()).toBe(2);
+
+    await vi.waitFor(() => {
+      const chooseArg = (deps.companion.choose as any).mock.calls.at(-1)?.[0];
+      expect(chooseArg?.lockPlayCount).toBe(2);
+      expect(chooseArg?.candidates).toHaveLength(1);
+      expect(chooseArg?.candidates[0].id).toBe("t1");
+      expect(chooseArg?.previousSong).toBeUndefined();
+    });
+
+    await vi.waitFor(() => {
+      const st = orc.getState();
+      expect(st.kind).toBe("playing");
+      if (st.kind === "playing") {
+        expect(st.song.id).toBe("t1");
+        expect(st.turn.agent_response.rationale).toBe("第二遍文案");
+        expect(st.turn.user_reaction.behavioral.repeated).toBeGreaterThanOrEqual(1);
+        expect(st.trackLocked).toBe(true);
+        expect(st.rationalePending).toBeFalsy();
+      }
+    });
+  });
+
+  it("onSkip clears track lock", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首");
+    orc.setTrackLock(true);
+    await orc.onSkip();
+    expect(orc.isTrackLockEnabled()).toBe(false);
+    expect(orc.getTrackLockPlayCount()).toBe(0);
+  });
+
+  it("onUserInput clears track lock", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首");
+    orc.setTrackLock(true);
+    await orc.onUserInput("换个心情");
+    expect(orc.isTrackLockEnabled()).toBe(false);
+  });
+
+  it("onReplaySong clears track lock", async () => {
+    const deps = makeDeps();
+    const orc = new Orchestrator(deps as any);
+    await orc.onUserInput("来一首");
+    orc.setTrackLock(true);
+    const track: LibraryTrack = {
+      id: "t2",
+      path: "/y.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "T2",
+    };
+    const emotion: CurrentEmotion = {
+      pad: { p: 0, a: 0, d: 0 },
+      labels: [],
+      confidence: 0.5,
+      source: "emotion-agent-inferred",
+    };
+    await orc.onReplaySong(track, "old", emotion);
+    expect(orc.isTrackLockEnabled()).toBe(false);
+  });
+});
