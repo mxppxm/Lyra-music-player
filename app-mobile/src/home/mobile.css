@@ -1361,16 +1361,17 @@ button.lyra-mobile-idle-slogan:hover {
   flex: none;
   width: 38px;
   height: 38px;
-  border: none;
+  padding: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.28);
   color: var(--lyra-control-ink);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  box-shadow: none;
   transition:
     color 220ms ease,
     background-color 220ms ease,
@@ -1388,16 +1389,16 @@ button.lyra-mobile-idle-slogan:hover {
   transform: none;
 }
 
-/* Locked = solid primary chip (same language as send) so the mode is obvious. */
+/* Locked: opaque ink chip — no frosted gray underlay, no soft white border. */
 .lyra-mobile-track-lock--on {
-  background: var(--lyra-control-primary-bg);
-  color: var(--lyra-control-primary-fg);
-  border-color: transparent;
-  box-shadow: 0 8px 18px rgba(24, 18, 12, 0.22);
+  background: #1c1814;
+  color: #fffaf4;
+  border-color: #1c1814;
+  box-shadow: none;
 }
 
 .lyra-icon-track-lock--on {
-  stroke-width: 2.1;
+  stroke-width: 2;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -107,7 +107,7 @@ export function IconFavorite({
   );
 }
 
-/** Single-track loop (锁定播放) — not a padlock; distinct from mood lock. */
+/** Padlock — 锁定播放开关（与心情锁定 moodLocked 是不同概念）。 */
 export function IconTrackLock({
   size = 20,
   active = false,
@@ -122,7 +122,7 @@ export function IconTrackLock({
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={active ? 2.15 : 1.7}
+      strokeWidth={active ? 2 : 1.7}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -130,15 +130,21 @@ export function IconTrackLock({
         active ? "lyra-icon-track-lock lyra-icon-track-lock--on" : "lyra-icon-track-lock"
       }
     >
-      {/* One-arrow loop + center 1 for single-track repeat */}
-      <path d="M17 1l4 4-4 4" />
-      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-      <path d="M7 23l-4-4 4-4" />
-      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-      <path
-        d="M12 8.2v7.6"
-        strokeWidth={active ? 2.4 : 2}
+      <rect
+        x="5"
+        y="11"
+        width="14"
+        height="10"
+        rx="2"
+        fill={active ? "currentColor" : "none"}
+        stroke="currentColor"
       />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      {active ? (
+        <circle cx="12" cy="16" r="1.2" fill="#1c1814" stroke="none" />
+      ) : (
+        <path d="M12 15v2.2" />
+      )}
     </svg>
   );
 }
