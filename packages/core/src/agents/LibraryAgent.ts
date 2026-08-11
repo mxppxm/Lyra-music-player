@@ -130,7 +130,7 @@ function profileScore(
   const genreScore = genreAffinityScore(profile, recCtx?.soul) * (moodLocked ? 0.06 : 0.08);
   const energyScore = energyMatchScore(profile, pad.a) * (moodLocked ? 0.06 : 0.07);
 
-  // 时间维度：优先用时间上下文（季节/星期/时段/上班休息 → best_for + time_color），
+  // 时间维度：优先用时间上下文（季节/星期/时段/天气 → best_for + time_color），
   // 无上下文时退回原有「小时 × time_color」匹配。
   const timeCtx = recCtx?.timeContext;
   const timeMatch = timeCtx

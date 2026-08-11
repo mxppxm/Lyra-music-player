@@ -38,7 +38,7 @@ export type RecommendationContext = {
   soul: SoulState;
   /** Labels from EmotionAgent (e.g. 疲惫, 孤独) — used in prefilter mood match. */
   emotionLabels: readonly string[];
-  /** 时间上下文（季节/星期/时段/上班休息）—— 推荐打分与文案的时间维度。 */
+  /** 时间上下文（季节/星期/时段/天气；不推断上班）—— 推荐打分与文案的时间维度。 */
   timeContext?: TimeContext;
   /** When set, candidate pool is restricted to this artist until the user says otherwise. */
   artistFilter?: string;

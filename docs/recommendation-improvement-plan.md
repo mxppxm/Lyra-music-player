@@ -24,8 +24,8 @@
 ### 1.1 现状（已满足大部分）
 
 `Orchestrator.onLyraStart`（`packages/core/src/turn/Orchestrator.ts:718-758`）已经：
-- `computeTimeContext()` 计算季节 / 星期几 / 时段（早通勤→深夜）/ 是否上班；
-- 用 `timeCtx.defaultMoodTags` 当情绪 labels、`timeCtx.pseudoTarget`（如「夏日的周三下午，上班时间」）当推荐目标；
+- `computeTimeContext()` 计算季节 / 星期几 / 时段（清晨→深夜）；**不推断上班**；
+- 用 `timeCtx.defaultMoodTags` 当情绪 labels、`timeCtx.pseudoTarget`（如「夏日的周三下午」）当推荐目标；
 - `buildBrief`（`packages/core/src/agents/CompanionAgent.ts:146-153`）已把「现在是什么时候」注入 LLM，rationale 会应景。
 
 ### 1.2 差距与改动

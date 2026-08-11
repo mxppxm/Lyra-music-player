@@ -180,16 +180,11 @@ function buildBrief(i: CompanionInput): string {
     }
   }
 
-  // 时间上下文：季节/星期/时段/上班休息 —— 让 rationale 应景
+  // 时间上下文：季节/星期/时段（不推断上班）—— 让 rationale 应景
   const timeCtx = i.recommendation?.timeContext;
   if (timeCtx) {
-    const workState = timeCtx.isWorkTime
-      ? "上班时间"
-      : timeCtx.isWorkday
-        ? "工作时间之外"
-        : "休息日";
     parts.push(
-      `现在是什么时候: ${timeCtx.pseudoTarget}（${timeCtx.seasonZh}季 · ${timeCtx.weekdayZh} · ${timeCtx.periodZh} · ${workState}）`,
+      `现在是什么时候: ${timeCtx.pseudoTarget}（${timeCtx.seasonZh}季 · ${timeCtx.weekdayZh} · ${timeCtx.periodZh}）`,
     );
   }
 

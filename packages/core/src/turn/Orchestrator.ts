@@ -1300,7 +1300,7 @@ export class Orchestrator {
         `[lyra] timeCtx: defaultMoodTags=${timeCtx.defaultMoodTags.join(",")} pseudoTarget=${timeCtx.pseudoTarget}`,
       );
       // 点我试试：没有用户输入，就用「时间上下文」当心情入口 ——
-      // 深夜 → 平静/内省，早通勤 → 清醒/出发 …… 推荐器和文案都有据可依。
+      // 深夜 → 平静/内省，清晨 → 清醒 …… 推荐器和文案都有据可依（不推断上班）。
       const defaultLabels = [...timeCtx.defaultMoodTags];
       const emotion: CurrentEmotion = {
         pad: soul.dynamic_mood.current_pad,

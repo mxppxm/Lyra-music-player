@@ -1,15 +1,14 @@
 /**
  * 时间上下文 —— 把「现在是什么时候」翻译成推荐器能用的信号。
  *
- * 与 song-recommender skill 的策略对齐：季节 / 星期几 / 时段（早通勤→深夜）/
- * 上班或休息，派生一组中文标签 + 时段默认心情 + 一句伪目标文案。
- * 让「点我试试」和连播在没有用户输入时也有据可依，不再冷冰冰。
+ * 季节 / 星期几 / 时段（清晨→深夜）/ 天气 → 中文标签 + 时段默认心情 + 伪目标文案。
+ * 不推断「在不在上班」：场所与人生剧本留给用户自己说（后续可接场所锚点）。
  */
 
 export type TimePeriod =
-  | "early-commute" // 早通勤 6-9（工作日）
+  | "early-morning" // 清晨 6-9
   | "morning" // 上午 9-11
-  | "lunch" // 午休 11-14
+  | "lunch" // 中午 11-14
   | "afternoon" // 下午 14-18
   | "evening" // 傍晚 18-20
   | "night" // 夜晚 20-23
@@ -91,17 +90,23 @@ export type TimeContext = {
   weekdayZh: string;
   /** 时段英文键。 */
   period: TimePeriod;
-  /** 时段中文（早通勤/上午/午休/下午/傍晚/夜晚/深夜）。 */
+  /** 时段中文（清晨/上午/中午/下午/傍晚/夜晚/深夜）。 */
   periodZh: string;
-  /** 是否工作日（周一至周五）。 */
+  /**
+   * 是否周一至周五（日历事实，不表示「在上班」）。
+   * 保留字段供统计等使用；不进入推荐 tags / 文案。
+   */
   isWorkday: boolean;
-  /** 是否上班时间（工作日 9-18 且非午休场景仍算，此处宽松：工作日 9-18）。 */
+  /**
+   * 是否工作日 9–18（日历窗口，不表示真实场所）。
+   * 保留字段；不进入推荐 tags / 文案。
+   */
   isWorkTime: boolean;
-  /** 中文标签组 —— 用于匹配曲库的 best_for / mood / time_color。 */
+  /** 中文标签组 —— 用于匹配曲库的 best_for / mood / time_color（无上班/通勤推断）。 */
   tags: string[];
   /** 时段默认心情标签 —— 用户没说话时当作心情入口。 */
   defaultMoodTags: string[];
-  /** 伪目标文案 —— 「夏日的周三下午，上班时间」这类开场白。 */
+  /** 伪目标文案 —— 「夏日的周三下午，下雨天」这类开场白（不含上班状态）。 */
   pseudoTarget: string;
   /** 天气上下文 —— 预留，后续接 wttr.in / Open-Meteo + 定位。 */
   weather?: WeatherContext;
@@ -140,9 +145,9 @@ const WEEKDAY_ZH = [
 ] as const;
 
 const PERIOD_ZH: Record<TimePeriod, string> = {
-  "early-commute": "早通勤",
+  "early-morning": "清晨",
   morning: "上午",
-  lunch: "午休",
+  lunch: "中午",
   afternoon: "下午",
   evening: "傍晚",
   night: "夜晚",
@@ -151,7 +156,7 @@ const PERIOD_ZH: Record<TimePeriod, string> = {
 
 /** 有序时段列表（含中文标签），供 moodSummary 等模块聚合展示。 */
 export const PERIODS: ReadonlyArray<{ id: TimePeriod; label: string }> = [
-  { id: "early-commute", label: PERIOD_ZH["early-commute"] },
+  { id: "early-morning", label: PERIOD_ZH["early-morning"] },
   { id: "morning", label: PERIOD_ZH.morning },
   { id: "lunch", label: PERIOD_ZH.lunch },
   { id: "afternoon", label: PERIOD_ZH.afternoon },
@@ -162,7 +167,7 @@ export const PERIODS: ReadonlyArray<{ id: TimePeriod; label: string }> = [
 
 /** 按小时返回所在时段（0-23）。 */
 export function periodOfHour(hour: number): TimePeriod {
-  if (hour >= 6 && hour < 9) return "early-commute";
+  if (hour >= 6 && hour < 9) return "early-morning";
   if (hour >= 9 && hour < 11) return "morning";
   if (hour >= 11 && hour < 14) return "lunch";
   if (hour >= 14 && hour < 18) return "afternoon";
@@ -175,23 +180,23 @@ export function periodOfHour(hour: number): TimePeriod {
  * 时段 → 默认心情标签。与 song-recommender 的心情映射表对齐的「无输入兜底」。
  */
 const PERIOD_MOOD_TAGS: Record<TimePeriod, string[]> = {
-  "early-commute": ["清醒", "出发", "赶路"],
+  "early-morning": ["清醒", "清爽"],
   morning: ["专注", "清醒"],
   lunch: ["放松", "小憩"],
   afternoon: ["专注", "慵懒"],
   evening: ["释然", "疲惫"],
-  night: ["放松", "社交"],
+  night: ["放松", "安静"],
   "late-night": ["平静", "内省", "孤独"],
 };
 
-/** 各时段在曲库 best_for 里常见的中文场景词（用于打分匹配）。 */
+/** 各时段在曲库 best_for 里常见的中文场景词（用于打分匹配；不含上班/通勤推断）。 */
 const PERIOD_SCENE_TAGS: Record<TimePeriod, string[]> = {
-  "early-commute": ["通勤", "上班", "早高峰", "路上"],
-  morning: ["上午", "早上", "清晨", "专注", "工作"],
-  lunch: ["午休", "中午", "小憩"],
+  "early-morning": ["清晨", "早上", "早晨"],
+  morning: ["上午", "早上", "清晨", "专注"],
+  lunch: ["中午", "午后", "小憩"],
   afternoon: ["下午", "午后", "下午茶"],
-  evening: ["傍晚", "黄昏", "下班", "回家"],
-  night: ["夜晚", "晚上", "夜跑", "晚餐"],
+  evening: ["傍晚", "黄昏"],
+  night: ["夜晚", "晚上", "夜色"],
   "late-night": ["深夜", "凌晨", "独处", "睡前"],
 };
 
@@ -210,46 +215,27 @@ export function computeTimeContext(
 
   const hour = now.getHours();
   const isWorkday = weekday <= 5;
-
-  let period: TimePeriod;
-  if (hour >= 6 && hour < 9) {
-    period = "early-commute";
-  } else if (hour >= 9 && hour < 11) {
-    period = "morning";
-  } else if (hour >= 11 && hour < 14) {
-    period = "lunch";
-  } else if (hour >= 14 && hour < 18) {
-    period = "afternoon";
-  } else if (hour >= 18 && hour < 20) {
-    period = "evening";
-  } else if (hour >= 20 && hour < 23) {
-    period = "night";
-  } else {
-    period = "late-night";
-  }
-
+  const period = periodOfHour(hour);
   const periodZh = PERIOD_ZH[period];
+  // 日历窗口，不表示真实场所；不写入 tags / pseudoTarget。
   const isWorkTime = isWorkday && hour >= 9 && hour < 18;
 
-  // 标签组：季节 + 星期 + 时段 + 工作/休息 + 场景词 + 天气
+  // 标签组：季节 + 星期 + 时段 + 场景词 + 天气（无上班/休息推断）
   const weatherTags = weather ? weatherTagsFromWeather(weather) : [];
   const tags = [
     `${seasonZh}季`,
     `${seasonZh}天`,
     weekdayZh,
     periodZh,
-    isWorkTime ? "上班时间" : isWorkday ? "工作时间之外" : "休息日",
     ...PERIOD_SCENE_TAGS[period],
     ...weatherTags,
   ];
 
   const defaultMoodTags = [...PERIOD_MOOD_TAGS[period]];
 
-  // 伪目标文案：如「夏日的周三下午，上班时间，下雨天」
-  const dayWord = isWorkday ? (isWorkTime ? "上班时间" : "下班后的") : "休息日";
+  // 伪目标文案：如「夏日的周三下午，下雨天」
   const pseudoTarget = [
     `${seasonZh}日的${weekdayZh}${periodZh}`,
-    dayWord,
     weather ? weatherLabel(weather) : null,
   ]
     .filter((s): s is string => Boolean(s))
