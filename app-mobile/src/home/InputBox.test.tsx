@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { InputBox } from "./InputBox";
 
 vi.mock("./immersiveStatusBar", () => ({
@@ -9,23 +9,18 @@ vi.mock("./immersiveStatusBar", () => ({
 
 import { lightTap } from "./immersiveStatusBar";
 
-function setup(props?: { collapsible?: boolean; keyboardReady?: boolean }) {
+function setup() {
   const onSubmit = vi.fn();
-  render(
-    <InputBox
-      onSubmit={onSubmit}
-      collapsible={props?.collapsible}
-      keyboardReady={props?.keyboardReady}
-    />,
-  );
-  return { onSubmit };
+  render(<InputBox onSubmit={onSubmit} />);
+  const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+  const moodSend = screen.getByRole("button", { name: "心情发送" });
+  const songSwitch = screen.getByRole("button", { name: "切换到精准搜歌" });
+  return { onSubmit, textarea, moodSend, songSwitch };
 }
 
 describe("InputBox", () => {
   it("submits mood mode and drops focus when the active ↑ is tapped", () => {
-    const { onSubmit } = setup();
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-    const moodSend = screen.getByRole("button", { name: "心情发送" });
+    const { onSubmit, textarea, moodSend } = setup();
     textarea.focus();
     fireEvent.change(textarea, { target: { value: "  今天有点累  " } });
 
@@ -37,9 +32,7 @@ describe("InputBox", () => {
   });
 
   it("switches to song mode without submitting, then sends with ♪", () => {
-    const { onSubmit } = setup();
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-    const songSwitch = screen.getByRole("button", { name: "切换到精准搜歌" });
+    const { onSubmit, textarea, songSwitch } = setup();
     fireEvent.change(textarea, { target: { value: "山丘" } });
 
     fireEvent.click(songSwitch);
@@ -54,9 +47,7 @@ describe("InputBox", () => {
   });
 
   it("submits on Enter with the current mode", () => {
-    const { onSubmit } = setup();
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-    const songSwitch = screen.getByRole("button", { name: "切换到精准搜歌" });
+    const { onSubmit, textarea, songSwitch } = setup();
     fireEvent.change(textarea, { target: { value: "想听点安静的" } });
     fireEvent.click(songSwitch);
 
@@ -67,8 +58,7 @@ describe("InputBox", () => {
   });
 
   it("lets Enter commit an IME candidate without sending", () => {
-    const { onSubmit } = setup();
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const { onSubmit, textarea } = setup();
     fireEvent.change(textarea, { target: { value: "xiangting" } });
 
     fireEvent.keyDown(textarea, { key: "Enter", isComposing: true });
@@ -78,53 +68,11 @@ describe("InputBox", () => {
   });
 
   it("keeps Shift+Enter as a newline", () => {
-    const { onSubmit } = setup();
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const { onSubmit, textarea } = setup();
     fireEvent.change(textarea, { target: { value: "第一行" } });
 
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
 
     expect(onSubmit).not.toHaveBeenCalled();
-  });
-
-  it("stays short until the soft keyboard is ready, then reveals send", () => {
-    const { rerender } = render(
-      <InputBox onSubmit={vi.fn()} collapsible keyboardReady={false} />,
-    );
-
-    const collapsed = screen.getByRole("button", { name: "展开输入" });
-    expect(collapsed).toHaveAttribute("data-phase", "idle");
-
-    act(() => {
-      fireEvent.click(collapsed);
-    });
-    expect(lightTap).toHaveBeenCalled();
-    expect(screen.getByTestId("input-box")).toHaveAttribute("data-phase", "pending");
-    expect(screen.queryByRole("button", { name: "心情发送" })).toBeNull();
-
-    rerender(<InputBox onSubmit={vi.fn()} collapsible keyboardReady />);
-    expect(screen.getByTestId("input-box")).toHaveAttribute("data-phase", "composer");
-    expect(screen.getByRole("button", { name: "心情发送" })).toBeTruthy();
-  });
-
-  it("re-collapses after blur when empty and collapsible", () => {
-    vi.useFakeTimers();
-    setup({ collapsible: true, keyboardReady: true });
-
-    act(() => {
-      fireEvent.click(screen.getByRole("button", { name: "展开输入" }));
-    });
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-    act(() => {
-      textarea.focus();
-      textarea.blur();
-      vi.advanceTimersByTime(180);
-    });
-
-    expect(screen.getByRole("button", { name: "展开输入" })).toHaveAttribute(
-      "data-collapsed",
-      "1",
-    );
-    vi.useRealTimers();
   });
 });

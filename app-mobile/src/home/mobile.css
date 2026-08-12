@@ -1388,6 +1388,7 @@ button.lyra-mobile-idle-slogan:hover {
   display: flex;
   align-items: center;
   gap: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .lyra-mobile-input-row .lyra-mobile-input-wrap {
@@ -1827,13 +1828,8 @@ html[data-lyra-immersive="true"] body {
  * a single-line textarea is exactly as tall as the button (see the padding /
  * line-height math below), so the icon reads as vertically centred instead of
  * sitting low in a taller field. align-items:flex-end keeps the button pinned
- * to the bottom edge once the textarea grows past one line.
- *
- * Collapsed ↔ expanded morphs in place (same DOM) so playback hide/show stays
- * silky — never swap the whole control for a different element. */
+ * to the bottom edge once the textarea grows past one line. */
 .lyra-mobile-input-wrap {
-  --lyra-input-motion: 480ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1));
-  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -1844,123 +1840,19 @@ html[data-lyra-immersive="true"] body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  -webkit-tap-highlight-color: transparent;
   transition:
-    border-color var(--lyra-input-motion),
-    box-shadow var(--lyra-input-motion),
-    background-color var(--lyra-input-motion),
-    opacity var(--lyra-input-motion),
-    padding var(--lyra-input-motion),
-    gap var(--lyra-input-motion),
-    border-radius var(--lyra-input-motion);
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    background-color 200ms ease;
 }
 
-/* Song mode keeps the same capsule chrome — mode is signaled only by the
- * brown thumb on the send segment, not an extra outer ring. */
+/* Song mode is signaled only by the brown thumb — no extra outer ring. */
 
-.lyra-mobile-input-wrap:focus-within:not(.lyra-mobile-input-wrap--collapsed):not(
-  .lyra-mobile-input-wrap--pending
-) {
+.lyra-mobile-input-wrap:focus-within {
   border-color: rgba(28, 24, 20, 0.14);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.7),
     0 0 0 3px rgba(28, 24, 20, 0.06);
-}
-
-/* Playback: quiet short strip until the user taps. */
-.lyra-mobile-input-wrap--collapsed {
-  align-items: center;
-  min-height: 32px;
-  gap: 0;
-  padding: 4px 14px;
-  border-radius: 999px;
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.28);
-  box-shadow: none;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  opacity: 0.78;
-  cursor: pointer;
-}
-
-/* Focused, keyboard still rising — keep the short bar so the field stays
- * under the thumb; send chrome waits for keyboardReady. */
-.lyra-mobile-input-wrap--pending {
-  align-items: center;
-  min-height: 32px;
-  gap: 0;
-  padding: 4px 14px;
-  border-radius: 999px;
-}
-
-.lyra-mobile-input-wrap--pending .lyra-mobile-input-collapsed-hint {
-  opacity: 0;
-}
-
-.lyra-mobile-input-wrap--pending .lyra-mobile-input {
-  opacity: 1;
-  pointer-events: auto;
-  caret-color: auto;
-  min-height: 24px;
-  padding: 2px 0;
-  font-size: 15px;
-  line-height: 20px;
-}
-
-.lyra-mobile-input-wrap--pending .lyra-mobile-mode-seg,
-.lyra-mobile-input-wrap--collapsed .lyra-mobile-mode-seg {
-  width: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.lyra-mobile-input-wrap--collapsed:focus-visible {
-  outline: none;
-  border-color: rgba(28, 24, 20, 0.18);
-  box-shadow: 0 0 0 3px rgba(28, 24, 20, 0.08);
-  opacity: 0.92;
-}
-
-.lyra-mobile-input-wrap--collapsed[aria-disabled="true"],
-.lyra-mobile-input-wrap--collapsed:has(textarea:disabled) {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.lyra-mobile-input-wrap--collapsed:not(:has(textarea:disabled)):active {
-  opacity: 0.9;
-  background: rgba(255, 255, 255, 0.34);
-  transition-duration: 120ms;
-}
-
-.lyra-mobile-input-collapsed-hint {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  flex: none;
-  min-width: 0;
-  font-family: var(--lyra-song-family);
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--lyra-color-placeholder);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 360ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1));
-}
-
-.lyra-mobile-input-wrap--collapsed .lyra-mobile-input-collapsed-hint {
-  opacity: 1;
-}
-
-.lyra-mobile-input-wrap--collapsed .lyra-mobile-input {
-  opacity: 0;
-  pointer-events: none;
-  caret-color: transparent;
 }
 
 /* 8 + 22 + 8 = 38px — the send button's exact height, so one line of text and
@@ -1980,18 +1872,10 @@ html[data-lyra-immersive="true"] body {
   line-height: 22px;
   color: var(--lyra-color-song-info);
   display: block;
-  opacity: 1;
-  transition:
-    opacity 320ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
-    min-height var(--lyra-input-motion),
-    padding var(--lyra-input-motion),
-    font-size 280ms ease,
-    line-height 280ms ease;
 }
 
 .lyra-mobile-input::placeholder {
   color: var(--lyra-color-placeholder);
-  transition: opacity 240ms ease, color 280ms ease;
 }
 
 .lyra-mobile-mode-seg {
@@ -2006,15 +1890,9 @@ html[data-lyra-immersive="true"] body {
   border-radius: 999px;
   background: rgba(28, 24, 20, 0.1);
   box-sizing: border-box;
-  overflow: hidden;
-  opacity: 1;
-  transition:
-    width 480ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
-    opacity 360ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
-    background-color 280ms ease;
 }
 
-/* 选中态：完整正圆，带轻微过冲滑到另一格 */
+/* 选中态：完整正圆，在两格之间滑动 */
 .lyra-mobile-mode-seg-thumb {
   position: absolute;
   top: 0;
@@ -2025,13 +1903,11 @@ html[data-lyra-immersive="true"] body {
   background: var(--lyra-control-primary-bg);
   box-shadow: 0 8px 18px rgba(24, 18, 12, 0.22);
   transition:
-    transform 420ms cubic-bezier(0.22, 1.2, 0.36, 1),
-    background-color 360ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
-    box-shadow 360ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
-    opacity 280ms ease;
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 200ms ease,
+    opacity 180ms ease;
   pointer-events: none;
   z-index: 0;
-  will-change: transform;
 }
 
 .lyra-mobile-mode-seg-thumb[data-mode="song"] {
@@ -2054,25 +1930,18 @@ html[data-lyra-immersive="true"] body {
   background: transparent;
   /* 未选中图标加深，别发灰 */
   color: rgba(28, 24, 20, 0.78);
-  -webkit-tap-highlight-color: transparent;
   transition:
-    color 320ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1)),
-    opacity 240ms ease,
-    transform 280ms var(--lyra-ease-zen, cubic-bezier(0.22, 0.61, 0.36, 1));
+    color 180ms ease,
+    opacity 180ms ease,
+    transform 160ms ease;
 }
 
 .lyra-mobile-mode-btn--active {
   color: var(--lyra-control-primary-fg);
 }
 
-/* 切换模式：拇指领舞，按钮几乎不缩；发送才有轻按压 */
-.lyra-mobile-mode-btn:not(.lyra-mobile-mode-btn--active):not(:disabled):active {
-  transform: scale(0.98);
-  color: rgba(28, 24, 20, 0.92);
-}
-
-.lyra-mobile-mode-btn--active:not(:disabled):active {
-  transform: scale(0.94);
+.lyra-mobile-mode-btn:not(:disabled):active {
+  transform: scale(0.92);
 }
 
 /* 不能发送时：选中圆 + 其上 icon 一起变淡，避免只有图标发虚 */
@@ -2085,17 +1954,6 @@ html[data-lyra-immersive="true"] body {
   width: 18px;
   height: 18px;
   display: block;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lyra-mobile-input-wrap,
-  .lyra-mobile-input-collapsed-hint,
-  .lyra-mobile-input,
-  .lyra-mobile-mode-seg,
-  .lyra-mobile-mode-seg-thumb,
-  .lyra-mobile-mode-btn {
-    transition-duration: 0.01ms !important;
-  }
 }
 
 /* ── Motion ─────────────────────────────────────────────────────────────
@@ -2359,14 +2217,8 @@ html[data-lyra-immersive="true"] body {
  * never fights the inline FLIP transform; thinking→playing crosses over
  * on the dock's own 560ms transition. In immersive the higher-specificity
  * stage rule keeps it hidden. */
-/* Playback raise: 20px higher at rest; soft keyboard adds more lift via
- * --lyra-keyboard-inset (set after the keyboard is actually up). */
-.lyra-mobile-dock {
-  transform: translateY(calc(-1 * var(--lyra-keyboard-inset, 0px)));
-}
-
 .lyra-mobile-dock--playing {
-  transform: translateY(calc(-20px - var(--lyra-keyboard-inset, 0px)));
+  transform: translateY(-20px);
 }
 
 /* ── Second device-feedback round (appended) ────────────────────────────
