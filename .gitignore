@@ -41,3 +41,6 @@ reasonix.toml
 
 # iOS derived build output
 app-mobile/ios/App/build-derived/
+
+# Brainstorm visual companion
+.superpowers/
