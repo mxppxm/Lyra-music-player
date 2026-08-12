@@ -70,7 +70,41 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
   const deepLock = digest.trackLock.songs.find(
     (s) => s.maxPlayCount >= 3 || s.lockListenMs >= 180_000,
   );
-  if (deepLock) {
+  const top = digest.listening.tracks[0];
+  const lockIsTop =
+    !!deepLock && !!top && deepLock.songId === top.songId && top.totalListenMs >= 60_000;
+
+  if (lockIsTop && deepLock && top) {
+    // Same song must not appear twice with competing durations.
+    const gapMs = top.totalListenMs - deepLock.lockListenMs;
+    const bits = [`合计约 ${fmtMs(top.totalListenMs)}`];
+    if (deepLock.maxPlayCount >= 2) {
+      bits.push(`最高锁到第 ${deepLock.maxPlayCount} 遍`);
+    }
+    // Only surface lock-only time when it meaningfully differs from total.
+    if (gapMs >= 90_000 && deepLock.lockListenMs >= 60_000) {
+      bits.push(`其中锁定内约 ${fmtMs(deepLock.lockListenMs)}`);
+    }
+    // Avoid "开播 N 次" when it duplicates the loop count.
+    if (
+      top.sessionCount >= 2 &&
+      top.sessionCount !== deepLock.maxPlayCount
+    ) {
+      bits.push(`开播 ${top.sessionCount} 次`);
+    }
+    out.push({
+      id: "listening.top_locked",
+      kind: "pattern",
+      claim: `有一首歌被你故意锁着循环，最高到第 ${deepLock.maxPlayCount || "?"} 遍——也是这一天听得最久的停留。`,
+      evidence: [
+        {
+          ref: `listening.tracks.${top.songId}`,
+          display: bits.join("，"),
+        },
+      ],
+      confidence: "high",
+    });
+  } else if (deepLock) {
     out.push({
       id: "lock.deep",
       kind: "pattern",
@@ -130,8 +164,7 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     });
   }
 
-  const top = digest.listening.tracks[0];
-  if (top && top.totalListenMs >= 60_000) {
+  if (top && top.totalListenMs >= 60_000 && !lockIsTop) {
     out.push({
       id: "listening.top_track",
       kind: "observation",
@@ -191,7 +224,7 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     });
   }
 
-  if (digest.immersion.enterCount >= 2) {
+  if (digest.immersion.enterCount >= 2 && digest.immersion.enterCount <= 12) {
     out.push({
       id: "immersion.used",
       kind: "observation",
@@ -223,5 +256,17 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     });
   }
 
-  return out.slice(0, 8);
+  // Prefer patterns / anomalies over pure count observations; keep the page short.
+  const rank = (c: DailyConclusion): number => {
+    if (c.kind === "pattern" || c.kind === "anomaly") return 0;
+    if (
+      c.id.startsWith("listening.") ||
+      c.id.startsWith("lock.") ||
+      c.id === "meta.input_heavy"
+    ) {
+      return 1;
+    }
+    return 2;
+  };
+  return out.sort((a, b) => rank(a) - rank(b)).slice(0, 4);
 }

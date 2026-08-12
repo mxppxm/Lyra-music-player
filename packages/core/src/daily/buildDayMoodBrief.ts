@@ -9,6 +9,7 @@ import type { DailyDigest } from "./buildDailyDigest";
 import type { DailyConclusion } from "./deriveConclusions";
 import { yesterdayDayKey } from "./dayKey";
 import {
+  padAxesFeel,
   padFeel,
   softPeriodLabel,
   volatilityFeel,
@@ -130,7 +131,12 @@ export function buildDayMoodBrief(input: {
     .slice(0, 5)
     .map((c) => {
       let claim = c.claim;
-      if (c.id === "lock.deep") {
+      if (c.id === "listening.top_locked") {
+        const top = digest.listening.tracks[0];
+        if (top) {
+          claim = `《${titleOf(top.songId)}》被你故意锁着循环，最高到第 ${top.maxLockPlayCount || "?"} 遍——也是这一天听得最久的停留。`;
+        }
+      } else if (c.id === "lock.deep") {
         const deep = digest.trackLock.songs.find(
           (s) => s.maxPlayCount >= 3 || s.lockListenMs >= 180_000,
         );
@@ -165,7 +171,10 @@ export function buildDayMoodBrief(input: {
   if (digest.library.favoriteAdds > 0) {
     behaviorNotes.push(`新收藏 ${digest.library.favoriteAdds} 首`);
   }
-  if (digest.immersion.enterCount > 0) {
+  if (
+    digest.immersion.enterCount >= 2 &&
+    digest.immersion.enterCount <= 12
+  ) {
     behaviorNotes.push(`进入沉浸 ${digest.immersion.enterCount} 次`);
   }
   if (digest.listening.backgroundListenMs >= 60_000) {
@@ -197,21 +206,26 @@ export function formatDayMoodBriefForPrompt(brief: DayMoodBrief): string {
 
   if (brief.mood) {
     const t = brief.mood.trajectory;
+    const axes = padAxesFeel(t.mean_pad);
     lines.push(
       "【情绪感受（已转成人话，不要写数字）】",
-      `- 对话轮数：${t.sample_count}`,
+      `- 互动轮数：${t.sample_count}（含「随便听听」等，不全是文字对话）`,
       `- 起点感觉：${padFeel(t.start_pad)}`,
       `- 终点感觉：${padFeel(t.end_pad)}`,
       `- 整体：${volatilityFeel(t.volatility)}`,
+      `- 愉悦：${axes.pleasure}`,
+      `- 能量：${axes.arousal}`,
+      `- 掌控：${axes.dominance}`,
       "",
-      "【大概落在哪一段（只有真正有对话的时段；不要编造具体几点）】",
+      "【大概落在哪一段（只有真正有互动的时段；条长短＝互动多少，不是心情轻重）】",
     );
     if (brief.mood.periods.length === 0) {
       lines.push("（无）");
     } else {
       for (const p of brief.mood.periods) {
+        const ax = padAxesFeel(p.mean_pad);
         lines.push(
-          `- ${softPeriodLabel(p.period)}（${p.count} 轮）：${padFeel(p.mean_pad)}`,
+          `- ${softPeriodLabel(p.period)}（${p.count} 轮互动）：${padFeel(p.mean_pad)}；${ax.pleasure}，${ax.arousal}，${ax.dominance}`,
         );
       }
     }
@@ -257,6 +271,10 @@ export function formatDayMoodBriefForPrompt(brief: DayMoodBrief): string {
     "",
     '请输出 JSON：{ "opener": "...", "body": "...", "song_note": "...", "forward": "..." }',
     "要求：写这一自然日的心情与音乐；歌名必须来自列表；结合锁定/听时把 song_note 写具体。",
+    "正文写心情弧线与歌为什么陪着走（结合愉悦/能量/掌控的人话），像朋友回忆，不要写成数据清单。",
+    "禁止在正文里罗列次数与秒数（如「随便听听 N 次」「翻歌词 N 次」「沉浸 N 次」「听了 N 分」）；具体数字留给页面其它区块。",
+    "同一首歌只写一个听时口径：优先「合计听了约…」；若有锁定，写「锁着循环到第 N 遍，合计约…」，不要并列两套分钟数——但这些数字优先放进 song_note，不要堆进 body。",
+    "时段轮数多只代表互动更密，不代表心情更重；整体平稳且各时段感受相同时，禁止写「午后更明显/更闷」之类递进。",
     "禁止：PAD 数字、事件名、技术字段；禁止编造素材里没有的具体钟点（例如素材没有 14:xx 就不要写「下午两点」）；不要用「14–18时」这类钟点区间当叙事。",
   );
 

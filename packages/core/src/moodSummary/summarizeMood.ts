@@ -112,6 +112,7 @@ export function aggregateByPeriod(series: PadPoint[]): PeriodAggregate[] {
     buckets.set(id, arr);
   }
   const labelOf = new Map(PERIODS.map((per) => [per.id, per.label]));
+  const order = new Map(PERIODS.map((per, i) => [per.id, i]));
   return [...buckets.entries()]
     .map(([id, pads]) => ({
       period: id,
@@ -123,7 +124,10 @@ export function aggregateByPeriod(series: PadPoint[]): PeriodAggregate[] {
       },
       count: pads.length,
     }))
-    .sort((x, y) => x.period.localeCompare(y.period));
+    .sort(
+      (x, y) =>
+        (order.get(x.period) ?? 99) - (order.get(y.period) ?? 99),
+    );
 }
 
 export type MoodSummaryData = {

@@ -11,6 +11,7 @@ vi.mock("../db/repo/libraryRepo", () => ({
 
 vi.mock("../bilibili/api", () => ({
   searchBilibili: vi.fn(async () => ({ tracks: [] })),
+  searchBilibiliOpen: vi.fn(async () => ({ tracks: [] })),
   searchBilibiliByPlayCount: vi.fn(async () => ({ tracks: [] })),
 }));
 
@@ -41,8 +42,8 @@ beforeEach(() => {
   vi.mocked(libraryRepo.batchInsertTracks).mockResolvedValue(1);
   vi.mocked(bilibiliApi.searchBilibili).mockReset();
   vi.mocked(bilibiliApi.searchBilibili).mockResolvedValue({ tracks: [] });
-  vi.mocked(bilibiliApi.searchBilibiliByPlayCount).mockReset();
-  vi.mocked(bilibiliApi.searchBilibiliByPlayCount).mockResolvedValue({
+  vi.mocked(bilibiliApi.searchBilibiliOpen).mockReset();
+  vi.mocked(bilibiliApi.searchBilibiliOpen).mockResolvedValue({
     tracks: [],
   });
 });
@@ -120,12 +121,12 @@ describe("resolveStrictSongSearch — ♪ precise mode", () => {
     ]);
     const out = await resolveStrictSongSearch("山丘");
     expect(out).toMatchObject({ kind: "song", source: "local" });
-    expect(bilibiliApi.searchBilibiliByPlayCount).not.toHaveBeenCalled();
+    expect(bilibiliApi.searchBilibiliOpen).not.toHaveBeenCalled();
   });
 
-  it("本地未命中 → 通搜播放量，不加频道限定词", async () => {
+  it("本地未命中 → 通搜综合排序，不加频道限定词", async () => {
     const { resolveStrictSongSearch } = await import("./songIntent");
-    vi.mocked(bilibiliApi.searchBilibiliByPlayCount).mockResolvedValue({
+    vi.mocked(bilibiliApi.searchBilibiliOpen).mockResolvedValue({
       tracks: [biliTrack("BV999", "山丘 - 李宗盛")],
     });
     const out = await resolveStrictSongSearch("山丘");
@@ -134,7 +135,7 @@ describe("resolveStrictSongSearch — ♪ precise mode", () => {
       expect(out.source).toBe("bilibili");
       expect(out.song.id).toBe("bili:BV999");
     }
-    expect(bilibiliApi.searchBilibiliByPlayCount).toHaveBeenCalledWith("山丘", 5);
+    expect(bilibiliApi.searchBilibiliOpen).toHaveBeenCalledWith("山丘", 5);
     expect(bilibiliApi.searchBilibili).not.toHaveBeenCalled();
   });
 

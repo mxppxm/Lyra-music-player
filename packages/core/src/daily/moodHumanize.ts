@@ -35,6 +35,48 @@ export function padFeel(pad: PAD): string {
   return `${valence}${energy}`;
 }
 
+/** Soft P/A/D axis labels — still no raw numbers. */
+export function padAxesFeel(pad: PAD): {
+  pleasure: string;
+  arousal: string;
+  dominance: string;
+} {
+  const pleasure =
+    pad.p <= -0.45
+      ? "愉悦偏低"
+      : pad.p <= -0.2
+        ? "愉悦略低"
+        : pad.p < 0.15
+          ? "愉悦平平"
+          : pad.p < 0.4
+            ? "愉悦尚可"
+            : "愉悦偏高";
+
+  const arousal =
+    pad.a <= -0.35
+      ? "能量很低"
+      : pad.a <= -0.1
+        ? "能量偏低"
+        : pad.a < 0.25
+          ? "能量平稳"
+          : pad.a < 0.5
+            ? "能量偏高"
+            : "能量很足";
+
+  const dominance =
+    pad.d <= -0.35
+      ? "掌控感弱"
+      : pad.d <= -0.1
+        ? "有点被动"
+        : pad.d < 0.25
+          ? "掌控一般"
+          : pad.d < 0.5
+            ? "比较主动"
+            : "掌控感强";
+
+  return { pleasure, arousal, dominance };
+}
+
 export function volatilityFeel(v: number): string {
   if (v >= 0.5) return "起伏不小";
   if (v >= 0.2) return "有些波动";

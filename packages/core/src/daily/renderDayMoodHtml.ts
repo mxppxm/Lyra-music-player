@@ -4,6 +4,7 @@ import type { DayMoodBrief } from "./buildDayMoodBrief";
 import type { MoodSummaryJson } from "../moodSummary/MoodSummaryAgent";
 import type { MoodSummaryData, PeriodAggregate } from "../moodSummary/summarizeMood";
 import {
+  padAxesFeel,
   padFeel,
   softPeriodLabel,
   volatilityFeel,
@@ -43,17 +44,18 @@ function renderTrajectoryBand(data: MoodSummaryData): string {
 function renderPeriods(periods: PeriodAggregate[]): string {
   if (periods.length === 0) return "";
   const maxCount = Math.max(...periods.map((p) => p.count), 1);
-  return periods
+  const rows = periods
     .map((p) => {
       const w = Math.max(8, Math.round((p.count / maxCount) * 100));
       const label = softPeriodLabel(p.period);
       return `<div class="period">
-        <span class="period-label">${esc(label)}</span>
+        <span class="period-label">${esc(label)}<span class="period-n">· ${p.count}</span></span>
         <span class="period-bar"><span class="period-fill" style="width:${w}%;background:${padToHsl(p.mean_pad)}"></span></span>
         <span class="period-feel">${esc(padFeel(p.mean_pad))}</span>
       </div>`;
     })
     .join("");
+  return `${rows}<p class="period-hint">条长短表示这段互动多少，不是心情轻重</p>`;
 }
 
 function renderConclusions(items: DayMoodBrief["conclusions"]): string {
@@ -71,6 +73,36 @@ function renderConclusions(items: DayMoodBrief["conclusions"]): string {
   return `<section class="reads">
     <p class="section-label">这一天的读解</p>
     <ul class="read-list">${lis}</ul>
+  </section>`;
+}
+
+function renderPadAxes(mean: { p: number; a: number; d: number }): string {
+  const axes = padAxesFeel(mean);
+  return `<section class="axes">
+    <p class="section-label">心情三轴</p>
+    <div class="axes-row">
+      <div class="stat"><span class="stat-k">愉悦</span><span class="stat-v">${esc(axes.pleasure)}</span></div>
+      <div class="stat"><span class="stat-k">能量</span><span class="stat-v">${esc(axes.arousal)}</span></div>
+      <div class="stat"><span class="stat-k">掌控</span><span class="stat-v">${esc(axes.dominance)}</span></div>
+    </div>
+  </section>`;
+}
+
+function renderSongs(songs: DayMoodBrief["songs"]): string {
+  if (!songs.length) return "";
+  const lis = songs
+    .slice(0, 5)
+    .map((s) => {
+      const who = s.artist ? `<span class="song-artist">${esc(s.artist)}</span>` : "";
+      return `<li class="song-item">
+        <p class="song-title">《${esc(s.title)}》${who}</p>
+        ${s.note ? `<p class="song-note-line">${esc(s.note)}</p>` : ""}
+      </li>`;
+    })
+    .join("");
+  return `<section class="songs">
+    <p class="section-label">这一天的歌</p>
+    <ul class="song-list">${lis}</ul>
   </section>`;
 }
 
@@ -130,10 +162,17 @@ const STYLE = `
   .stat-v{font-weight:500;margin-top:0.15rem;font-size:0.92rem}
   .periods{margin:12px 0 4px}
   .period{display:flex;align-items:center;gap:0.7rem;padding:0.28rem 0}
-  .period-label{width:4.2rem;color:rgba(70,52,32,0.5);font-size:0.85rem}
+  .period-label{width:5.2rem;color:rgba(70,52,32,0.5);font-size:0.85rem}
+  .period-n{color:rgba(70,52,32,0.35);font-size:0.75rem;font-family:"SF Pro Text","PingFang SC",sans-serif}
   .period-bar{flex:1;height:8px;background:rgba(70,52,32,0.08);border-radius:4px;overflow:hidden}
   .period-fill{display:block;height:100%;border-radius:4px;opacity:0.8}
   .period-feel{min-width:5rem;text-align:right;color:rgba(70,52,32,0.45);font-size:0.8rem}
+  .period-hint{
+    margin:6px 0 0;
+    font-size:11px;
+    color:rgba(70,52,32,0.35);
+    font-family:"SF Pro Text","PingFang SC",sans-serif;
+  }
   .reads{margin:26px 0 0}
   .section-label{
     margin:0 0 10px;
@@ -159,6 +198,28 @@ const STYLE = `
     margin:28px 0 0;
     color:rgba(70,52,32,0.5);
   }
+  .axes{margin:22px 0 4px}
+  .axes-row{display:flex;gap:1.4rem;flex-wrap:wrap}
+  .songs{margin:26px 0 0}
+  .song-list{list-style:none;margin:0;padding:0}
+  .song-item{
+    padding:10px 0;
+    border-top:1px solid rgba(70,52,32,0.08);
+  }
+  .song-item:first-child{border-top:none;padding-top:2px}
+  .song-title{margin:0;color:#241e18;font-weight:500}
+  .song-artist{
+    margin-left:0.35rem;
+    font-weight:400;
+    color:rgba(70,52,32,0.45);
+    font-size:0.9em;
+  }
+  .song-note-line{
+    margin:4px 0 0;
+    font-size:12px;
+    color:rgba(70,52,32,0.45);
+    font-family:"SF Pro Text","PingFang SC",sans-serif;
+  }
   .fallback-note{
     margin:10px 0 0;
     font-size:11px;
@@ -182,7 +243,7 @@ export function renderDayMoodHtml(input: {
   const mood = brief.mood;
   const samples = mood?.trajectory.sample_count ?? 0;
   const metaBits = [brief.dayLabel];
-  if (samples > 0) metaBits.push(`${samples} 次对话`);
+  if (samples > 0) metaBits.push(`${samples} 次互动`);
 
   const band =
     mood != null
@@ -200,6 +261,11 @@ export function renderDayMoodHtml(input: {
     mood != null && mood.periods.length
       ? `<section class="periods">${renderPeriods(mood.periods)}</section>`
       : "";
+  const axes =
+    mood != null
+      ? renderPadAxes(mood.trajectory.mean_pad)
+      : "";
+  const songs = renderSongs(brief.songs);
 
   return `<!doctype html>
 <html lang="zh">
@@ -223,8 +289,10 @@ export function renderDayMoodHtml(input: {
     ${summary.song_note ? `<p class="song-note">${esc(summary.song_note)}</p>` : ""}
     ${summary.fallback ? `<p class="fallback-note">（模型暂不可用，这是按事实写下的简记）</p>` : ""}
   </section>
+  ${axes}
   ${stats}
   ${periods}
+  ${songs}
   ${renderConclusions(brief.conclusions)}
   ${summary.forward.trim() ? `<p class="forward">${esc(summary.forward)}</p>` : ""}
   <p class="sign">— Lyra</p>

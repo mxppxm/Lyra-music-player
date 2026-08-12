@@ -59,6 +59,14 @@ describe("renderDayMoodHtml", () => {
     expect(html).toContain(summary.song_note);
     expect(html).toContain("有点闷");
     expect(html).toContain("夜里");
+    expect(html).toContain("次互动");
+    expect(html).toContain("条长短表示这段互动多少");
+    expect(html).toContain("· 2");
+    expect(html).toContain("心情三轴");
+    expect(html).toContain("愉悦");
+    expect(html).toContain("这一天的歌");
+    expect(html).toContain("山丘");
+    expect(html).not.toContain("次对话");
     expect(html).not.toContain("停过的歌");
     expect(html).not.toContain("-0.30");
     expect(html).not.toContain("+0.10");

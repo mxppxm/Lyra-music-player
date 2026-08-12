@@ -131,10 +131,10 @@ export async function searchBilibili(
 }
 
 /**
- * 精准搜歌：按歌名通搜 B 站（不加频道限定词），order=click，
- * 结果再按 play_count 降序。时长过滤与频道搜一致（1.5–10 分钟）。
+ * 精准搜歌：按歌名通搜 B 站（不加频道限定词），综合排序（totalrank，站内默认）。
+ * 保留接口返回顺序，不做本地 play_count 重排。时长过滤与频道搜一致（1.5–10 分钟）。
  */
-export async function searchBilibiliByPlayCount(
+export async function searchBilibiliOpen(
   title: string,
   limit = 5,
 ): Promise<BilibiliSearchResult> {
@@ -143,14 +143,14 @@ export async function searchBilibiliByPlayCount(
 
   const seen = new Set<string>();
   const tracks: BilibiliTrack[] = [];
-  // 通搜按播放量：前几页通常已覆盖头部热门，无需拉满 10 页。
+  // 综合排序前列通常已够用，无需拉满 10 页。
   const MAX_PAGES = 3;
   const pageResults = await Promise.allSettled(
     Array.from({ length: MAX_PAGES }, (_, i) =>
       biliGet("/x/web-interface/search/type", {
         search_type: "video",
         keyword,
-        order: "click",
+        order: "totalrank",
         page: String(i + 1),
       }),
     ),
@@ -158,7 +158,7 @@ export async function searchBilibiliByPlayCount(
 
   for (const page of pageResults) {
     if (page.status !== "fulfilled") {
-      console.warn("[bilibili] play-count search page failed:", page.reason);
+      console.warn("[bilibili] open search page failed:", page.reason);
       continue;
     }
     const data = page.value;
@@ -187,13 +187,17 @@ export async function searchBilibiliByPlayCount(
         tag: String(r.tag ?? ""),
         play_count: Number(r.play ?? 0),
       });
+      if (tracks.length >= limit) break;
     }
+    if (tracks.length >= limit) break;
   }
 
-  tracks.sort((a, b) => b.play_count - a.play_count);
   const sliced = tracks.slice(0, limit);
   return { tracks: sliced, total: sliced.length };
 }
+
+/** @deprecated use {@link searchBilibiliOpen} */
+export const searchBilibiliByPlayCount = searchBilibiliOpen;
 
 export async function getVideoCid(bvid: string): Promise<number> {
   const data = await biliGet("/x/web-interface/view", { bvid });

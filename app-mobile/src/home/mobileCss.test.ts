@@ -64,14 +64,58 @@ describe("mobile progress layout", () => {
 describe("input capsule", () => {
   it("sizes a single line of text to the send button so the icon reads centred", () => {
     const send = pixels(css, /--lyra-send-size:\s*(\d+)px/);
-    const input = ruleBody(".lyra-mobile-input");
+    // Prefer the base textarea rule (pending/collapsed variants also end in
+    // `.lyra-mobile-input {` and would otherwise win the first-index lookup).
+    const inputStart = css.indexOf(
+      "/* 8 + 22 + 8 = 38px — the send button's exact height",
+    );
+    const input = css.slice(inputStart, inputStart + 500);
     const padding = pixels(input, /padding:\s*(\d+)px 0/);
     const lineHeight = pixels(input, /line-height:\s*(\d+)px/);
 
     // Any slack here shows up as dead space above the flex-end button.
     expect(padding * 2 + lineHeight).toBe(send);
-    expect(ruleBody(".lyra-mobile-send-btn")).toMatch(
-      /height:\s*var\(--lyra-send-size\)/,
+    expect(css).toMatch(
+      /^\.lyra-mobile-mode-seg \{[\s\S]*?height:\s*var\(--lyra-send-size\)/m,
+    );
+    expect(css).toMatch(
+      /\.lyra-mobile-input-wrap \{[\s\S]*?padding:\s*6px 6px 6px 16px/,
+    );
+    expect(css).toMatch(/\.lyra-mobile-input-wrap \{[\s\S]*?gap:\s*8px/);
+  });
+
+  it("does not add an extra song-mode outer ring on the input capsule", () => {
+    expect(css).not.toMatch(/\.lyra-mobile-input-wrap--song\s*\{/);
+  });
+
+  it("provides a quieter collapsed capsule for playback", () => {
+    const collapsed = ruleBody(".lyra-mobile-input-wrap--collapsed");
+    expect(collapsed).toMatch(/opacity:\s*0\.78/);
+    expect(collapsed).toMatch(/background:\s*rgba\(255,\s*255,\s*255,\s*0\.28\)/);
+  });
+
+  it("morphs the capsule open/closed instead of hard-cutting DOM", () => {
+    expect(css).toMatch(
+      /\.lyra-mobile-input-wrap \{[\s\S]*?--lyra-input-motion:\s*480ms/,
+    );
+    expect(css).toMatch(
+      /\.lyra-mobile-mode-seg \{[\s\S]*?width 480ms var\(--lyra-ease-zen/,
+    );
+    expect(css).toMatch(
+      /\.lyra-mobile-mode-seg-thumb \{[\s\S]*?transform 420ms cubic-bezier\(0\.22,\s*1\.2/,
+    );
+  });
+
+  it("lifts the dock with keyboard inset after the soft keyboard is up", () => {
+    expect(css).toMatch(
+      /\.lyra-mobile-dock--playing \{[\s\S]*?var\(--lyra-keyboard-inset/,
+    );
+  });
+
+  it("keeps a short pending capsule before send chrome slides out", () => {
+    expect(css).toMatch(/\.lyra-mobile-input-wrap--pending\s*\{/);
+    expect(css).toMatch(
+      /\.lyra-mobile-input-wrap--pending \.lyra-mobile-mode-seg/,
     );
   });
 });

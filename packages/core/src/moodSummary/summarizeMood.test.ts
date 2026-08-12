@@ -103,6 +103,30 @@ describe("aggregateByPeriod", () => {
     expect(night!.count).toBe(1);
     expect(night!.label).toBe("20–23时");
   });
+
+  it("orders periods chronologically, not alphabetically by id", () => {
+    // afternoon / evening / lunch / morning — alphabetical would be wrong
+    const day = "2026-08-12T";
+    const mk = (hh: string) =>
+      turn(new Date(`${day}${hh}:00:00+08:00`).getTime(), {
+        p: -0.25,
+        a: -0.1,
+        d: 0,
+      });
+    const series = extractPadSeries([
+      mk("15"), // afternoon
+      mk("19"), // evening
+      mk("12"), // lunch
+      mk("10"), // morning
+    ]);
+    const agg = aggregateByPeriod(series);
+    expect(agg.map((p) => p.period)).toEqual([
+      "morning",
+      "lunch",
+      "afternoon",
+      "evening",
+    ]);
+  });
 });
 
 describe("summarizeMood", () => {

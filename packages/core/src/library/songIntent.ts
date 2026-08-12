@@ -59,7 +59,7 @@ export async function resolveSongIntent(
 
 /**
  * Explicit song search (♪ mode): local includes first, then open Bilibili
- * search by play count (no studio channel keyword). Never returns mood.
+ * search by comprehensive rank (no studio channel keyword). Never returns mood.
  */
 export async function resolveStrictSongSearch(
   text: string,
@@ -118,13 +118,13 @@ async function searchBilibiliForSong(
   }
 }
 
-/** Open Bilibili search by play count — no channel scope. Persist on hit. */
+/** Open Bilibili search (综合排序) — no channel scope. Persist on hit. */
 async function searchBilibiliOpenForSong(
   title: string,
 ): Promise<LibraryTrack | null> {
   try {
-    const { searchBilibiliByPlayCount } = await import("../bilibili/api");
-    const { tracks } = await searchBilibiliByPlayCount(title, 5);
+    const { searchBilibiliOpen } = await import("../bilibili/api");
+    const { tracks } = await searchBilibiliOpen(title, 5);
     if (tracks.length === 0) return null;
     const track = bilibiliTrackToLibrary(tracks[0]);
     try {

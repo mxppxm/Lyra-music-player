@@ -11,6 +11,7 @@ import { PlayerControls } from "./PlayerControls";
 import { TrackLockButton } from "./TrackLockButton";
 import { HistoryOverlay } from "./HistoryOverlay";
 import { WeatherBadge } from "./WeatherBadge";
+import { useKeyboardInset } from "./useKeyboardInset";
 import type { WeatherContext } from "@lyra/core/recommendation/timeContext";
 import { ProgressBar, progressLabel } from "./ProgressBar";
 import { useProgress } from "../audio/useProgress";
@@ -104,6 +105,8 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   const coverShiftRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const swipeTrackRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement | null>(null);
+  const keyboard = useKeyboardInset({ active: inputFocused });
   const recenterRetryRef = useRef<number | null>(null);
   const recenterRef = useRef<() => void>(() => {});
   const coverPinnedRef = useRef(false);
@@ -978,7 +981,6 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
 
   const isSparseIdle = state.kind === "idle";
   const [idleLeaving, setIdleLeaving] = useState(false);
-  const dockRef = useRef<HTMLDivElement | null>(null);
   const dockFromRectRef = useRef<DOMRect | null>(null);
   const prevIdleRef = useRef(isSparseIdle);
 
@@ -1344,6 +1346,8 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <InputBox
+              collapsible={playing}
+              keyboardReady={keyboard.open}
               onSubmit={handleSubmit}
               onFocus={() => {
                 setInputFocused(true);

@@ -1285,7 +1285,7 @@ export class Orchestrator {
 
   /**
    * ♪ precise song search — never falls back to the mood pipeline.
-   * Local includes → open Bilibili by play count → play; miss emits error only.
+   * Local includes → open Bilibili (综合排序) → play; miss emits error only.
    */
   async onSongSearch(text: string): Promise<void> {
     return this.enqueueTransition(async () => {
