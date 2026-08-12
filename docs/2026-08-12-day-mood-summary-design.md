@@ -1,7 +1,7 @@
 # 按日心情总结（日报 = 日窗 Mood Summary）设计稿
 
 > 日期：2026-08-12  
-> 状态：待用户审阅后进入实现计划  
+> 状态：已实现（P0–P2）  
 > 范围：`@lyra/core` 日报生成主路径 + 移动端历史「日报」Tab 呈现；桌面 `/mood` 窗口对齐  
 > 关联：既有 `docs/daily-digest-design.md`（v2 采集/锁定）、`packages/core/src/moodSummary/*`  
 > **硬约束：不改推荐打分、锁定播放状态机、首页布局样式**

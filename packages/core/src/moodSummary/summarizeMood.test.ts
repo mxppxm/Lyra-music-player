@@ -101,7 +101,7 @@ describe("aggregateByPeriod", () => {
     expect(morning!.count).toBe(1);
     expect(afternoon!.mean_pad.p).toBeCloseTo(0.6);
     expect(night!.count).toBe(1);
-    expect(night!.label).toBe("夜晚");
+    expect(night!.label).toBe("20–23时");
   });
 });
 

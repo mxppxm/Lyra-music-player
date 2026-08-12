@@ -15,5 +15,11 @@ export {
   formatMoodBriefForPrompt,
   type DailyMoodBrief,
 } from "./buildDailyMoodBrief";
+export {
+  buildDayMoodBrief,
+  formatDayMoodBriefForPrompt,
+  type DayMoodBrief,
+} from "./buildDayMoodBrief";
 export { renderDailyHtml } from "./renderDailyHtml";
+export { renderDayMoodHtml } from "./renderDayMoodHtml";
 export { runDaily } from "./runDaily";

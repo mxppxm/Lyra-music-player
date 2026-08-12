@@ -1,13 +1,16 @@
 // moodSummary/MoodSummaryAgent.ts — 心情总结的 LLM 层。
 // 输入：结构化情绪数据（summarizeMood 的输出）+ 最近几首推荐的歌，
-// 输出：一段自然、具体、不套话的中文心情总结（JSON）。
-// 文案规则与 companion 一致：禁止「很适合你/太配了/很搭/完美契合」这类套话。
+// 或按日 DayMoodBrief；输出自然、具体、不套话的中文心情总结（JSON）。
 
 import type { ChatMessage, ModelProvider } from "../types";
 import { resolveProviders, chatWithFallback } from "../agents/route";
 import { parseLooseJson } from "../lib/parseLooseJson";
 import { writeTrace } from "../reasoning/writeTrace";
 import type { MoodSummaryData } from "./summarizeMood";
+import {
+  formatDayMoodBriefForPrompt,
+  type DayMoodBrief,
+} from "../daily/buildDayMoodBrief";
 
 export type MoodSummarySong = {
   song_id: string;
@@ -26,16 +29,18 @@ export type MoodSummaryJson = {
   forward: string;
 };
 
-const MOOD_SUMMARY_SYSTEM_PROMPT = `你叫 Lyra，是用户身边的音乐伙伴。用户让你总结最近一段时间的情绪和音乐。
-你看到的是纯数据（PAD 情绪值：p=愉悦度 a=激活度 d=支配度，范围 [-1,1]；时段聚合；最近推荐过的歌），
-你要把它们翻译成一段人话——像老朋友回忆这几天，而不是报告。
+const MOOD_SUMMARY_SYSTEM_PROMPT = `你叫 Lyra，是用户身边的音乐伙伴。用户让你总结一段时间的情绪和音乐。
+素材已转成中文人话（感受、时段软名、听歌行为、分析要点）。你要写成老朋友回忆这一天，不是报告。
 
 硬性要求：
-1. 全文自然口语，像朋友聊天，禁止报告腔、禁止「数据分析显示」。
-2. 小注必须具体、有细节（结合具体数值/时段/歌名），禁止套话：「很适合你」「太配了」「很搭」「完美契合」「符合你的心情」「听这首就对了」等一律不许出现。
-3. 情绪起伏就直说起伏（哪天低、哪天缓），别平均成一句「还不错」。
-4. 不要编造数据里没有的事实；歌名来自给定的列表。
-5. 只输出 JSON，不要 markdown 代码块。`;
+1. 全文自然口语；禁止报告腔、禁止「数据分析显示」。
+2. 禁止输出 PAD 数字（如 -0.30）、事件名（如 lyra_start）、技术字段。
+3. 禁止编造素材里没有的具体钟点。只有「你说过的话」里的时间（如 10:20）才能当具体钟点；不要写「下午两点」之类除非素材真有对应时间。
+4. 不要用「14–18时」这类钟点区间叙事；可以说「午后」「夜里」等软时段。
+5. 小注必须具体（歌名、锁定/听时等），禁止套话：「很适合你」「太配了」「很搭」「完美契合」「符合你的心情」「听这首就对了」。
+6. 情绪起伏就直说起伏，别平均成「还不错」。
+7. 不要编造数据里没有的事实；歌名来自给定列表。
+8. 只输出 JSON，不要 markdown 代码块。`;
 
 export function buildMoodSummaryUserMessage(
   data: MoodSummaryData,
@@ -74,6 +79,50 @@ export type MoodSummaryAgentInput = {
   songs: MoodSummarySong[];
 };
 
+/** Rule fallback when LLM is unavailable or day is empty. */
+export function fallbackDayMoodSummary(brief: DayMoodBrief): MoodSummaryJson & {
+  fallback: boolean;
+} {
+  if (brief.sparse) {
+    return {
+      opener: "",
+      body: `${brief.dayLabel}几乎没有留下可写的心情痕迹。等你再来听一会儿、说一两句，这里会慢慢有字。`,
+      song_note: "",
+      forward: "",
+      fallback: true,
+    };
+  }
+
+  const labels = [
+    ...new Set(brief.utterances.flatMap((u) => u.labels).filter(Boolean)),
+  ].slice(0, 4);
+  const topSong = brief.songs[0];
+  const labelLine = labels.length
+    ? `情绪里隐约有过「${labels.join("」「")}」。`
+    : brief.mood
+      ? "这一天的情绪没有被说得很满，但听歌还在。"
+      : "这一天的对话不多，听歌的痕迹还在。";
+  const sayLine = brief.utterances
+    .slice(0, 2)
+    .map((u) => `「${u.text}」`)
+    .join("、");
+  const utterBlock = sayLine ? `你提过：${sayLine}。` : "";
+  const songNote = topSong
+    ? `《${topSong.title}》${topSong.note ? `——${topSong.note}` : ""}`
+    : "";
+  const songBody = topSong
+    ? `陪过你的有《${topSong.title}》${brief.songs.length > 1 ? "等" : ""}。`
+    : "";
+
+  return {
+    opener: labels[0] ? `像是带着一点「${labels[0]}」。` : "",
+    body: [labelLine, utterBlock, songBody].filter(Boolean).join("\n\n"),
+    song_note: songNote,
+    forward: "",
+    fallback: true,
+  };
+}
+
 export class MoodSummaryAgent {
   private providers: ModelProvider[];
 
@@ -111,5 +160,51 @@ export class MoodSummaryAgent {
       song_note: String(parsed.song_note ?? ""),
       forward: String(parsed.forward ?? ""),
     };
+  }
+
+  /** Day-scoped summary used by runDaily. */
+  async summarizeDay(
+    brief: DayMoodBrief,
+  ): Promise<MoodSummaryJson & { fallback: boolean }> {
+    if (brief.sparse && brief.songs.length === 0 && brief.utterances.length === 0) {
+      return fallbackDayMoodSummary(brief);
+    }
+
+    const userContent = formatDayMoodBriefForPrompt(brief);
+    const messages: ChatMessage[] = [
+      { role: "system", content: MOOD_SUMMARY_SYSTEM_PROMPT },
+      { role: "user", content: userContent },
+    ];
+
+    try {
+      const t0 = performance.now();
+      const res = await chatWithFallback(this.providers, messages, {
+        max_tokens: 8192,
+        temperature: 0.7,
+        response_format: { type: "json_object" },
+        enable_thinking: false,
+        agent: "mood-summary",
+      });
+      const parsed = parseLooseJson(res.content) as Partial<MoodSummaryJson>;
+      writeTrace({
+        agent_kind: "mood-summary",
+        prompt_text: userContent,
+        raw_response: res.content,
+        parsed_json: parsed,
+        duration_ms: Math.round(performance.now() - t0),
+      });
+      const body = String(parsed.body ?? "").trim();
+      if (!body) return fallbackDayMoodSummary(brief);
+      return {
+        opener: String(parsed.opener ?? ""),
+        body,
+        song_note: String(parsed.song_note ?? ""),
+        forward: String(parsed.forward ?? ""),
+        fallback: false,
+      };
+    } catch (err) {
+      console.warn("[lyra] MoodSummaryAgent.summarizeDay fallback:", err);
+      return fallbackDayMoodSummary(brief);
+    }
   }
 }

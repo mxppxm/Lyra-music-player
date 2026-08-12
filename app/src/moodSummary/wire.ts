@@ -1,27 +1,36 @@
 // moodSummary/wire.ts — 桌面端心情总结入口。
-// 收集最近 turns → core 数据层统计 → MoodSummaryAgent 生成文案 → 渲染 HTML。
-// 由 /mood 命令触发，HTML 交给 App shell 的 WeeklyReader 展示（同一 iframe 阅读器）。
+// 按自然日（默认昨天）取 turns → summarizeMood → MoodSummaryAgent → HTML。
+// 由 /mood 命令触发，HTML 交给 WeeklyReader 展示。
 
 import * as turnRepo from "../db/repo/turnRepo";
 import * as libraryRepo from "../db/repo/libraryRepo";
 import { MoodSummaryAgent, summarizeMood } from "@lyra/core";
 import type { MoodSummarySong } from "@lyra/core/moodSummary/MoodSummaryAgent";
+import { dayKey, dayKeyBounds, yesterdayDayKey } from "@lyra/core/daily/dayKey";
 import { renderMoodSummary } from "./renderer";
 
-/** 最近多少轮对话纳入总结。 */
-const TURN_LIMIT = 60;
-/** 最多带几首最近推荐过的歌进 prompt。 */
+/** 最多带几首当天推荐过的歌进 prompt。 */
 const SONG_LIMIT = 5;
 
-export async function runMoodSummary(): Promise<string | null> {
+export type RunMoodSummaryOpts = {
+  /** 默认昨天；传 "today" 用今天 00:00～此刻。 */
+  which?: "yesterday" | "today";
+};
+
+export async function runMoodSummary(
+  opts: RunMoodSummaryOpts = {},
+): Promise<string | null> {
   try {
-    const turns = await turnRepo.listRecentTurns(TURN_LIMIT);
+    const key =
+      opts.which === "today" ? dayKey() : yesterdayDayKey();
+    const { startMs, endMs } = dayKeyBounds(key);
+    const end = opts.which === "today" ? Date.now() : endMs;
+    const turns = await turnRepo.listTurnsBetween(startMs, end);
     if (!turns || turns.length === 0) return null;
 
     const data = summarizeMood(turns);
     if (!data) return null;
 
-    // 最近推荐过的歌（去重，按时间倒序取前 SONG_LIMIT 首）。
     const songs: MoodSummarySong[] = [];
     const seen = new Set<string>();
     for (const t of [...turns].reverse()) {

@@ -31,6 +31,7 @@ export type DailyDigest = {
     playStarts: number;
     uniqueSongs: number;
     totalListenMs: number;
+    backgroundListenMs: number;
     completes: number;
     skips: number;
     tracks: TrackDayStat[];
@@ -42,6 +43,7 @@ export type DailyDigest = {
     songs: Array<{ songId: string; maxPlayCount: number; lockListenMs: number }>;
   };
   lyrics: { openCount: number };
+  immersion: { enterCount: number };
   library: { favoriteAdds: number; historyOpens: number; historyReplays: number };
   eventCount: number;
   sessionCount: number;
@@ -147,6 +149,7 @@ export function buildDailyDigest(input: {
       playStarts: count("play_start") || sessions.length,
       uniqueSongs: bySong.size,
       totalListenMs: sessions.reduce((a, s) => a + s.listen_ms, 0),
+      backgroundListenMs: sessions.reduce((a, s) => a + s.was_background_ms, 0),
       completes: sessions.filter(
         (s) =>
           s.end_reason === "completed" || s.end_reason === "lock_loop_boundary",
@@ -161,6 +164,7 @@ export function buildDailyDigest(input: {
       songs: lockSongs,
     },
     lyrics: { openCount: count("lyrics_open") },
+    immersion: { enterCount: count("immersive_enter") },
     library: {
       favoriteAdds: count("favorite_add"),
       historyOpens: count("history_open"),

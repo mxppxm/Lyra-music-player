@@ -1,4 +1,4 @@
-// daily/deriveConclusions.ts — 有证据的规则结论
+// daily/deriveConclusions.ts — 有证据的规则结论（用户可读分析，禁事件名）
 
 import type { DailyDigest } from "./buildDailyDigest";
 
@@ -25,11 +25,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "sparse.day",
       kind: "sparse",
-      claim: "这一天几乎没有可记录的使用痕迹。",
+      claim: "这一天几乎没有可写的听歌与对话痕迹。",
       evidence: [
         {
           ref: "eventCount",
-          display: `事件 ${digest.eventCount} · 播放会话 ${digest.sessionCount}`,
+          display: "几乎没有打开或听歌记录",
         },
       ],
       confidence: "high",
@@ -41,11 +41,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "meta.lyra_start_driven",
       kind: "observation",
-      claim: `点了 ${digest.meta.lyraStartCount} 次「随便听听」。`,
+      claim: "更常点「随便听听」，像是把选歌交给我，而不是先把心情说清楚。",
       evidence: [
         {
           ref: "meta.lyraStartCount",
-          display: `lyra_start × ${digest.meta.lyraStartCount}`,
+          display: `「随便听听」点了 ${digest.meta.lyraStartCount} 次`,
         },
       ],
       confidence: "high",
@@ -56,11 +56,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "meta.input_heavy",
       kind: "observation",
-      claim: `主动输入了 ${digest.meta.inputCount} 次。`,
+      claim: "主动说了好几次，这一天的心情有被你自己点出来。",
       evidence: [
         {
           ref: "meta.inputCount",
-          display: `user_input × ${digest.meta.inputCount}`,
+          display: `主动输入 ${digest.meta.inputCount} 次`,
         },
       ],
       confidence: "high",
@@ -74,11 +74,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "lock.deep",
       kind: "pattern",
-      claim: `对一首歌开了锁定播放，最高循环到第 ${deepLock.maxPlayCount || "?"} 遍（锁定内约 ${fmtMs(deepLock.lockListenMs)}）。`,
+      claim: `有一首歌被你故意锁着循环，最高到第 ${deepLock.maxPlayCount || "?"} 遍——不像路过，更像停住。`,
       evidence: [
         {
           ref: `trackLock.songs.${deepLock.songId}`,
-          display: `${deepLock.songId} · 最高遍数 ${deepLock.maxPlayCount} · ${fmtMs(deepLock.lockListenMs)}`,
+          display: `锁定内听了约 ${fmtMs(deepLock.lockListenMs)}，最高第 ${deepLock.maxPlayCount} 遍`,
         },
       ],
       confidence: "high",
@@ -87,11 +87,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "lock.used",
       kind: "observation",
-      claim: `用过锁定播放（开锁 ${digest.trackLock.onCount} 次）。`,
+      claim: "试过锁定播放，但没有真正沉进去循环很久。",
       evidence: [
         {
           ref: "trackLock.onCount",
-          display: `track_lock_on × ${digest.trackLock.onCount}`,
+          display: `开过锁定 ${digest.trackLock.onCount} 次`,
         },
       ],
       confidence: "medium",
@@ -105,11 +105,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "listening.completion_high",
       kind: "observation",
-      claim: "听得比较完整，多数开播都听到了结尾。",
+      claim: "多数歌都听到了尾，听感比较完整，不太像在慌着挑。",
       evidence: [
         {
           ref: "listening.completes",
-          display: `完成 ${completes} / 开播 ${plays}`,
+          display: `${plays} 次开播里听完了 ${completes} 次`,
         },
       ],
       confidence: "medium",
@@ -119,11 +119,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "listening.skip_heavy",
       kind: "observation",
-      claim: "跳过比较多，在挑歌或对推荐不太合拍。",
+      claim: "跳得比较勤，像是在找合拍的那一首，还没落地。",
       evidence: [
         {
           ref: "listening.skips",
-          display: `跳过 ${skips} / 开播 ${plays}`,
+          display: `${plays} 次开播里跳过了 ${skips} 次`,
         },
       ],
       confidence: "medium",
@@ -135,11 +135,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "listening.top_track",
       kind: "observation",
-      claim: `听得最久的歌听了约 ${fmtMs(top.totalListenMs)}（${top.sessionCount} 次开播）。`,
+      claim: `听得最久的那首停了约 ${fmtMs(top.totalListenMs)}，是这一天里最明显的停留。`,
       evidence: [
         {
           ref: `listening.tracks.0`,
-          display: `${top.songId} · ${fmtMs(top.totalListenMs)} · ${top.sessionCount} sessions`,
+          display: `开播 ${top.sessionCount} 次，合计约 ${fmtMs(top.totalListenMs)}`,
         },
       ],
       confidence: "high",
@@ -150,11 +150,11 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "lyrics.engaged",
       kind: "observation",
-      claim: `翻看歌词 ${digest.lyrics.openCount} 次。`,
+      claim: "不止听旋律，还翻过歌词——对词有停留。",
       evidence: [
         {
           ref: "lyrics.openCount",
-          display: `lyrics_open × ${digest.lyrics.openCount}`,
+          display: `翻看歌词 ${digest.lyrics.openCount} 次`,
         },
       ],
       confidence: "high",
@@ -165,14 +165,61 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "library.favorited",
       kind: "observation",
-      claim: `新收藏了 ${digest.library.favoriteAdds} 首歌。`,
+      claim: "有歌被你留下了，不只是听过就算。",
       evidence: [
         {
           ref: "library.favoriteAdds",
-          display: `favorite_add × ${digest.library.favoriteAdds}`,
+          display: `新收藏 ${digest.library.favoriteAdds} 首`,
         },
       ],
       confidence: "high",
+    });
+  }
+
+  if (digest.library.historyReplays >= 1) {
+    out.push({
+      id: "library.history_revisit",
+      kind: "observation",
+      claim: "翻回历史里重听，像是在找回已经熟悉的声音。",
+      evidence: [
+        {
+          ref: "library.historyReplays",
+          display: `历史重播 ${digest.library.historyReplays} 次`,
+        },
+      ],
+      confidence: "high",
+    });
+  }
+
+  if (digest.immersion.enterCount >= 2) {
+    out.push({
+      id: "immersion.used",
+      kind: "observation",
+      claim: "进过几次沉浸，听的时候更愿意待在歌里。",
+      evidence: [
+        {
+          ref: "immersion.enterCount",
+          display: `进入沉浸 ${digest.immersion.enterCount} 次`,
+        },
+      ],
+      confidence: "medium",
+    });
+  }
+
+  const bg = digest.listening.backgroundListenMs;
+  const total = digest.listening.totalListenMs;
+  if (bg >= 120_000 && total > 0 && bg / total >= 0.3) {
+    out.push({
+      id: "immersion.background",
+      kind: "observation",
+      claim: "不少时间歌在后台接着响，像是伴着你做别的事。",
+      evidence: [
+        {
+          ref: "listening.backgroundListenMs",
+          display: `后台续播约 ${fmtMs(bg)}（总听约 ${fmtMs(total)}）`,
+        },
+      ],
+      confidence: "medium",
     });
   }
 

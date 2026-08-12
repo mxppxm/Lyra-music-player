@@ -14,6 +14,7 @@ import { IconShare } from "./icons";
 import { lightTap } from "./immersiveStatusBar";
 import { shareDailyImage } from "./shareDailyImage";
 import { splitDailyHtml } from "./splitDailyHtml";
+import { useSheetScrollLock } from "./useSheetScrollLock";
 
 export type DailyDigestSheetProps = {
   open: boolean;
@@ -102,10 +103,14 @@ export function DailyDigestSheet({
   const revealedRef = useRef(false);
   const closingRef = useRef(false);
   const captureRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   expandedRef.current = expanded;
   revealedRef.current = revealed;
   const { styles, body, bodyClass } = splitDailyHtml(html);
+
+  // Block scroll chaining into History / home while the sheet is mounted.
+  useSheetScrollLock(mounted, scrollRef);
 
   useEffect(() => {
     if (!open) {
@@ -299,7 +304,15 @@ export function DailyDigestSheet({
               ✕
             </button>
           </div>
-          <div className="lyra-mobile-daily-sheet__scroll">
+          <div
+            ref={scrollRef}
+            className="lyra-mobile-daily-sheet__scroll"
+            data-testid="daily-sheet-scroll"
+            onTouchMove={(e) => {
+              // Belt-and-suspenders: keep gesture inside this pane on iOS.
+              e.stopPropagation();
+            }}
+          >
             <div
               ref={captureRef}
               className="lyra-mobile-daily-sheet__capture"

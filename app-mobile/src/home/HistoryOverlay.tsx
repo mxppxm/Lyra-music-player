@@ -326,6 +326,8 @@ export function HistoryOverlay({
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (!open) return;
+      // Daily sheet is open — never start History drag-to-dismiss.
+      if (dailyOpen) return;
       const target = e.target as HTMLElement;
       if (
         target.closest(".lyra-mobile-history__pages") ||
@@ -342,7 +344,7 @@ export function HistoryOverlay({
       setIsDragging(true);
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     },
-    [open],
+    [open, dailyOpen],
   );
 
   const handlePagesScroll = useCallback(() => {
@@ -533,7 +535,12 @@ export function HistoryOverlay({
   // in-tree overlay (even at 200) still paints under .lyra-mobile-brand-layer.
   return createPortal(
     <div
-      className="lyra-mobile-history"
+      className={[
+        "lyra-mobile-history",
+        dailyOpen ? "lyra-mobile-history--daily-locked" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="dialog"
       aria-label="历史与收藏"
       data-testid="history-overlay"
