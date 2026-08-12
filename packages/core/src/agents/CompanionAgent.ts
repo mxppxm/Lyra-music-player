@@ -8,6 +8,7 @@ import type { ChosenSong, CompanionInput } from "./types";
 import type { MusicProfile } from "../types/musicProfile";
 import { shuffle } from "../recommendation";
 import { formatAmbientFactsForCompanion } from "../recommendation/timeContext";
+import { lockDepthGuidance } from "./lockDepthGuidance";
 
 const SHIFTS = ["接住", "点燃", "陪着", "打断"] as const;
 type Shift = (typeof SHIFTS)[number];
@@ -156,8 +157,9 @@ function buildBrief(i: CompanionInput): string {
       `锁定播放模式：用户正在循环同一首歌（候选已固定，song_id 必须仍是当前这首）。这是本曲锁定播放的第 ${i.lockPlayCount} 遍。`,
     );
     parts.push(
-      "你的任务不是换歌，只是重写 rationale：必须换一个全新切入点（编曲细节 / 人声气息 / 某句歌词意象 / 时间氛围 / 和她的关系），禁止同义改写、禁止微调旧句、禁止再复述情绪标签。",
+      "你的任务不是换歌，只是重写 rationale：写越听越深的心理旁白，不要拆歌。",
     );
+    parts.push(lockDepthGuidance(i.lockPlayCount));
     const recent = (i.lockRecentRationales?.length
       ? i.lockRecentRationales
       : i.previousRationale

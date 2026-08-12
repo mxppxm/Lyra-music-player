@@ -203,7 +203,7 @@ describe("CompanionAgent.choose", () => {
     expect(userMsg.indexOf("你对她的记忆:")).toBeLessThan(userMsg.indexOf("候选歌单("));
   });
 
-  it("includes lock-play brief when lockPlayCount is set", async () => {
+  it("includes lock-play psych brief (no song-dissection angles) at count 3", async () => {
     const p = stub(validResponse);
     const a = new CompanionAgent({ provider: p });
     await a.choose({
@@ -218,10 +218,41 @@ describe("CompanionAgent.choose", () => {
     const userMsg = msgs[1].content as string;
     expect(userMsg).toMatch(/锁定播放/);
     expect(userMsg).toMatch(/第 3 遍/);
+    expect(userMsg).toMatch(/下探|确认|回避/);
+    expect(userMsg).toMatch(/修辞/);
     expect(userMsg).toContain("第一遍小注");
     expect(userMsg).toContain("上一句文案");
-    expect(userMsg).toMatch(/角度全部禁用/);
+    expect(userMsg).toMatch(/角度全部禁用|已经写过/);
     expect(userMsg).not.toMatch(/上一首刚播完/);
+    expect(userMsg).not.toMatch(/编曲细节/);
+    expect(userMsg).not.toMatch(/某句歌词意象/);
+  });
+
+  it("lock-play brief forbids questions at count 1", async () => {
+    const p = stub(validResponse);
+    const a = new CompanionAgent({ provider: p });
+    await a.choose({
+      ...input,
+      candidates: [candidates[0]!],
+      lockPlayCount: 1,
+    });
+    const userMsg = (p.chat as any).mock.calls[0][0][1].content as string;
+    expect(userMsg).toMatch(/禁止发问|不要发问|不许发问/);
+    expect(userMsg).not.toMatch(/可回的真问/);
+  });
+
+  it("lock-play brief allows rare real question at count 8+", async () => {
+    const p = stub(validResponse);
+    const a = new CompanionAgent({ provider: p });
+    await a.choose({
+      ...input,
+      candidates: [candidates[0]!],
+      lockPlayCount: 9,
+      lockRecentRationales: ["还在转。"],
+    });
+    const userMsg = (p.chat as any).mock.calls[0][0][1].content as string;
+    expect(userMsg).toMatch(/真问|可回/);
+    expect(userMsg).not.toMatch(/编曲细节/);
   });
 
   it("feeds raw clock + weather facts, not period labels like 清晨/午休", async () => {
