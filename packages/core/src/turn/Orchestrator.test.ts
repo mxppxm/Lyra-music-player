@@ -9,6 +9,10 @@ import * as appendSalientMod from "../memory/appendSalient";
 // ── Mock song-name intent resolution (default: not a song) ───────────────────
 vi.mock("../library/songIntent", () => ({
   resolveSongIntent: vi.fn(async () => ({ kind: "mood" as const, reason: "default" })),
+  resolveStrictSongSearch: vi.fn(async () => ({
+    kind: "miss" as const,
+    reason: "default",
+  })),
 }));
 import * as songIntentMod from "../library/songIntent";
 
@@ -46,7 +50,23 @@ vi.mock("../db/repo/musicProfileRepo", async (importOriginal) => {
   return {
     ...actual,
     getBatch: vi.fn(async () => new Map()),
+    getByTrackId: vi.fn(async () => null),
+    upsert: vi.fn(async () => {}),
     getFeedbackStats: vi.fn(async () => new Map()),
+  };
+});
+
+vi.mock("../agents/MusicProfileAgent", () => ({
+  MusicProfileAgent: class {
+    analyze = vi.fn(async () => null);
+  },
+}));
+
+vi.mock("../recommendation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../recommendation")>();
+  return {
+    ...actual,
+    scheduleBackgroundProfiling: vi.fn(),
   };
 });
 
@@ -122,6 +142,11 @@ beforeEach(() => {
   vi.mocked(setBreathing).mockClear();
   vi.mocked(songIntentMod.resolveSongIntent).mockReset();
   vi.mocked(songIntentMod.resolveSongIntent).mockResolvedValue({ kind: "mood", reason: "default" });
+  vi.mocked(songIntentMod.resolveStrictSongSearch).mockReset();
+  vi.mocked(songIntentMod.resolveStrictSongSearch).mockResolvedValue({
+    kind: "miss",
+    reason: "default",
+  });
 });
 
 describe("Orchestrator.onUserInput happy path", () => {
@@ -342,6 +367,122 @@ describe("Orchestrator.onUserInput — song-name intent (resolveSongIntent)", ()
     expect(deps.turnRepo.insertTurn).toHaveBeenCalledTimes(2);
     expect(deps.turnRepo.updateTurn).toHaveBeenCalled();
     expect(deps.audio.playFile).toHaveBeenLastCalledWith("/y.mp3", null);
+  });
+});
+
+describe("Orchestrator.onSongSearch — precise ♪ mode", () => {
+  it("本地命中：播放且不把歌名交给 EmotionAgent", async () => {
+    const deps = makeDeps();
+    const track: LibraryTrack = {
+      id: "t1",
+      path: "/x.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "《山丘》",
+    };
+    vi.mocked(songIntentMod.resolveStrictSongSearch).mockResolvedValue({
+      kind: "song",
+      song: track,
+      source: "local",
+    });
+    const orc = new Orchestrator(deps as any);
+    const seen: string[] = [];
+    orc.subscribe((s) => seen.push(s.kind));
+    await orc.onSongSearch("山丘");
+    expect(deps.emotion.analyze).not.toHaveBeenCalled();
+    expect(deps.audio.playFile).toHaveBeenCalledWith("/x.mp3", null);
+    expect(seen).toEqual(["thinking", "playing"]);
+    const inserted = (deps.turnRepo.insertTurn as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as DialogueTurn;
+    expect(inserted.current_emotion.labels).toEqual([]);
+  });
+
+  it("未命中：只报错，不进心情选歌", async () => {
+    const deps = makeDeps();
+    vi.mocked(songIntentMod.resolveStrictSongSearch).mockResolvedValue({
+      kind: "miss",
+      reason: "none",
+    });
+    const orc = new Orchestrator(deps as any);
+    let last: { kind: string; message?: string } | null = null;
+    orc.subscribe((s) => {
+      last = s as { kind: string; message?: string };
+    });
+    await orc.onSongSearch("没有的歌");
+    expect(last?.kind).toBe("error");
+    expect(last?.message).toMatch(/没找到/);
+    expect(deps.emotion.analyze).not.toHaveBeenCalled();
+    expect(deps.companion.choose).not.toHaveBeenCalled();
+    expect(deps.audio.playFile).not.toHaveBeenCalled();
+  });
+
+  it("已有画像：锚点来自 mood 标签，prefetch 不带歌名伪目标", async () => {
+    const profile = {
+      track_id: "t1",
+      analyzed_at: 1,
+      genre: [],
+      mood: ["怀旧", "温柔"],
+      energy_level: "low" as const,
+      tempo_feel: "slow",
+      time_color: "",
+      space_color: "",
+      instrumentation: [],
+      vocal_style: "",
+      lyrical_themes: [],
+      emotional_curve: "",
+      best_for: ["深夜独处"],
+      pad_estimate: { p: -0.2, a: -0.4, d: 0.1 },
+      analysis_version: 2,
+    };
+    const musicProfileRepo = await import("../db/repo/musicProfileRepo");
+    vi.mocked(musicProfileRepo.getBatch).mockResolvedValue(
+      new Map([["t1", profile]]),
+    );
+    vi.mocked(musicProfileRepo.getByTrackId).mockResolvedValue(profile);
+
+    const deps = makeDeps({
+      resolvePlayUrl: vi.fn(async () => "http://x/next.mp3"),
+    });
+    const track: LibraryTrack = {
+      id: "t1",
+      path: "/x.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "《山丘》",
+    };
+    const t2: LibraryTrack = {
+      id: "t2",
+      path: "/y.mp3",
+      origin: "local",
+      added_at: 0,
+      title: "T2",
+    };
+    vi.mocked(songIntentMod.resolveStrictSongSearch).mockResolvedValue({
+      kind: "song",
+      song: track,
+      source: "local",
+    });
+    const orc = new Orchestrator(deps as any);
+    await orc.onSongSearch("山丘");
+
+    (deps.library.prefilter as ReturnType<typeof vi.fn>).mockResolvedValue([t2]);
+    (deps.companion.choose as ReturnType<typeof vi.fn>).mockResolvedValue({
+      song_id: "t2",
+      target_profile: "x",
+      rationale: "延续温柔",
+      needed_shift: "接住" as const,
+    });
+    await orc.prefetchMore(1);
+    const prefetchCall = (deps.library.prefilter as ReturnType<typeof vi.fn>).mock
+      .calls.at(-1) as unknown as [
+      string,
+      { p: number; a: number; d: number },
+      number,
+      { moodLocked?: boolean },
+    ];
+    expect(prefetchCall[0]).toContain("怀旧");
+    expect(prefetchCall[0]).not.toContain("山丘");
+    expect(prefetchCall[3].moodLocked).toBe(true);
   });
 });
 

@@ -1042,9 +1042,13 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
     void orchestrator.onLyraStart();
   };
 
-  const handleSubmit = (text: string) => {
+  const handleSubmit = (text: string, mode: "mood" | "song" = "mood") => {
     dockFromRectRef.current = dockRef.current?.getBoundingClientRect() ?? null;
     if (isSparseIdle) setIdleLeaving(true);
+    if (mode === "song") {
+      void orchestrator.onSongSearch(text);
+      return;
+    }
     void submit(text);
   };
 

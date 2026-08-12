@@ -7,6 +7,11 @@ export type SongIntentResult =
   | { kind: "song"; song: LibraryTrack; source: "local" | "bilibili" }
   | { kind: "mood"; reason?: string };
 
+/** Explicit ♪ search — never falls back to mood. */
+export type StrictSongSearchResult =
+  | { kind: "song"; song: LibraryTrack; source: "local" | "bilibili" }
+  | { kind: "miss"; reason: string };
+
 /**
  * Try to resolve a user utterance as a song-name request.
  *
@@ -53,6 +58,32 @@ export async function resolveSongIntent(
 }
 
 /**
+ * Explicit song search (♪ mode): local includes first, then open Bilibili
+ * search by play count (no studio channel keyword). Never returns mood.
+ */
+export async function resolveStrictSongSearch(
+  text: string,
+): Promise<StrictSongSearchResult> {
+  const trimmed = text.trim();
+  if (!trimmed) return { kind: "miss", reason: "empty input" };
+
+  const book = trimmed.match(/《([^》]+)》/);
+  const candidate = (book?.[1] ?? trimmed).trim();
+  if (candidate.length < 1) return { kind: "miss", reason: "empty title" };
+
+  const local = await libraryRepo.findByTitle([candidate, trimmed].filter(
+    (s, i, arr) => s.length >= 2 && arr.indexOf(s) === i,
+  ));
+  if (local.length > 0) {
+    return { kind: "song", song: local[0], source: "local" };
+  }
+
+  const bili = await searchBilibiliOpenForSong(candidate);
+  if (bili) return { kind: "song", song: bili, source: "bilibili" };
+  return { kind: "miss", reason: `no local/B站 match for ${candidate}` };
+}
+
+/**
  * Bilibili fallback for a song request — always searches within the
  * 百万豪装录音棚 channel, appending the song title via forceKeyword so a
  * local miss still lands on the requested song instead of an arbitrary
@@ -83,6 +114,27 @@ async function searchBilibiliForSong(
     return track;
   } catch (err) {
     console.warn("[lyra] Bilibili song search failed:", err);
+    return null;
+  }
+}
+
+/** Open Bilibili search by play count — no channel scope. Persist on hit. */
+async function searchBilibiliOpenForSong(
+  title: string,
+): Promise<LibraryTrack | null> {
+  try {
+    const { searchBilibiliByPlayCount } = await import("../bilibili/api");
+    const { tracks } = await searchBilibiliByPlayCount(title, 5);
+    if (tracks.length === 0) return null;
+    const track = bilibiliTrackToLibrary(tracks[0]);
+    try {
+      await libraryRepo.batchInsertTracks([track]);
+    } catch (err) {
+      console.warn("[lyra] persist open Bilibili song into library failed:", err);
+    }
+    return track;
+  } catch (err) {
+    console.warn("[lyra] open Bilibili song search failed:", err);
     return null;
   }
 }

@@ -11,6 +11,7 @@ vi.mock("../db/repo/libraryRepo", () => ({
 
 vi.mock("../bilibili/api", () => ({
   searchBilibili: vi.fn(async () => ({ tracks: [] })),
+  searchBilibiliByPlayCount: vi.fn(async () => ({ tracks: [] })),
 }));
 
 const localTrack = (id: string, title: string): LibraryTrack => ({
@@ -40,6 +41,10 @@ beforeEach(() => {
   vi.mocked(libraryRepo.batchInsertTracks).mockResolvedValue(1);
   vi.mocked(bilibiliApi.searchBilibili).mockReset();
   vi.mocked(bilibiliApi.searchBilibili).mockResolvedValue({ tracks: [] });
+  vi.mocked(bilibiliApi.searchBilibiliByPlayCount).mockReset();
+  vi.mocked(bilibiliApi.searchBilibiliByPlayCount).mockResolvedValue({
+    tracks: [],
+  });
 });
 
 describe("resolveSongIntent — local match", () => {
@@ -104,5 +109,38 @@ describe("resolveSongIntent — Bilibili fallback", () => {
     const out = await resolveSongIntent("《山丘》");
     expect(out.kind).toBe("mood");
     expect(libraryRepo.batchInsertTracks).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveStrictSongSearch — ♪ precise mode", () => {
+  it("本地 includes 命中", async () => {
+    const { resolveStrictSongSearch } = await import("./songIntent");
+    vi.mocked(libraryRepo.findByTitle).mockResolvedValue([
+      localTrack("bili:BV1", "李宗盛《山丘》"),
+    ]);
+    const out = await resolveStrictSongSearch("山丘");
+    expect(out).toMatchObject({ kind: "song", source: "local" });
+    expect(bilibiliApi.searchBilibiliByPlayCount).not.toHaveBeenCalled();
+  });
+
+  it("本地未命中 → 通搜播放量，不加频道限定词", async () => {
+    const { resolveStrictSongSearch } = await import("./songIntent");
+    vi.mocked(bilibiliApi.searchBilibiliByPlayCount).mockResolvedValue({
+      tracks: [biliTrack("BV999", "山丘 - 李宗盛")],
+    });
+    const out = await resolveStrictSongSearch("山丘");
+    expect(out.kind).toBe("song");
+    if (out.kind === "song") {
+      expect(out.source).toBe("bilibili");
+      expect(out.song.id).toBe("bili:BV999");
+    }
+    expect(bilibiliApi.searchBilibiliByPlayCount).toHaveBeenCalledWith("山丘", 5);
+    expect(bilibiliApi.searchBilibili).not.toHaveBeenCalled();
+  });
+
+  it("双未命中 → miss，不回落 mood", async () => {
+    const { resolveStrictSongSearch } = await import("./songIntent");
+    const out = await resolveStrictSongSearch("根本没有的歌xyz");
+    expect(out.kind).toBe("miss");
   });
 });

@@ -25,6 +25,7 @@ import * as libraryRepo from "../db/repo/libraryRepo";
 import { parseArtistIntent } from "../library/parseArtistIntent";
 import {
   resolveSongIntent,
+  resolveStrictSongSearch,
 } from "../library/songIntent";
 import { songDisplayArtist, songDisplayTitle } from "../library/display";
 import { resolveAndPersistLyrics } from "../library/resolveLyrics";
@@ -33,6 +34,9 @@ import {
   playSessionTracker,
   type PlaySource,
 } from "../daily/PlaySessionTracker";
+import { scheduleBackgroundProfiling } from "../recommendation";
+import type { MusicProfile } from "../types/musicProfile";
+import { profileNeedsRefresh } from "../types/musicProfile";
 import { looksLikePartialLyrics } from "../agents/LyricsAgent";
 
 export type PrefetchNextResult = {
@@ -796,6 +800,9 @@ export class Orchestrator {
    * locks sessionMoodAnchor so subsequent prefetch / auto-advance continue
    * around that mood. If analysis fails, still play the song and degrade the
    * anchor to the raw input text (option A).
+   *
+   * Note: ♪ precise search uses {@link playSongFromStrictSearch} instead —
+   * it never treats the query string as mood.
    */
   private async playSongByIntent(
     song: LibraryTrack,
@@ -913,6 +920,165 @@ export class Orchestrator {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[lyra] playSongByIntent error:", err);
       this.emit({ kind: "error", message: msg });
+    }
+  }
+
+  /**
+   * ♪ precise search playback: never EmotionAgent-analyzes the query as mood.
+   * Locks sessionMoodAnchor from MusicProfile (async, strategy A) so next
+   * songs follow the track's tags.
+   */
+  private async playSongFromStrictSearch(
+    song: LibraryTrack,
+    text: string,
+  ): Promise<void> {
+    const clock = this.deps.clock ?? Date.now;
+    const idGen = this.deps.idGen ?? (() => crypto.randomUUID());
+
+    try {
+      const { companion, soulStore } = this.deps;
+      const soul = await soulStore.load();
+
+      // Soft mood until profile injects — never use the song-name string.
+      const mood: CurrentEmotion = {
+        pad: soul.dynamic_mood.current_pad,
+        labels: [],
+        confidence: 0.3,
+        source: "emotion-agent-inferred",
+      };
+      this.sessionMoodAnchor = null;
+      let moodLocked = false;
+
+      let rationale = "";
+      try {
+        const profileMap = await musicProfileRepo.getBatch([song.id]);
+        const existing = profileMap.get(song.id) ?? null;
+        if (existing && !profileNeedsRefresh(existing)) {
+          this.injectAnchorFromProfile(existing);
+          moodLocked = true;
+          if (existing.mood.length > 0) {
+            mood.labels = [...existing.mood];
+            mood.pad = existing.pad_estimate;
+            mood.confidence = 0.7;
+          }
+        }
+        const { livingPortrait, topFacts } = getMemoryContext();
+        const recCtx = await buildRecommendationContext(soul, {
+          emotionLabels: mood.labels,
+          moodLocked,
+          weather: this.weatherContext ?? undefined,
+        });
+        const chosen = await companion.choose({
+          userUtterance: text,
+          currentEmotion: mood,
+          soul,
+          candidates: [
+            { ...song, musicProfile: existing },
+          ],
+          livingPortrait,
+          topFacts,
+          recommendation: recCtx,
+        });
+        rationale = chosen.rationale;
+      } catch {
+        /* companion failed — template below */
+      }
+      if (!rationale) {
+        const display =
+          song.title?.match(/《([^》]+)》/)?.[1] ??
+          song.title ??
+          "这首歌";
+        rationale = `你点的《${display}》`;
+      }
+
+      const turn: DialogueTurn = {
+        id: idGen(),
+        timestamp: clock(),
+        current_emotion: mood,
+        user_utterance: { modality: "text", content: text },
+        agent_response: { song_id: song.id, rationale },
+        user_reaction: {
+          behavioral: {
+            listen_duration_ms: 0,
+            completed: false,
+            skipped: false,
+            repeated: 0,
+            volume_delta: 0,
+          },
+          silence_positive: false,
+        },
+        emotion_delta: ZERO_PAD,
+      };
+      await this.deps.turnRepo.insertTurn(turn);
+
+      try {
+        await this.deps.audio.playFile(song.path, song.duration_ms ?? null);
+      } catch (err) {
+        console.error("[lyra] playSongFromStrictSearch playback failed:", err);
+        this.emit({
+          kind: "error",
+          message: "播放失败，检查下网络或音频设备？",
+        });
+        return;
+      }
+
+      this.currentTurn = turn;
+      this.currentSong = song;
+      this.pendingEvents = [];
+      this.rationaleBySongId.set(song.id, rationale);
+      this.notePlayTelemetry(song, turn.id, "song_intent");
+      this.emit({ kind: "playing", turn, song });
+
+      // Strategy A: play first; inject anchor when profile is ready.
+      void this.ensureProfileAnchor(song);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[lyra] playSongFromStrictSearch error:", err);
+      this.emit({ kind: "error", message: msg });
+    }
+  }
+
+  private injectAnchorFromProfile(profile: MusicProfile): void {
+    const labels = [
+      ...profile.mood,
+      ...profile.best_for.slice(0, 2),
+    ].filter((s, i, arr) => s.trim().length > 0 && arr.indexOf(s) === i);
+    if (labels.length === 0) return;
+    this.sessionMoodAnchor = {
+      labels: [...labels],
+      pseudoTarget: labels.join(" "),
+      locked: true,
+    };
+  }
+
+  /** Background: ensure MusicProfile exists, then lock mood anchor from it. */
+  private async ensureProfileAnchor(song: LibraryTrack): Promise<void> {
+    try {
+      let profile = await musicProfileRepo.getByTrackId(song.id);
+      if (!profile || profileNeedsRefresh(profile)) {
+        scheduleBackgroundProfiling({
+          priorityTrackIds: [song.id],
+          limit: 1,
+        });
+        try {
+          const { MusicProfileAgent } = await import("../agents/MusicProfileAgent");
+          const { trackToProfileInput } = await import(
+            "../agents/buildProfileAnalyzeInput"
+          );
+          const agent = new MusicProfileAgent();
+          const analyzed = await agent.analyze(trackToProfileInput(song));
+          if (analyzed) {
+            analyzed.track_id = song.id;
+            await musicProfileRepo.upsert(analyzed);
+            profile = analyzed;
+          }
+        } catch (err) {
+          console.warn("[lyra] priority profile analyze failed:", err);
+        }
+      }
+      if (profile) this.injectAnchorFromProfile(profile);
+    } catch (err) {
+      console.warn("[lyra] ensureProfileAnchor failed:", err);
     }
   }
 
@@ -1115,6 +1281,47 @@ export class Orchestrator {
     } finally {
       this.proactiveInFlight = false;
     }
+  }
+
+  /**
+   * ♪ precise song search — never falls back to the mood pipeline.
+   * Local includes → open Bilibili by play count → play; miss emits error only.
+   */
+  async onSongSearch(text: string): Promise<void> {
+    return this.enqueueTransition(async () => {
+      this.clearTrackLock("user_input");
+      this.lastIntent = { kind: "text", text };
+      const trimmed = text.trim();
+      if (!trimmed) return;
+
+      this.emit({ kind: "thinking", user_utterance: trimmed });
+      const resolved = await resolveStrictSongSearch(trimmed);
+      if (resolved.kind === "miss") {
+        void trackActivity({
+          name: "song_search_miss",
+          props: { query: trimmed, reason: resolved.reason },
+        });
+        this.emit({ kind: "error", message: "没找到这首歌" });
+        return;
+      }
+
+      void trackActivity({
+        name: "song_search_hit",
+        songId: resolved.song.id,
+        props: { query: trimmed, source: resolved.source },
+      });
+
+      if (this.currentTurn) {
+        this.pendingEvents.push({ kind: "skip" });
+        await this.finalisePreviousTurn(
+          undefined,
+          this.currentTurn.current_emotion.pad,
+        );
+      }
+      this.nativeQueuePlan = [];
+      this.activeArtistFilter = null;
+      await this.playSongFromStrictSearch(resolved.song, trimmed);
+    });
   }
 
   async onUserInput(text: string): Promise<void> {

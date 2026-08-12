@@ -6,31 +6,46 @@ function setup() {
   const onSubmit = vi.fn();
   render(<InputBox onSubmit={onSubmit} />);
   const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
-  const send = screen.getByRole("button", { name: "发送" });
-  return { onSubmit, textarea, send };
+  const moodSend = screen.getByRole("button", { name: "心情发送" });
+  const songSwitch = screen.getByRole("button", { name: "切换到精准搜歌" });
+  return { onSubmit, textarea, moodSend, songSwitch };
 }
 
 describe("InputBox", () => {
-  it("submits and drops focus when the send button is tapped", () => {
-    const { onSubmit, textarea, send } = setup();
+  it("submits mood mode and drops focus when the active ↑ is tapped", () => {
+    const { onSubmit, textarea, moodSend } = setup();
     textarea.focus();
     fireEvent.change(textarea, { target: { value: "  今天有点累  " } });
 
-    fireEvent.click(send);
+    fireEvent.click(moodSend);
 
-    expect(onSubmit).toHaveBeenCalledWith("今天有点累");
+    expect(onSubmit).toHaveBeenCalledWith("今天有点累", "mood");
     expect(textarea.value).toBe("");
-    // Focus is what keeps the iOS soft keyboard on screen after sending.
     expect(document.activeElement).not.toBe(textarea);
   });
 
-  it("submits on Enter instead of inserting a newline", () => {
-    const { onSubmit, textarea } = setup();
+  it("switches to song mode without submitting, then sends with ♪", () => {
+    const { onSubmit, textarea, songSwitch } = setup();
+    fireEvent.change(textarea, { target: { value: "山丘" } });
+
+    fireEvent.click(songSwitch);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId("input-box")).toHaveAttribute("data-mode", "song");
+    expect(textarea.placeholder).toMatch(/歌名/);
+
+    const songSend = screen.getByRole("button", { name: "精准搜歌发送" });
+    fireEvent.click(songSend);
+    expect(onSubmit).toHaveBeenCalledWith("山丘", "song");
+  });
+
+  it("submits on Enter with the current mode", () => {
+    const { onSubmit, textarea, songSwitch } = setup();
     fireEvent.change(textarea, { target: { value: "想听点安静的" } });
+    fireEvent.click(songSwitch);
 
     const notCancelled = fireEvent.keyDown(textarea, { key: "Enter" });
 
-    expect(onSubmit).toHaveBeenCalledWith("想听点安静的");
+    expect(onSubmit).toHaveBeenCalledWith("想听点安静的", "song");
     expect(notCancelled).toBe(false);
   });
 
