@@ -27,6 +27,10 @@ export type ImmersiveCoverRailProps = {
   shiftRef?: Ref<HTMLDivElement>;
   trackRef?: Ref<HTMLDivElement>;
   onPointerDown?: (e: PointerEvent) => void;
+  /** Current cover only — does not fire for neighbors. */
+  onCurrentCoverClick?: () => void;
+  /** Hide the live cover while the MV morph clone is flying. */
+  videoMorphing?: boolean;
 };
 
 type RailRenderSlot = {
@@ -51,6 +55,8 @@ export function ImmersiveCoverRail({
   shiftRef,
   trackRef,
   onPointerDown,
+  onCurrentCoverClick,
+  videoMorphing = false,
 }: ImmersiveCoverRailProps) {
   const coverSlots: RailRenderSlot[] = [];
   if (cd) {
@@ -81,7 +87,13 @@ export function ImmersiveCoverRail({
   return (
     <div
       ref={shiftRef}
-      className="lyra-mobile-cover-shift lyra-mobile-cover-rail-wrap"
+      className={[
+        "lyra-mobile-cover-shift",
+        "lyra-mobile-cover-rail-wrap",
+        videoMorphing ? "lyra-mobile-cover-rail-wrap--video-morphing" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       style={{ transform: flipTransform === "none" ? undefined : flipTransform }}
       data-testid="cover-rail"
       onPointerDown={cd ? onPointerDown : undefined}
@@ -121,12 +133,53 @@ export function ImmersiveCoverRail({
               }
             >
               {slot.cover ? (
-                <CoverArt
-                  url={slot.cover.coverUrl}
-                  cd={cd}
-                  active={slot.role === centeredRole}
-                  spinning={slot.role === centeredRole && cd && spinning}
-                />
+                <div
+                  className="lyra-mobile-cover-rail__hit"
+                  role={
+                    slot.role === centeredRole && onCurrentCoverClick
+                      ? "button"
+                      : undefined
+                  }
+                  tabIndex={
+                    slot.role === centeredRole && onCurrentCoverClick
+                      ? 0
+                      : undefined
+                  }
+                  aria-label={
+                    slot.role === centeredRole && onCurrentCoverClick
+                      ? "播放视频"
+                      : undefined
+                  }
+                  data-testid={
+                    slot.role === centeredRole ? "cover-rail-hit" : undefined
+                  }
+                  onClick={
+                    slot.role === centeredRole && onCurrentCoverClick
+                      ? (e) => {
+                          e.stopPropagation();
+                          onCurrentCoverClick();
+                        }
+                      : undefined
+                  }
+                  onKeyDown={
+                    slot.role === centeredRole && onCurrentCoverClick
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onCurrentCoverClick();
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  <CoverArt
+                    url={slot.cover.coverUrl}
+                    cd={cd}
+                    active={slot.role === centeredRole}
+                    spinning={slot.role === centeredRole && cd && spinning}
+                  />
+                </div>
               ) : (
                 <div
                   className="lyra-mobile-cover-rail__thinking"

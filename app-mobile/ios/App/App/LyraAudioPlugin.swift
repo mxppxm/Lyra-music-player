@@ -40,9 +40,14 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPlaybackQueueInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "drainNativeAdvanced", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getCurrentTrack", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "hasVideoTrack", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "showVideoOverlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "hideVideoOverlay", returnType: CAPPluginReturnPromise),
     ]
 
     private var player: AVPlayer?
+    /// Fullscreen MV surface attached to the same AVPlayer (audio uninterrupted).
+    private var videoOverlayView: LyraVideoOverlayView?
     private var currentPlaybackId: Int = 0
     private var endObserver: NSObjectProtocol?
     private var failObserver: NSObjectProtocol?
@@ -431,6 +436,8 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     /// download the file with our own URLSession (fully controlled headers)
     /// and play it from disk. Bilibili audio streams are only 2–5 MB.
     private func startPlayer(url: URL, playbackId: Int, isLocalFile: Bool) {
+        // New item — drop any MV overlay tied to the previous player.
+        hideVideoOverlayInternal(notify: true)
         let asset: AVURLAsset
         if isLocalFile {
             asset = AVURLAsset(url: url)
@@ -604,6 +611,7 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - Internals
 
     private func stopInternal() {
+        hideVideoOverlayInternal(notify: true)
         removeEndProximityObserver()
         fallbackEndWorkItem?.cancel()
         fallbackEndWorkItem = nil
@@ -629,6 +637,126 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
         player?.pause()
         player = nil
         currentSongId = ""
+    }
+
+    // MARK: - Video overlay (same AVPlayer, picture only)
+
+    @objc func hasVideoTrack(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.resolveHasVideo(call)
+        }
+    }
+
+    @objc func showVideoOverlay(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let player = self.player, let item = player.currentItem else {
+                call.resolve(["shown": false])
+                return
+            }
+            self.ensureVideoTracksLoaded(item: item) { hasVideo in
+                DispatchQueue.main.async {
+                    guard hasVideo else {
+                        call.resolve(["shown": false])
+                        return
+                    }
+                    guard self.player === player else {
+                        call.resolve(["shown": false])
+                        return
+                    }
+                    self.presentVideoOverlay(player: player, fadeIn: true)
+                    call.resolve(["shown": true])
+                }
+            }
+        }
+    }
+
+    @objc func hideVideoOverlay(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.hideVideoOverlayInternal(notify: false)
+            call.resolve()
+        }
+    }
+
+    private func resolveHasVideo(_ call: CAPPluginCall) {
+        guard let item = player?.currentItem else {
+            call.resolve(["hasVideo": false])
+            return
+        }
+        ensureVideoTracksLoaded(item: item) { hasVideo in
+            DispatchQueue.main.async {
+                call.resolve(["hasVideo": hasVideo])
+            }
+        }
+    }
+
+    private func itemHasVideoTrack(_ item: AVPlayerItem) -> Bool {
+        if item.tracks.contains(where: { $0.assetTrack?.mediaType == .video }) {
+            return true
+        }
+        return !item.asset.tracks(withMediaType: .video).isEmpty
+    }
+
+    private func ensureVideoTracksLoaded(item: AVPlayerItem, completion: @escaping (Bool) -> Void) {
+        if itemHasVideoTrack(item) {
+            completion(true)
+            return
+        }
+        let asset = item.asset
+        asset.loadValuesAsynchronously(forKeys: ["tracks"]) {
+            var error: NSError?
+            let status = asset.statusOfValue(forKey: "tracks", error: &error)
+            if status == .loaded {
+                completion(!asset.tracks(withMediaType: .video).isEmpty)
+            } else {
+                completion(self.itemHasVideoTrack(item))
+            }
+        }
+    }
+
+    private func presentVideoOverlay(player: AVPlayer, fadeIn: Bool = false) {
+        hideVideoOverlayInternal(notify: false)
+        guard let host = bridge?.viewController?.view else { return }
+
+        let overlay = LyraVideoOverlayView(frame: host.bounds)
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        overlay.attach(player: player)
+        overlay.onClose = { [weak self] in
+            self?.hideVideoOverlayInternal(notify: true)
+        }
+        if fadeIn {
+            overlay.alpha = 0
+        }
+        host.addSubview(overlay)
+        videoOverlayView = overlay
+
+        if let vc = bridge?.viewController as? MainViewController {
+            vc.setStatusBarHidden(true)
+        }
+        if fadeIn {
+            UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut]) {
+                overlay.alpha = 1
+            }
+        }
+    }
+
+    private func hideVideoOverlayInternal(notify: Bool) {
+        guard let overlay = videoOverlayView else { return }
+        videoOverlayView = nil
+        let finish = {
+            overlay.removeFromSuperview()
+            if notify {
+                self.notifyListeners("videoOverlayClosed", data: [:])
+            }
+        }
+        if overlay.alpha > 0.01 {
+            UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseIn], animations: {
+                overlay.alpha = 0
+            }, completion: { _ in
+                finish()
+            })
+        } else {
+            finish()
+        }
     }
 
     private func emitFailedOnce(playbackId: Int, message: String) {
@@ -1126,6 +1254,81 @@ public class LyraAudioPlugin: CAPPlugin, CAPBridgedPlugin {
                 await activity.end(nil, dismissalPolicy: .immediate)
             } else {
                 await activity.end(using: nil, dismissalPolicy: .immediate)
+            }
+        }
+    }
+}
+
+/// Portrait fullscreen surface: black letterbox + AVPlayerLayer on the shared player.
+private final class LyraVideoOverlayView: UIView {
+    var onClose: (() -> Void)?
+    private let playerLayer = AVPlayerLayer()
+    private let closeButton = UIButton(type: .system)
+    private var chromeVisible = true
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        isAccessibilityElement = false
+        accessibilityViewIsModal = true
+
+        playerLayer.videoGravity = .resizeAspect
+        layer.addSublayer(playerLayer)
+
+        closeButton.setTitle("关闭", for: .normal)
+        closeButton.setTitleColor(.white, for: .normal)
+        closeButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        closeButton.backgroundColor = UIColor.white.withAlphaComponent(0.18)
+        closeButton.layer.cornerRadius = 16
+        closeButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        addSubview(closeButton)
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(overlayTapped))
+        addGestureRecognizer(tap)
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(overlayPanned(_:)))
+        addGestureRecognizer(pan)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func attach(player: AVPlayer) {
+        playerLayer.player = player
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer.frame = bounds
+        let safe = safeAreaInsets
+        closeButton.sizeToFit()
+        var frame = closeButton.frame
+        frame.size.width = max(frame.width, 64)
+        frame.size.height = max(frame.height, 32)
+        frame.origin.x = bounds.width - safe.right - frame.width - 16
+        frame.origin.y = safe.top + 12
+        closeButton.frame = frame
+    }
+
+    @objc private func closeTapped() {
+        onClose?()
+    }
+
+    @objc private func overlayTapped() {
+        chromeVisible.toggle()
+        UIView.animate(withDuration: 0.2) {
+            self.closeButton.alpha = self.chromeVisible ? 1 : 0
+        }
+    }
+
+    @objc private func overlayPanned(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: self)
+        if gesture.state == .ended || gesture.state == .cancelled {
+            if translation.y > 100 {
+                onClose?()
             }
         }
     }

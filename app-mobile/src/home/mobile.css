@@ -483,6 +483,75 @@ body,
   height: 100%;
 }
 
+.lyra-mobile-cover-rail__hit {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  /* Slots are pointer-events:none so swipes hit the rail; re-enable the
+     current-cover hit target so tap can open MV without toggling immersive. */
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lyra-mobile-cover-rail__hit .lyra-mobile-cover-art {
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-mobile-no-video-hint {
+  margin: 0.35rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.72);
+  pointer-events: none;
+}
+
+/* Cover → fullscreen MV morph (lyrics-sheet style). */
+.lyra-mobile-cover-rail-wrap--video-morphing .lyra-mobile-cover-rail__hit {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.lyra-mobile-video-morph {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+
+.lyra-mobile-video-morph__shell {
+  position: fixed;
+  z-index: 1;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #000;
+  border-radius: 18px;
+  will-change: top, left, width, height, border-radius;
+}
+
+.lyra-mobile-video-morph--open .lyra-mobile-video-morph__shell {
+  border-radius: 0;
+}
+
+.lyra-mobile-video-morph__cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lyra-mobile-video-morph__cover--empty {
+  background: #111;
+}
+
 .lyra-mobile-cover-rail__slot--thinking {
   border-radius: 50%;
   background:
@@ -2224,6 +2293,24 @@ html[data-lyra-immersive="true"] body {
   touch-action: none;
 }
 
+/* Daily sheet open: History must not receive any input or scroll. */
+.lyra-mobile-history--daily-locked {
+  pointer-events: none !important;
+  touch-action: none;
+}
+
+.lyra-mobile-history--daily-locked .lyra-mobile-history__pages,
+.lyra-mobile-history--daily-locked .lyra-mobile-history__list {
+  overflow: hidden !important;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+.lyra-mobile-history--daily-locked .lyra-mobile-history__sheet {
+  touch-action: none;
+  overflow: hidden !important;
+}
+
 .lyra-mobile-history__backdrop {
   /* transparent tap layer only — the full-screen dim/flash is intentionally
      removed; clicking outside the sheet still closes it */
@@ -2674,6 +2761,12 @@ html[data-lyra-immersive="true"] body {
   inset: 0;
   z-index: 220;
   pointer-events: none;
+  touch-action: none;
+}
+
+/* Full-screen event sink while open — nothing leaks to History underneath. */
+.lyra-mobile-daily-sheet--open {
+  pointer-events: auto;
 }
 
 .lyra-mobile-daily-sheet__backdrop {
@@ -2681,6 +2774,7 @@ html[data-lyra-immersive="true"] body {
   inset: 0;
   background: rgba(24, 18, 12, 0.28);
   pointer-events: auto;
+  touch-action: none;
   opacity: 0;
   transition: opacity 280ms ease;
 }
@@ -2788,7 +2882,16 @@ html[data-lyra-immersive="true"] body {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.lyra-mobile-daily-sheet__scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .lyra-mobile-daily-sheet__capture {

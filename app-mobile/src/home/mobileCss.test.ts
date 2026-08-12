@@ -52,6 +52,13 @@ describe("mobile progress layout", () => {
     expect(thinking).toMatch(/opacity:\s*1/);
     expect(thinkingSlot).not.toMatch(/backdrop-filter/);
   });
+
+  it("re-enables pointer events on the cover hit so MV tap is not swallowed by the stage", () => {
+    const slot = ruleBody(".lyra-mobile-cover-rail__slot");
+    const hit = ruleBody(".lyra-mobile-cover-rail__hit");
+    expect(slot).toMatch(/pointer-events:\s*none/);
+    expect(hit).toMatch(/pointer-events:\s*auto/);
+  });
 });
 
 describe("input capsule", () => {

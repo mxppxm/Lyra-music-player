@@ -65,9 +65,22 @@ export interface LyraAudioPlugin {
     isPlaying: boolean;
     playbackId: number;
   }>;
+  /** Whether the current AVPlayer item has a video track (e.g. bilibili durl MP4). */
+  hasVideoTrack(): Promise<{ hasVideo: boolean }>;
+  /**
+   * Attach AVPlayerLayer over the WebView without replacing the player.
+   * Returns shown:false when there is no video track.
+   */
+  showVideoOverlay(): Promise<{ shown: boolean }>;
+  /** Remove the video overlay; audio keeps playing. */
+  hideVideoOverlay(): Promise<void>;
   addListener(
     eventName: "ended",
     listenerFunc: (data: { playbackId: number }) => void,
+  ): Promise<{ remove: () => void }>;
+  addListener(
+    eventName: "videoOverlayClosed",
+    listenerFunc: (data: Record<string, never>) => void,
   ): Promise<{ remove: () => void }>;
   addListener(
     eventName: "nativeAdvanced",

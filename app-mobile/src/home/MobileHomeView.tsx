@@ -42,6 +42,12 @@ import {
   ImmersiveCoverRail,
   type CoverRailSlot,
 } from "./ImmersiveCoverRail";
+import { shouldEnterVideoFromCover } from "./coverVideoFullscreen";
+import {
+  CoverVideoMorph,
+  readElementRect,
+  type RectBox,
+} from "./CoverVideoMorph";
 import {
   bridgePinnedCoverTransform,
   canToggleImmersive,
@@ -76,6 +82,16 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [favorited, setFavorited] = useState(false);
   const [immersive, setImmersive] = useState(false);
+  const [videoFullscreen, setVideoFullscreen] = useState(false);
+  const [noVideoHint, setNoVideoHint] = useState(false);
+  const [videoMorph, setVideoMorph] = useState<{
+    origin: RectBox;
+    coverUrl: string | null;
+    open: boolean;
+  } | null>(null);
+  const immersiveBeforeVideoRef = useRef(false);
+  const videoFullscreenRef = useRef(false);
+  const videoMorphClosingRef = useRef(false);
   const [inputFocused, setInputFocused] = useState(false);
   const inputBlurAtRef = useRef(0);
   const previousImmersiveRef = useRef(immersive);
@@ -124,6 +140,12 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   useEffect(() => {
     if (state.kind !== "playing" && state.kind !== "thinking") {
       setImmersive(false);
+      setVideoMorph(null);
+      if (videoFullscreenRef.current) {
+        videoFullscreenRef.current = false;
+        setVideoFullscreen(false);
+        void LyraAudio.hideVideoOverlay().catch(() => {});
+      }
     }
   }, [state.kind]);
 
@@ -140,11 +162,39 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
         songId,
       });
     }
-    void setImmersiveStatusBar(immersive);
+    // Native video overlay owns the status bar while fullscreen.
+    if (!videoFullscreenRef.current) {
+      void setImmersiveStatusBar(immersive);
+    }
     return () => {
-      void setImmersiveStatusBar(false);
+      if (!videoFullscreenRef.current) {
+        void setImmersiveStatusBar(false);
+      }
     };
   }, [immersive, state]);
+
+  useEffect(() => {
+    videoFullscreenRef.current = videoFullscreen;
+  }, [videoFullscreen]);
+
+  useEffect(() => {
+    let remove: (() => void) | undefined;
+    void LyraAudio.addListener("videoOverlayClosed", () => {
+      videoFullscreenRef.current = false;
+      setVideoFullscreen(false);
+      void setImmersiveStatusBar(immersiveBeforeVideoRef.current);
+      // Native faded out — shrink the morph shell back to the cover.
+      videoMorphClosingRef.current = true;
+      setVideoMorph((prev) => (prev ? { ...prev, open: false } : null));
+    }).then((handle) => {
+      remove = () => {
+        void handle.remove();
+      };
+    });
+    return () => {
+      remove?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (immersive) {
@@ -298,6 +348,16 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
   const stabilizedCoverSongRef = useRef(currentSongId);
   useEffect(() => {
     setPlaybackError(null);
+  }, [currentSongId]);
+
+  useEffect(() => {
+    videoMorphClosingRef.current = false;
+    setVideoMorph(null);
+    if (!videoFullscreenRef.current) return;
+    videoFullscreenRef.current = false;
+    setVideoFullscreen(false);
+    void LyraAudio.hideVideoOverlay().catch(() => {});
+    void setImmersiveStatusBar(immersiveBeforeVideoRef.current);
   }, [currentSongId]);
 
   // Reset lyrics card when the playing track changes.
@@ -457,6 +517,83 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
       void orchestrator.onPause();
     }
   };
+
+  const flashNoVideoHint = useCallback(() => {
+    setNoVideoHint(true);
+    window.setTimeout(() => setNoVideoHint(false), 1500);
+  }, []);
+
+  const handleCurrentCoverClick = useCallback(() => {
+    if (videoFullscreenRef.current || videoMorph) return;
+    const coverFromSong =
+      state.kind === "playing"
+        ? String(
+            (state.song.metadata as { cover?: unknown } | undefined)?.cover ??
+              "",
+          ).trim() || null
+        : null;
+    if (
+      !shouldEnterVideoFromCover({
+        isPlayingOrPaused: state.kind === "playing",
+        hasCurrentCover: Boolean(coverFromSong),
+        isNeighborSlot: false,
+      })
+    ) {
+      return;
+    }
+    const hit = document.querySelector(
+      '[data-testid="cover-rail-hit"]',
+    ) as HTMLElement | null;
+    if (!hit) return;
+    lightTap();
+    const origin = readElementRect(hit);
+    void (async () => {
+      try {
+        const { hasVideo } = await LyraAudio.hasVideoTrack();
+        if (!hasVideo) {
+          flashNoVideoHint();
+          return;
+        }
+        immersiveBeforeVideoRef.current = immersive;
+        videoMorphClosingRef.current = false;
+        setVideoMorph({
+          origin,
+          coverUrl: coverFromSong,
+          open: true,
+        });
+      } catch (err) {
+        console.warn("[lyra-ios] hasVideoTrack:", err);
+        flashNoVideoHint();
+      }
+    })();
+  }, [flashNoVideoHint, immersive, state, videoMorph]);
+
+  const handleVideoMorphOpened = useCallback(() => {
+    void (async () => {
+      try {
+        const { shown } = await LyraAudio.showVideoOverlay();
+        if (!shown) {
+          videoMorphClosingRef.current = true;
+          setVideoMorph((prev) => (prev ? { ...prev, open: false } : null));
+          flashNoVideoHint();
+          return;
+        }
+        videoFullscreenRef.current = true;
+        setVideoFullscreen(true);
+        void setImmersiveStatusBar(true);
+      } catch (err) {
+        console.warn("[lyra-ios] showVideoOverlay:", err);
+        videoMorphClosingRef.current = true;
+        setVideoMorph((prev) => (prev ? { ...prev, open: false } : null));
+        flashNoVideoHint();
+      }
+    })();
+  }, [flashNoVideoHint]);
+
+  const handleVideoMorphClosed = useCallback(() => {
+    setVideoMorph(null);
+    videoMorphClosingRef.current = false;
+  }, []);
 
   const handleSkip = async () => {
     if (state.kind !== "playing") return;
@@ -1006,7 +1143,25 @@ export function MobileHomeView({ orchestrator, weather }: MobileHomeViewProps) {
               spinning={discPlaying}
               trackRef={swipeTrackRef}
               onPointerDown={handleSwipePointerDown}
+              onCurrentCoverClick={
+                state.kind === "playing" ? handleCurrentCoverClick : undefined
+              }
+              videoMorphing={Boolean(videoMorph)}
             />
+            {videoMorph ? (
+              <CoverVideoMorph
+                coverUrl={videoMorph.coverUrl}
+                origin={videoMorph.origin}
+                open={videoMorph.open}
+                onOpened={handleVideoMorphOpened}
+                onClosed={handleVideoMorphClosed}
+              />
+            ) : null}
+            {noVideoHint ? (
+              <p className="lyra-mobile-no-video-hint" role="status" aria-live="polite">
+                暂无视频
+              </p>
+            ) : null}
             <SongInfo title={displayTitle} artist={displayArtist} />
             {showInlineThinking ? (
               <ThinkingNote />
