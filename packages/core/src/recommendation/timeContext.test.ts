@@ -16,73 +16,62 @@ function at(hour: number, weekday: number = 3, month: number = 8): Date {
 }
 
 describe("computeTimeContext", () => {
-  it("工作日周三下午 → 中性时间标签，不含上班推断", () => {
+  it("工作日周三下午 → tags 无时段词，pseudoTarget 是原始时钟", () => {
     const ctx = computeTimeContext(at(15, 3, 8));
     expect(ctx.seasonZh).toBe("夏");
     expect(ctx.weekdayZh).toBe("周三");
-    expect(ctx.periodZh).toBe("下午");
     expect(ctx.isWorkday).toBe(true);
-    expect(ctx.isWorkTime).toBe(true);
-    expect(ctx.tags).toContain("下午");
+    expect(ctx.tags).toContain("周三");
+    expect(ctx.tags).toContain("夏季");
+    expect(ctx.tags).not.toContain("下午");
+    expect(ctx.tags).not.toContain("清晨");
+    expect(ctx.tags).not.toContain("午休");
     expect(ctx.tags).not.toContain("上班时间");
-    expect(ctx.tags).not.toContain("工作时间之外");
-    expect(ctx.tags).not.toContain("休息日");
+    expect(ctx.pseudoTarget).toMatch(/本地时间: .*15:00/);
+    expect(ctx.pseudoTarget).not.toMatch(/清晨|午休|下午|傍晚|深夜|上班/);
   });
 
-  it("周六 → 仍可标记 isWorkday=false，但 tags 不含休息日", () => {
+  it("周六 → tags 不含休息日/时段词", () => {
     const ctx = computeTimeContext(at(10, 6, 1));
     expect(ctx.isWorkday).toBe(false);
-    expect(ctx.isWorkTime).toBe(false);
     expect(ctx.tags).not.toContain("休息日");
+    expect(ctx.tags).not.toContain("上午");
     expect(ctx.weekdayZh).toBe("周六");
     expect(ctx.seasonZh).toBe("冬");
   });
 
-  it("深夜 → late-night + 默认心情 平静/内省/孤独", () => {
+  it("1 点 → 默认心情 平静/内省/孤独，文案无深夜字样", () => {
     const ctx = computeTimeContext(at(1, 5, 7));
-    expect(ctx.period).toBe("late-night");
-    expect(ctx.periodZh).toBe("深夜");
     expect(ctx.defaultMoodTags).toContain("平静");
     expect(ctx.defaultMoodTags).toContain("内省");
+    expect(ctx.pseudoTarget).toMatch(/本地时间: .*01:00/);
+    expect(ctx.pseudoTarget).not.toContain("深夜");
   });
 
-  it("清晨（7 点）→ early-morning + 清醒，非早通勤", () => {
+  it("7 点 → 默认心情 清醒，tags/文案无清晨", () => {
     const ctx = computeTimeContext(at(7, 2, 4));
-    expect(ctx.period).toBe("early-morning");
-    expect(ctx.periodZh).toBe("清晨");
     expect(ctx.defaultMoodTags).toContain("清醒");
+    expect(ctx.tags).not.toContain("清晨");
     expect(ctx.tags).not.toContain("通勤");
-    expect(ctx.tags).not.toContain("上班");
+    expect(ctx.pseudoTarget).not.toContain("清晨");
   });
 
-  it("周日凌晨是深夜", () => {
-    const ctx = computeTimeContext(at(2, 7, 3));
-    expect(ctx.period).toBe("late-night");
-    expect(ctx.isWorkday).toBe(false);
-  });
-
-  it("伪目标文案含季节、星期、时段，不含上班", () => {
-    const ctx = computeTimeContext(at(15, 3, 8));
-    const t = timeContextToPseudoTarget(ctx);
-    expect(t).toContain("夏日");
-    expect(t).toContain("周三");
-    expect(t).toContain("下午");
-    expect(t).not.toMatch(/上班|下班|休息日/);
-  });
-
-  it("注入雨天天气 → 标签含 雨天/下雨，伪目标文案含 雨天", () => {
+  it("注入雨天天气 → 标签含雨，伪目标含天气事实", () => {
     const ctx = computeTimeContext(at(15, 3, 8), {
       condition: "雨",
       tempC: 18,
       source: "api",
       code: 61,
+      humidityPct: 80,
     });
     expect(ctx.tags).toContain("雨天");
     expect(ctx.tags).toContain("下雨");
     expect(ctx.weather?.code).toBe(61);
     const t = timeContextToPseudoTarget(ctx);
-    expect(t).toContain("雨天");
-    expect(t).not.toMatch(/上班|下班|休息日/);
+    expect(t).toContain("天气事实:");
+    expect(t).toContain("雨");
+    expect(t).toContain("湿度 80%");
+    expect(t).not.toMatch(/上班|下班|休息日|下午/);
   });
 
   it("极热/极冷天气 → 炎热/寒冷标签", () => {
@@ -166,8 +155,8 @@ describe("weather helpers", () => {
     expect(weatherZhFromCode(61)).toBe("雨");
     expect(weatherZhFromCode(71)).toBe("雪");
     expect(weatherZhFromCode(80)).toBe("阵雨");
-    expect(weatherZhFromCode(85)).toBe("雪"); // 阵雪
-    expect(weatherZhFromCode(86)).toBe("雪"); // 阵雪
+    expect(weatherZhFromCode(85)).toBe("雪");
+    expect(weatherZhFromCode(86)).toBe("雪");
     expect(weatherZhFromCode(95)).toBe("雷雨");
     expect(weatherZhFromCode(undefined)).toBe("多云");
   });
@@ -179,7 +168,6 @@ describe("weather helpers", () => {
     expect(weatherTagsFromWeather({ condition: "雪", tempC: 0, source: "api", code: 71 })).toEqual(
       expect.arrayContaining(["雪天", "下雪"]),
     );
-    // 无 code（用户输入 source）→ 从 condition 派生
     expect(weatherTagsFromWeather({ condition: "晴", tempC: 22, source: "user-input" })).toEqual(
       expect.arrayContaining(["晴天"]),
     );
@@ -187,10 +175,10 @@ describe("weather helpers", () => {
 });
 
 describe("timeContextScore", () => {
-  it("best_for 命中深夜场景词 → 高分", () => {
-    const ctx = computeTimeContext(at(23, 3, 8)); // 深夜
+  it("钟点对齐歌曲 best_for/time_color 深夜词 → 高分", () => {
+    const ctx = computeTimeContext(at(23, 3, 8));
     const score = timeContextScore(ctx, ["深夜独处", "睡前"], "深夜");
-    expect(score).toBeGreaterThan(0.7);
+    expect(score).toBeGreaterThan(0.65);
   });
 
   it("best_for 完全不相关 → 低分", () => {
@@ -199,13 +187,13 @@ describe("timeContextScore", () => {
     expect(score).toBeLessThan(0.4);
   });
 
-  it("上午不再因「通勤/工作」词自动高分", () => {
-    const ctx = computeTimeContext(at(9, 1, 8)); // 周一上午
+  it("不因「通勤/工作」词自动高分", () => {
+    const ctx = computeTimeContext(at(9, 1, 8));
     const score = timeContextScore(ctx, ["通勤路上", "工作专注"], "");
     expect(score).toBeLessThan(0.3);
   });
 
-  it("下午命中 下午茶/午后 → 加分", () => {
+  it("下午钟点命中 下午茶/午后 → 加分", () => {
     const ctx = computeTimeContext(at(15, 3, 8));
     const score = timeContextScore(ctx, ["下午茶", "午后放松"], "午后");
     expect(score).toBeGreaterThan(0.5);
@@ -224,7 +212,6 @@ describe("timeContextScore", () => {
       code: 61,
     });
     const plain = computeTimeContext(at(15, 3, 8));
-    // 同一首歌，天气场景词只在雨天命中
     const withRain = timeContextScore(rainy, ["雨天通勤", "安静"], "");
     const withoutRain = timeContextScore(plain, ["雨天通勤", "安静"], "");
     expect(withRain).toBeGreaterThan(withoutRain);

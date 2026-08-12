@@ -1478,7 +1478,21 @@ button.lyra-mobile-idle-slogan:hover {
   left: auto;
   gap: 6px;
   padding: 0 12px;
+  margin: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.lyra-mobile-weather-badge--morphing {
+  visibility: hidden;
   pointer-events: none;
+}
+
+.lyra-mobile-weather-badge:active {
+  opacity: 0.9;
 }
 
 .lyra-mobile-top-share {
@@ -1518,6 +1532,147 @@ button.lyra-mobile-idle-slogan:hover {
   font-family: var(--lyra-note-family);
   letter-spacing: 0.03em;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Weather expand — 与歌词同款：玻璃卡从角标 rect 伸开，内容靠 overflow 露出 */
+.lyra-mobile-weather-morph {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+
+.lyra-mobile-weather-morph__backdrop {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.lyra-mobile-weather-morph__card {
+  position: fixed;
+  z-index: 1;
+  box-sizing: border-box;
+  padding: 0;
+  border-radius: 18px;
+  color: var(--lyra-color-song-info);
+  /* 收起态对齐角标；展开加实底。不用 backdrop-filter，避免 iOS 整页闪 */
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: pointer;
+  transition:
+    top 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    left 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    background-color 480ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    border-color 480ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.lyra-mobile-weather-morph--open .lyra-mobile-weather-morph__card {
+  background: rgba(255, 248, 242, 0.94);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.lyra-mobile-weather-morph__face {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 36px;
+}
+
+.lyra-mobile-weather-morph__head {
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+}
+
+.lyra-mobile-weather-morph__body {
+  box-sizing: border-box;
+  flex: 1;
+  min-height: 0;
+  padding: 0 14px 12px;
+  border-top: 1px solid rgba(28, 24, 20, 0.08);
+}
+
+.lyra-mobile-weather-panel__condition {
+  margin: 8px 0 4px;
+  font-family: var(--lyra-note-family);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  color: rgba(28, 24, 20, 0.78);
+}
+
+.lyra-mobile-weather-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.lyra-mobile-weather-panel__row {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 2px 0;
+}
+
+.lyra-mobile-weather-panel__row-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  color: rgba(28, 24, 20, 0.55);
+}
+
+.lyra-mobile-weather-panel__row-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.lyra-mobile-weather-panel__row-label {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: rgba(28, 24, 20, 0.55);
+  font-family: var(--lyra-note-family);
+}
+
+.lyra-mobile-weather-panel__row-value {
+  font-size: 13px;
+  font-family: var(--lyra-note-family);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: rgba(28, 24, 20, 0.88);
+}
+
+.lyra-mobile-weather-panel__empty {
+  margin: 8px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgba(28, 24, 20, 0.45);
+  font-family: var(--lyra-note-family);
 }
 
 /* 沉浸式：彻底隐藏 —— 不参与沉浸画面，退出时随 transition 平滑出现 */

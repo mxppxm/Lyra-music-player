@@ -247,9 +247,9 @@ describe("CompanionAgent.choose", () => {
           periodZh: "下午",
           isWorkday: true,
           isWorkTime: true,
-          tags: ["夏季", "周二", "下午"],
+          tags: ["夏季", "周二"],
           defaultMoodTags: ["专注"],
-          pseudoTarget: "夏日的周二下午",
+          pseudoTarget: "本地时间: 2026-08-11 15:32（周二）\n天气: （暂无）",
           weather: {
             condition: "雨",
             tempC: 18,

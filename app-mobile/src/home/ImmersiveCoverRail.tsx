@@ -132,10 +132,10 @@ export function ImmersiveCoverRail({
                   className="lyra-mobile-cover-rail__thinking"
                   role={slot.role === centeredRole ? "status" : undefined}
                   aria-label={
-                    slot.role === centeredRole ? "正在选择下一首" : undefined
+                    slot.role === centeredRole ? "稍等" : undefined
                   }
                 >
-                  Lyra 正在想
+                  稍等
                   <span className="lyra-mobile-thinking__dots" aria-hidden>
                     <span>.</span>
                     <span>.</span>

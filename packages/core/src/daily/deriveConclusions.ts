@@ -41,7 +41,7 @@ export function deriveConclusions(digest: DailyDigest): DailyConclusion[] {
     out.push({
       id: "meta.lyra_start_driven",
       kind: "observation",
-      claim: `点了 ${digest.meta.lyraStartCount} 次「点我试试」。`,
+      claim: `点了 ${digest.meta.lyraStartCount} 次「随便听听」。`,
       evidence: [
         {
           ref: "meta.lyraStartCount",

@@ -69,7 +69,7 @@ export function buildDailyMoodBrief(input: {
       utterance:
         t.user_utterance.modality === "text"
           ? t.user_utterance.content.trim()
-          : t.user_utterance.content.trim() || "（点我试试 / 连播）",
+          : t.user_utterance.content.trim() || "（随便听听 / 连播）",
       labels: t.current_emotion.labels.slice(0, 4),
       pad: t.current_emotion.pad,
       songTitle: titleOf(t.agent_response.song_id),

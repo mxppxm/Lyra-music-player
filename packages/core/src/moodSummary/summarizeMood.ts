@@ -102,7 +102,7 @@ export type PeriodAggregate = {
   count: number;
 };
 
-/** 按时段（清晨/上午/中午/下午/傍晚/夜间/深夜）聚合平均情绪。 */
+/** 按钟点区间（6–9 / 9–11 / …）聚合平均情绪。 */
 export function aggregateByPeriod(series: PadPoint[]): PeriodAggregate[] {
   const buckets = new Map<TimePeriod, PAD[]>();
   for (const p of series) {

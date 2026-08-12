@@ -70,7 +70,7 @@ describe("ImmersiveCoverRail", () => {
     );
 
     expect(screen.getByTestId("cover-rail-thinking")).toBeInTheDocument();
-    expect(screen.getByText("Lyra 正在想", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("稍等", { exact: false })).toBeInTheDocument();
   });
 
   it("centers the thinking page when the live current song is temporarily empty", () => {

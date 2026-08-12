@@ -54,7 +54,7 @@ import {
 } from "./immersiveCoverMotion";
 
 const ZERO_PAD: PAD = { p: 0, a: 0, d: 0 };
-const LYRA_START_LABEL = "点我试试";
+const LYRA_START_LABEL = "随便听听";
 /** Matches the `.lyra-mobile-cover-shift` transform transition. */
 const IMMERSIVE_FLIP_MS = 560;
 /** Dock FLIP (560ms) + the last module's delay (600ms) + its own 420ms. */
