@@ -12,6 +12,7 @@ const testPlatform: LyraPlatform = {
   getPosition: async () => null,
   onComplete: () => () => {},
   fetchJson: async () => ({}),
+  fetchText: async () => "",
   dbExecute: async () => ({ rowsAffected: 0 }),
   dbSelect: async () => [],
   copyBundledDbIfNeeded: async () => {},

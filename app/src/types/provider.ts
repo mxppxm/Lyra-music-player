@@ -1,9 +1,27 @@
 // types/provider.ts — Model Provider 抽象层
-export type ChatRole = "system" | "user" | "assistant";
+export type ChatRole = "system" | "user" | "assistant" | "tool";
+
+export type ChatToolCall = {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+};
+
+export type ChatTool = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
 
 export type ChatMessage = {
   role: ChatRole;
   content: string;
+  tool_call_id?: string;
+  tool_calls?: ChatToolCall[];
+  reasoning_content?: string;
 };
 
 export type ChatOptions = {
@@ -17,6 +35,8 @@ export type ChatOptions = {
   // models — set false to avoid the model burning `max_tokens` on
   // `reasoning_content` before ever writing `content`. Other providers ignore.
   enable_thinking?: boolean;
+  tools?: ChatTool[];
+  tool_choice?: "auto" | "none" | "required";
   // Attribution for the LLM-usage log. Providers ignore this; the usage-logging
   // decorator reads it to tag which agent originated the call.
   agent?: string;
@@ -24,6 +44,8 @@ export type ChatOptions = {
 
 export type ChatResponse = {
   content: string;
+  tool_calls?: ChatToolCall[];
+  reasoning_content?: string;
   // Model actually used for the call (provider-side default or opts.model).
   // Populated by providers so the usage log records the exact model without
   // having to guess from opts.

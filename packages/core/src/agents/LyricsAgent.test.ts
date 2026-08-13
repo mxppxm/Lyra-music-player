@@ -103,6 +103,46 @@ describe("LyricsAgent.fetch", () => {
     ).rejects.toBeInstanceOf(LyricsAgentError);
   });
 
+  it("uses a 3x token budget and keeps thinking off by default", async () => {
+    const provider = stub(FULL_LYRICS);
+    const agent = new LyricsAgent({ provider });
+    await agent.fetch({ title: "晴天", artist: "周杰伦" });
+    const opts = (provider.chat as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(opts).toMatchObject({
+      max_tokens: 24576,
+      enable_thinking: false,
+    });
+  });
+
+  it("enables thinking only when the caller asks for a retry fetch", async () => {
+    const provider = stub(FULL_LYRICS);
+    const agent = new LyricsAgent({ provider });
+    await agent.fetch({
+      title: "晴天",
+      artist: "周杰伦",
+      enableThinking: true,
+    });
+    const opts = (provider.chat as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(opts).toMatchObject({
+      max_tokens: 24576,
+      enable_thinking: true,
+    });
+  });
+
+  it("keeps thinking on for the chorus-complete follow-up during a retry fetch", async () => {
+    const provider = stub(CHORUS_ONLY, FULL_LYRICS);
+    const agent = new LyricsAgent({ provider });
+    await agent.fetch({
+      title: "晴天",
+      artist: "周杰伦",
+      enableThinking: true,
+    });
+    expect(provider.chat).toHaveBeenCalledTimes(2);
+    for (const call of (provider.chat as ReturnType<typeof vi.fn>).mock.calls) {
+      expect(call[1]).toMatchObject({ enable_thinking: true, max_tokens: 24576 });
+    }
+  });
+
   it("sends a cleaned title and asks for full lyrics", async () => {
     const provider = stub(FULL_LYRICS);
     const agent = new LyricsAgent({ provider });
@@ -128,6 +168,86 @@ describe("LyricsAgent.fetch", () => {
     expect(user).toContain("原唱歌手：王菲");
     expect(user).not.toMatch(/原唱歌手：JLRS-LeoFM/);
     expect(user).toMatch(/上传者|频道/);
+  });
+
+  it("offers a web_search tool so the model can look lyrics up", async () => {
+    const provider = stub(FULL_LYRICS);
+    const agent = new LyricsAgent({ provider });
+    await agent.fetch({ title: "晴天", artist: "周杰伦" });
+    const opts = (provider.chat as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    const names = (opts.tools ?? []).map(
+      (t: { function: { name: string } }) => t.function.name,
+    );
+    expect(names).toContain("web_search");
+    expect(names).toContain("web_fetch");
+  });
+
+  it("runs web_fetch when the model requests it, then returns the lyrics", async () => {
+    const fetchPage = vi.fn(async () => "页面上的完整歌词");
+    let i = 0;
+    const provider: ModelProvider = {
+      id: "sensenova",
+      chat: vi.fn(async () => {
+        i += 1;
+        if (i === 1) {
+          return {
+            content: "",
+            tool_calls: [
+              {
+                id: "c2",
+                type: "function",
+                function: {
+                  name: "web_fetch",
+                  arguments: JSON.stringify({
+                    url: "https://www.mulanci.org/lyric/sl1",
+                  }),
+                },
+              },
+            ],
+          } as ChatResponse;
+        }
+        return { content: FULL_LYRICS } as ChatResponse;
+      }),
+    };
+    const agent = new LyricsAgent({ provider, webFetch: fetchPage });
+    await expect(
+      agent.fetch({ title: "晴天", artist: "周杰伦" }),
+    ).resolves.toBe(FULL_LYRICS);
+    expect(fetchPage).toHaveBeenCalledOnce();
+    expect(fetchPage).toHaveBeenCalledWith("https://www.mulanci.org/lyric/sl1");
+  });
+
+  it("runs web_search when the model requests it, then returns the lyrics", async () => {
+    const search = vi.fn(async () => "搜索到的歌词片段");
+    let i = 0;
+    const provider: ModelProvider = {
+      id: "sensenova",
+      chat: vi.fn(async () => {
+        i += 1;
+        if (i === 1) {
+          return {
+            content: "",
+            tool_calls: [
+              {
+                id: "c1",
+                type: "function",
+                function: {
+                  name: "web_search",
+                  arguments: JSON.stringify({ query: "晴天 周杰伦 歌词" }),
+                },
+              },
+            ],
+          } as ChatResponse;
+        }
+        return { content: FULL_LYRICS } as ChatResponse;
+      }),
+    };
+    const agent = new LyricsAgent({ provider, webSearch: search });
+    await expect(
+      agent.fetch({ title: "晴天", artist: "周杰伦" }),
+    ).resolves.toBe(FULL_LYRICS);
+    expect(search).toHaveBeenCalledOnce();
+    expect(provider.chat).toHaveBeenCalledTimes(2);
   });
 
   it("passes lyric anchor from quoted title snippet", async () => {

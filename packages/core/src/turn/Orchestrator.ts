@@ -84,7 +84,11 @@ export type OrchestratorDeps = {
   };
   /** On-demand lyrics via LLM (iOS note-card flip). */
   lyrics?: {
-    fetch(input: { title: string; artist?: string }): Promise<string>;
+    fetch(input: {
+      title: string;
+      artist?: string;
+      enableThinking?: boolean;
+    }): Promise<string>;
   };
   audio: {
     // playFile may return the Rust playback id (a number) so the caller can

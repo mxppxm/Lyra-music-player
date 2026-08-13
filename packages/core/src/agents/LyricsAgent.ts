@@ -1,6 +1,9 @@
-import type { ModelProvider, ChatMessage } from "../types";
+import type { ModelProvider, ChatMessage, ChatTool } from "../types";
 import { parseTrackIdentity } from "../library/parseTrackIdentity";
-import { resolveProviders, chatWithFallback } from "./route";
+import { resolveProviders } from "./route";
+import { chatWithTools } from "./chatWithTools";
+import { webSearch as defaultWebSearch } from "./webSearch";
+import { webFetch as defaultWebFetch } from "./webFetch";
 import {
   LYRICS_COMPLETE_RETRY_PROMPT,
   LYRICS_SYSTEM_PROMPT,
@@ -19,6 +22,8 @@ const NOT_FOUND_RE =
 export type LyricsFetchInput = {
   title: string;
   artist?: string;
+  /** User tapped retry — allow a slower reasoning pass. Default off. */
+  enableThinking?: boolean;
 };
 
 /** Strip Bilibili / channel wrappers so the LLM sees a cleaner song name. */
@@ -85,6 +90,44 @@ function assertLyricsOrThrow(text: string): string {
   return trimmed;
 }
 
+const WEB_SEARCH_TOOL: ChatTool = {
+  type: "function",
+  function: {
+    name: "web_search",
+    description:
+      "Search the web. Returns titles, URLs, and snippets. Query with the song title, original artist, and the word 歌词. Then call web_fetch on a lyrics URL.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query, e.g. 王菲 主角 歌词",
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+const WEB_FETCH_TOOL: ChatTool = {
+  type: "function",
+  function: {
+    name: "web_fetch",
+    description:
+      "Fetch one https page and return plain text. Use after web_search to read a lyrics page.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "https URL of a lyrics page from web_search results",
+        },
+      },
+      required: ["url"],
+    },
+  },
+};
+
 /**
  * Ask the LLM for plain-text lyrics of a track. Returns trimmed body text
  * or throws LyricsAgentError when the model declines / returns empty.
@@ -92,11 +135,21 @@ function assertLyricsOrThrow(text: string): string {
  */
 export class LyricsAgent {
   private providers: ModelProvider[];
+  private webSearch: (query: string) => Promise<string>;
+  private webFetch: (url: string) => Promise<string>;
 
-  constructor(opts: { provider?: ModelProvider } = {}) {
+  constructor(
+    opts: {
+      provider?: ModelProvider;
+      webSearch?: (query: string) => Promise<string>;
+      webFetch?: (url: string) => Promise<string>;
+    } = {},
+  ) {
     this.providers = opts.provider
       ? [opts.provider]
       : resolveProviders("lyrics");
+    this.webSearch = opts.webSearch ?? defaultWebSearch;
+    this.webFetch = opts.webFetch ?? defaultWebFetch;
   }
 
   async fetch(input: LyricsFetchInput): Promise<string> {
@@ -139,13 +192,28 @@ export class LyricsAgent {
     ];
 
     const chatOpts = {
-      max_tokens: 8192,
+      max_tokens: 8192 * 3,
       temperature: 0.2,
-      enable_thinking: false as const,
+      enable_thinking: Boolean(input.enableThinking),
       agent: "lyrics",
+      tools: [WEB_SEARCH_TOOL, WEB_FETCH_TOOL],
+      tool_choice: "auto" as const,
     };
 
-    const first = await chatWithFallback(this.providers, messages, chatOpts);
+    const handlers = {
+      web_search: async (args: Record<string, unknown>) =>
+        this.webSearch(String(args.query ?? "")),
+      web_fetch: async (args: Record<string, unknown>) =>
+        this.webFetch(String(args.url ?? "")),
+    };
+
+    const first = await chatWithTools(
+      this.providers,
+      messages,
+      chatOpts,
+      handlers,
+      6,
+    );
     let text = assertLyricsOrThrow(first.content ?? "");
 
     if (!looksLikePartialLyrics(text)) return text;
@@ -155,10 +223,12 @@ export class LyricsAgent {
       { role: "assistant", content: text },
       { role: "user", content: LYRICS_COMPLETE_RETRY_PROMPT },
     ];
-    const second = await chatWithFallback(
+    const second = await chatWithTools(
       this.providers,
       retryMessages,
       chatOpts,
+      handlers,
+      6,
     );
     const retryText = assertLyricsOrThrow(second.content ?? "");
 

@@ -128,4 +128,69 @@ describe("SensenovaProvider", () => {
       vi.useRealTimers();
     }
   });
+
+  it("forwards tools and parses tool_calls from the response", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "c1",
+                  type: "function",
+                  function: { name: "web_search", arguments: '{"query":"晴天"}' },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+    const p = new SensenovaProvider({ apiKey: "sn-x" });
+    const res = await p.chat([{ role: "user", content: "晴天歌词" }], {
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "web_search",
+            description: "search",
+            parameters: { type: "object", properties: { query: { type: "string" } } },
+          },
+        },
+      ],
+    });
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.tools[0].function.name).toBe("web_search");
+    expect(res.tool_calls?.[0]?.function.name).toBe("web_search");
+    expect(res.content).toBe("");
+  });
+
+  it("gives thinking requests a longer abort window", async () => {
+    vi.useFakeTimers();
+    let aborted = false;
+    fetchMock.mockImplementationOnce((_url: unknown, init: unknown) => {
+      return new Promise((_, reject) => {
+        (init as { signal: AbortSignal }).signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    });
+    try {
+      const p = new SensenovaProvider({ apiKey: "sn-x" });
+      const promise = p.chat([{ role: "user", content: "hi" }], {
+        enable_thinking: true,
+      });
+      vi.advanceTimersByTime(20_000);
+      expect(aborted).toBe(false);
+      vi.advanceTimersByTime(40_001);
+      await expect(promise).rejects.toThrow(/timed out after 60s/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

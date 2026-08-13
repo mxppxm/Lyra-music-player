@@ -1,5 +1,5 @@
 import type { LyraPlatform } from "@lyra/platform";
-import { iosFetchJson } from "./http.ts";
+import { iosFetchJson, iosFetchText } from "./http.ts";
 import { iosDb } from "./db.ts";
 import { iosSecrets } from "./secrets.ts";
 import { iosFiles } from "./files.ts";
@@ -17,6 +17,7 @@ export function createIosPlatform(): LyraPlatform {
     ...iosAudio,
     ...iosDb,
     fetchJson: iosFetchJson,
+    fetchText: iosFetchText,
     ...iosSecrets,
     ...iosFiles,
   };

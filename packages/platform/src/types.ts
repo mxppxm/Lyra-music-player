@@ -9,6 +9,8 @@ export interface LyraPlatform {
   onComplete(cb: (playbackId: number) => void): () => void;
 
   fetchJson(url: string, init?: RequestInit): Promise<unknown>;
+  /** Native HTTP GET as text (no CORS). https only. */
+  fetchText(url: string): Promise<string>;
 
   dbExecute(sql: string, params?: unknown[]): Promise<unknown>;
   dbSelect<T = Record<string, unknown>>(

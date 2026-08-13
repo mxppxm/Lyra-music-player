@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod audio_features;
 pub mod bilibili_proxy;
+pub mod http_get;
 pub mod library_scan;
 pub mod lyrics;
 pub mod secrets;
@@ -329,6 +330,7 @@ pub fn run() {
             weekly::path_exists,
             weekly::read_weekly_html,
             bilibili_proxy::bilibili_fetch,
+            http_get::http_get_text,
             setup_bundled_data,
         ])
         .run(tauri::generate_context!())

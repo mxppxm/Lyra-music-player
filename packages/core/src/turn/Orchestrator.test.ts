@@ -1407,7 +1407,11 @@ describe("Orchestrator.getLyrics", () => {
 
     const text = await orc.getLyrics();
     expect(text).toBe(FULL_LYRICS);
-    expect(fetch).toHaveBeenCalledWith({ title: "T1", artist: undefined });
+    expect(fetch).toHaveBeenCalledWith({
+      title: "T1",
+      artist: undefined,
+      enableThinking: false,
+    });
     expect(updateTurn).toHaveBeenCalledOnce();
     const saved = updateTurn.mock.calls[0]![0] as DialogueTurn;
     expect(saved.agent_response.lyrics).toBe(FULL_LYRICS);
@@ -1474,7 +1478,11 @@ describe("Orchestrator.getLyrics", () => {
     await expect(orc.getLyrics({ force: true })).resolves.toBe(
       `${FULL_LYRICS}\n尾奏`,
     );
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledWith({
+      title: "T1",
+      artist: undefined,
+      enableThinking: true,
+    });
   });
 });
 

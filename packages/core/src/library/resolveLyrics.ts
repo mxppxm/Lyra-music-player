@@ -10,6 +10,7 @@ export type ResolveLyricsDeps = {
   fetchLyrics: (input: {
     title: string;
     artist?: string;
+    enableThinking?: boolean;
   }) => Promise<string>;
   /** How many recent turns to scan for a same-song cache hit. */
   historyLimit?: number;
@@ -66,6 +67,7 @@ export async function resolveAndPersistLyrics(
     await deps.fetchLyrics({
       title: deps.title,
       artist: deps.artist,
+      enableThinking: Boolean(deps.force),
     })
   ).trim();
   if (!lyrics) throw new Error("empty lyrics");

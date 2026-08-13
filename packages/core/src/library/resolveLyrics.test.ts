@@ -144,7 +144,11 @@ describe("resolveAndPersistLyrics", () => {
     });
 
     expect(out).toBe(FULL);
-    expect(fetchLyrics).toHaveBeenCalledWith({ title: "歌", artist: "歌手" });
+    expect(fetchLyrics).toHaveBeenCalledWith({
+      title: "歌",
+      artist: "歌手",
+      enableThinking: false,
+    });
     expect(updateTurn).toHaveBeenCalledOnce();
   });
 
@@ -165,7 +169,11 @@ describe("resolveAndPersistLyrics", () => {
     });
 
     expect(out).toBe(fresh);
-    expect(fetchLyrics).toHaveBeenCalledOnce();
+    expect(fetchLyrics).toHaveBeenCalledWith({
+      title: "歌",
+      artist: "歌手",
+      enableThinking: true,
+    });
     expect(updateTurn).toHaveBeenCalledOnce();
     const saved = updateTurn.mock.calls[0]![0] as DialogueTurn;
     expect(saved.agent_response.lyrics).toBe(fresh);
