@@ -80,6 +80,49 @@ describe("input capsule", () => {
   });
 });
 
+describe("playback story cluster", () => {
+  function standaloneRule(selector: string): string {
+    const match = css.match(
+      new RegExp(`(?:^|\\n)${selector.replace(/\./g, "\\.")} \\{([^}]+)\\}`),
+    );
+    return match?.[1] ?? "";
+  }
+
+  it("pins cover + copy just above the dock so the control module is not stranded", () => {
+    const content = standaloneRule(".lyra-mobile-content");
+    expect(content).toMatch(/justify-content:\s*flex-end/);
+    expect(content).not.toMatch(/justify-content:\s*center/);
+    expect(content).not.toMatch(/justify-content:\s*flex-start/);
+  });
+
+  it("keeps a compact vertical rhythm inside the story cluster", () => {
+    const content = standaloneRule(".lyra-mobile-content");
+    expect(content).toMatch(/gap:\s*12px/);
+    // Top clears chips when the note is tall; bottom stays tight to the dock.
+    expect(content).toMatch(/padding:\s*48px 8px 4px/);
+  });
+
+  it("keeps the mood note on glass so lyrics expand/collapse morph from the same surface", () => {
+    const note = standaloneRule(".lyra-mobile-small-note");
+    const card = standaloneRule(".lyra-mobile-small-note__card");
+    const morph = standaloneRule(".lyra-mobile-lyrics-morph__card");
+
+    expect(note).toMatch(/background:\s*var\(--lyra-note-glass-bg\)/);
+    expect(note).toMatch(/backdrop-filter:\s*blur\(12px\)/);
+    expect(note).toMatch(/border-radius:\s*16px/);
+    expect(card).toMatch(/background:\s*var\(--lyra-note-glass-bg\)/);
+    expect(card).toMatch(/backdrop-filter:\s*blur\(12px\)/);
+    expect(morph).toMatch(/background:\s*var\(--lyra-note-glass-bg\)/);
+  });
+
+  it("softens song-info so it captions the cover instead of competing with the note", () => {
+    expect(css).toMatch(/--lyra-song-font-size:\s*13px/);
+    const info = standaloneRule(".lyra-mobile-song-info");
+    expect(info).toMatch(/font-weight:\s*400/);
+    expect(info).toMatch(/opacity:\s*0\.7/);
+  });
+});
+
 describe("immersive copy modules", () => {
   it("stops a remounted copy module from replaying its intro over the vinyl", () => {
     const suppressed = ruleBody(
