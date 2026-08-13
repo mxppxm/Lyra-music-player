@@ -121,6 +121,11 @@ describe("playback story cluster", () => {
     expect(info).toMatch(/font-weight:\s*400/);
     expect(info).toMatch(/opacity:\s*0\.7/);
   });
+
+  it("keeps the lyrics expand control quieter than the note ink", () => {
+    const expand = standaloneRule(".lyra-mobile-small-note__expand");
+    expect(expand).toMatch(/opacity:\s*0\.38/);
+  });
 });
 
 describe("immersive copy modules", () => {

@@ -949,6 +949,7 @@ button.lyra-mobile-idle-slogan:hover {
   border-radius: 10px;
   background: transparent;
   color: var(--lyra-color-small-note);
+  opacity: 0.38;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -961,13 +962,13 @@ button.lyra-mobile-idle-slogan:hover {
 .lyra-mobile-small-note__expand:focus-visible {
   background: transparent;
   outline: none;
-  opacity: 1;
+  opacity: 0.62;
 }
 
 .lyra-mobile-small-note__expand:active {
   transform: scale(0.94);
   background: transparent;
-  opacity: 0.65;
+  opacity: 0.5;
 }
 
 /* While a floating morph clone is animating, keep layout but hide the source. */
