@@ -282,6 +282,7 @@ body,
 /* Outer shell: shadow + placeholder tint. Square card by default; morphs
  * to a circle in immersive mode (border-radius transitions smoothly). */
 .lyra-mobile-cover-art {
+  position: relative;
   width: min(58vw, 230px);
   aspect-ratio: 1;
   margin: 0 auto;
@@ -295,9 +296,51 @@ body,
 
 .lyra-mobile-cover-art--cd {
   border-radius: 50%;
+  overflow: visible;
   box-shadow:
     0 14px 34px rgba(24, 18, 12, 0.2),
     0 2px 8px rgba(24, 18, 12, 0.12);
+}
+
+/* Tonearm lives on the fixed shell (not the spinning disc). Pivot sits
+ * above the platter (top-center); dropped only while spinning. */
+.lyra-mobile-cover-art__tonearm {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  overflow: visible;
+  /* 70px up nudge, then pulled back 20px → 50px above the CD. */
+  transform: translate(0, -50px) rotate(-12deg);
+  transform-origin: 50% -8%;
+  transition:
+    opacity 280ms ease,
+    transform 420ms cubic-bezier(0.32, 0, 0.2, 1);
+}
+
+.lyra-mobile-cover-art__tonearm--on {
+  opacity: 1;
+  transform: translate(0, -50px) rotate(0deg);
+}
+
+.lyra-mobile-cover-art__tonearm-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 3px 6px rgba(24, 18, 12, 0.28));
+}
+
+.lyra-mobile-cover-art--no-anim .lyra-mobile-cover-art__tonearm {
+  transition: none !important;
+}
+
+/* Let the cueing arm overhang the square rail without being clipped. */
+.lyra-mobile-stage--immersive .lyra-mobile-cover-rail,
+.lyra-mobile-stage--immersive .lyra-mobile-cover-rail__slot,
+.lyra-mobile-stage--immersive .lyra-mobile-cover-rail__hit {
+  overflow: visible;
 }
 
 .lyra-mobile-cover-art__disc {

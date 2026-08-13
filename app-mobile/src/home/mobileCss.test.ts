@@ -54,8 +54,12 @@ describe("mobile progress layout", () => {
   });
 
   it("re-enables pointer events on the cover hit so MV tap is not swallowed by the stage", () => {
-    const slot = ruleBody(".lyra-mobile-cover-rail__slot");
-    const hit = ruleBody(".lyra-mobile-cover-rail__hit");
+    const slot = css.match(
+      /(?:^|\n)\.lyra-mobile-cover-rail__slot \{([^}]+)\}/,
+    )?.[1] ?? "";
+    const hit = css.match(
+      /(?:^|\n)\.lyra-mobile-cover-rail__hit \{([^}]+)\}/,
+    )?.[1] ?? "";
     expect(slot).toMatch(/pointer-events:\s*none/);
     expect(hit).toMatch(/pointer-events:\s*auto/);
   });
@@ -125,6 +129,14 @@ describe("playback story cluster", () => {
   it("keeps the lyrics expand control quieter than the note ink", () => {
     const expand = standaloneRule(".lyra-mobile-small-note__expand");
     expect(expand).toMatch(/opacity:\s*0\.38/);
+  });
+
+  it("lets the vinyl tonearm overhang the rail while spinning", () => {
+    const arm = standaloneRule(".lyra-mobile-cover-art__tonearm");
+    const on = standaloneRule(".lyra-mobile-cover-art__tonearm--on");
+    expect(arm).toMatch(/pointer-events:\s*none/);
+    expect(arm).toMatch(/opacity:\s*0/);
+    expect(on).toMatch(/opacity:\s*1/);
   });
 });
 

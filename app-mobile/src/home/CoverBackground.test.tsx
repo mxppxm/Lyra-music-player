@@ -174,4 +174,42 @@ describe("CoverArt rotation gate", () => {
     );
     expect(screen.getByTestId("cover-art")).toBeInTheDocument();
   });
+
+  it("shows a tonearm only while the vinyl is spinning", () => {
+    const { rerender } = render(
+      <CoverArt
+        url="https://example.com/cover.jpg"
+        cd
+        active
+        spinning
+      />,
+    );
+    const arm = screen.getByTestId("cover-tonearm");
+    expect(arm.className).toMatch(/tonearm--on/);
+    // Sits outside the spinning disc so the stylus does not orbit.
+    expect(arm.parentElement).toBe(screen.getByTestId("cover-art"));
+    expect(discEl().contains(arm)).toBe(false);
+
+    rerender(
+      <CoverArt
+        url="https://example.com/cover.jpg"
+        cd
+        active
+        spinning={false}
+      />,
+    );
+    expect(screen.getByTestId("cover-tonearm").className).not.toMatch(
+      /tonearm--on/,
+    );
+
+    rerender(
+      <CoverArt
+        url="https://example.com/cover.jpg"
+        cd={false}
+        active
+        spinning={false}
+      />,
+    );
+    expect(screen.queryByTestId("cover-tonearm")).toBeNull();
+  });
 });

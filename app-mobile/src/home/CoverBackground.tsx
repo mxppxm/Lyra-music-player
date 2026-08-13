@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 export type CoverBackgroundProps = {
   /** Raw bilibili cover URL from track metadata (may be protocol-relative). */
@@ -206,7 +206,117 @@ export function CoverArt({
         <div className="lyra-mobile-cover-art__groove" />
         <div className="lyra-mobile-cover-art__hole" />
       </div>
+      {cd ? (
+        <div
+          className={[
+            "lyra-mobile-cover-art__tonearm",
+            active && spinning ? "lyra-mobile-cover-art__tonearm--on" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          data-testid="cover-tonearm"
+          aria-hidden
+        >
+          <VinylTonearmGraphic />
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** Decorative tonearm — sibling of the disc so it never inherits spin.
+ *  Pivot sits above the platter (top-center); stylus rests on outer grooves. */
+function VinylTonearmGraphic() {
+  const uid = useId().replace(/:/g, "");
+  const metal = `lyra-arm-metal-${uid}`;
+  const tube = `lyra-arm-tube-${uid}`;
+  const dark = `lyra-arm-dark-${uid}`;
+
+  return (
+    <svg
+      className="lyra-mobile-cover-art__tonearm-svg"
+      viewBox="-20 -72 240 280"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      overflow="visible"
+    >
+      {/* Pivot / bearing — outside the platter, top-center */}
+      <circle cx="100" cy="-28" r="11" fill={`url(#${metal})`} />
+      <circle
+        cx="100"
+        cy="-28"
+        r="11"
+        stroke="rgba(24,18,12,0.35)"
+        strokeWidth="1.1"
+      />
+      <circle cx="100" cy="-28" r="4.5" fill={`url(#${dark})`} />
+      <circle cx="100" cy="-28" r="1.8" fill="rgba(255,248,238,0.55)" />
+
+      {/* Main arm — drops onto upper-outer grooves */}
+      <path
+        d="M100 -16 C100 8 102 28 106 52"
+        stroke={`url(#${tube})`}
+        strokeWidth="5.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M100 -16 C100 8 102 28 106 52"
+        stroke="rgba(255,248,238,0.28)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        transform="translate(-1.1 0)"
+      />
+
+      {/* Cueing hinge */}
+      <circle cx="102" cy="22" r="3.8" fill={`url(#${dark})`} />
+      <circle
+        cx="102"
+        cy="22"
+        r="3.8"
+        stroke="rgba(255,248,238,0.25)"
+        strokeWidth="0.8"
+      />
+
+      {/* Head shell */}
+      <path
+        d="M100 44 L112 68 L120 64 L110 40 Z"
+        fill={`url(#${metal})`}
+        stroke="rgba(24,18,12,0.45)"
+        strokeWidth="1"
+      />
+      <path
+        d="M108 48 L116 62"
+        stroke="rgba(255,248,238,0.35)"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+
+      {/* Stylus tip — upper-outer groove, not the spindle */}
+      <path
+        d="M116 66 L122 78"
+        stroke="rgba(28,24,20,0.85)"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="123" cy="80" r="1.6" fill="rgba(212,175,120,0.95)" />
+
+      <defs>
+        <linearGradient id={metal} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#d8d0c4" />
+          <stop offset="45%" stopColor="#9a9084" />
+          <stop offset="100%" stopColor="#5c534a" />
+        </linearGradient>
+        <linearGradient id={tube} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#cfc6ba" />
+          <stop offset="50%" stopColor="#8a8074" />
+          <stop offset="100%" stopColor="#4a433c" />
+        </linearGradient>
+        <radialGradient id={dark} cx="35%" cy="30%" r="70%">
+          <stop offset="0%" stopColor="#7a7268" />
+          <stop offset="100%" stopColor="#2a251f" />
+        </radialGradient>
+      </defs>
+    </svg>
   );
 }
 
